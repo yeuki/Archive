@@ -6,10 +6,10 @@
   --paper: #fafafa;
   --panel: rgba(255, 255, 255, 0.88);
   --soft: #f5f5f5;
-  --module-border: rgba(0, 0, 0, 0.09);
+  --module-border: rgba(0, 0, 0, 0.13);
   --module-shadow:
-    0 2px 5px rgba(0, 0, 0, 0.055),
-    0 12px 28px rgba(0, 0, 0, 0.075);
+    0 3px 8px rgba(0, 0, 0, 0.1),
+    0 18px 42px rgba(0, 0, 0, 0.14);
   --surface-gap: 12px;
   --stack-gap: 10px;
   --tight-gap: 8px;
@@ -258,10 +258,13 @@ button {
   display: grid;
   gap: 4px;
   align-content: center;
-  border: 1px solid var(--line);
+  border: 1px solid var(--module-border);
   border-radius: 20px;
   background: var(--paper);
   padding: 10px;
+  box-shadow:
+    0 2px 5px rgba(0, 0, 0, 0.075),
+    0 10px 24px rgba(0, 0, 0, 0.09);
   animation: surfaceIn 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
@@ -289,13 +292,15 @@ button {
 .bar-chart {
   grid-template-columns: repeat(7, 1fr);
   gap: 7px;
-  height: 116px;
+  height: 140px;
+  padding-bottom: 24px;
 }
 
 .week-chart {
   grid-template-columns: repeat(10, 1fr);
   gap: 6px;
-  height: 132px;
+  height: 156px;
+  padding-bottom: 24px;
 }
 
 .bar {
