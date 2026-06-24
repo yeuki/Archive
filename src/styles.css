@@ -6,6 +6,10 @@
   --paper: #fafafa;
   --panel: rgba(255, 255, 255, 0.88);
   --soft: #f5f5f5;
+  --module-border: rgba(0, 0, 0, 0.09);
+  --module-shadow:
+    0 2px 5px rgba(0, 0, 0, 0.055),
+    0 12px 28px rgba(0, 0, 0, 0.075);
   --surface-gap: 12px;
   --stack-gap: 10px;
   --tight-gap: 8px;
@@ -190,10 +194,10 @@ button {
   display: grid;
   gap: var(--surface-gap);
   background: var(--panel);
-  border: 1px solid var(--line);
+  border: 1px solid var(--module-border);
   border-radius: 24px;
   padding: 14px;
-  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--module-shadow);
   animation: surfaceIn 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
@@ -2996,11 +3000,11 @@ button:disabled {
   min-width: 0;
   display: grid;
   gap: var(--surface-gap);
-  border: 1px solid var(--line);
+  border: 1px solid var(--module-border);
   border-radius: 24px;
   background: var(--panel);
   padding: 14px;
-  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--module-shadow);
   animation: surfaceIn 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
   user-select: none;
   -webkit-user-select: none;
