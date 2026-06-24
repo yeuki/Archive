@@ -1,0 +1,44 @@
+# Dependencies and generated web builds
+node_modules/
+dist/
+
+# Logs and test output
+*.log
+playwright-report/
+test-results/
+coverage/
+
+# Environment variables and local secrets
+.env
+.env.*
+!.env.example
+
+# Browser automation profiles
+edge-cdp-profile/
+*-cdp-profile/
+
+# Local development screenshots (curated README images belong in docs/screenshots)
+/*.png
+
+# Personal Archive backups and exports
+backups/
+exports/
+*backup*.json
+*export*.json
+
+# Android generated and machine-specific files
+android/.gradle/
+android/**/build/
+android/local.properties
+android/.idea/
+*.apk
+*.aab
+*.jks
+*.keystore
+
+# Editor and operating-system files
+.vscode/
+.idea/
+*.iml
+.DS_Store
+Thumbs.db

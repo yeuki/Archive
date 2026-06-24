@@ -1,0 +1,1479 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Home and Stats Layouts</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #111111;
+      --muted: #737373;
+      --line: rgba(0, 0, 0, .05);
+      --paper: #fafafa;
+      --panel: rgba(255, 255, 255, .85);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--paper);
+      color: var(--ink);
+      overflow-x: hidden;
+    }
+
+    main {
+      width: min(900px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 32px 0 48px;
+    }
+
+    header {
+      display: grid;
+      gap: 10px;
+      max-width: 680px;
+      margin-bottom: 22px;
+    }
+
+    header::before {
+      content: "APP LAYOUTS";
+      width: fit-content;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 6px 10px;
+      color: var(--muted);
+      background: rgba(255, 255, 255, .85);
+      font-size: .68rem;
+      font-weight: 500;
+      letter-spacing: .14em;
+      box-shadow: 0 1px 8px rgba(0, 0, 0, .04);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(2rem, 6vw, 3rem);
+      line-height: 1.02;
+      letter-spacing: -0.02em;
+      font-weight: 500;
+    }
+
+    header p {
+      margin: 0;
+      color: var(--muted);
+      font-size: .95rem;
+      line-height: 1.5;
+    }
+
+    .pages {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 22px;
+      align-items: start;
+    }
+
+    .page-sample {
+      display: grid;
+      gap: 12px;
+    }
+
+    .sample-label {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 0 4px;
+      min-width: 0;
+    }
+
+    .sample-label h2 {
+      margin: 0;
+      font-size: .96rem;
+      font-weight: 500;
+    }
+
+    .sample-label span {
+      color: var(--muted);
+      font-size: .78rem;
+      overflow-wrap: anywhere;
+    }
+
+    .phone {
+      min-height: 840px;
+      border: 1px solid var(--line);
+      border-radius: 30px;
+      background: rgba(255, 255, 255, .85);
+      box-shadow: 0 1px 8px rgba(0, 0, 0, .05);
+      overflow: hidden;
+      position: relative;
+    }
+
+    .screen {
+      padding: 20px;
+      display: grid;
+      gap: 14px;
+      padding-bottom: 92px;
+    }
+
+    .status,
+    .topbar,
+    .section-title,
+    .legend,
+    .bottom-nav {
+      display: flex;
+      align-items: center;
+    }
+
+    .status {
+      justify-content: space-between;
+      color: #5f5f5f;
+      font-size: .76rem;
+      font-weight: 500;
+      padding: 2px 4px 6px;
+    }
+
+    .topbar {
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .topbar h3 {
+      margin: 0;
+      font-size: 1.48rem;
+      line-height: 1.05;
+      font-weight: 500;
+    }
+
+    .icon-btn,
+    .add-habit-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--line);
+      color: var(--ink);
+      font: inherit;
+      line-height: 1;
+      padding: 0 0 2px;
+    }
+
+    .icon-btn {
+      width: 38px;
+      height: 38px;
+      border-radius: 999px;
+      background: #f5f5f5;
+      font-size: 1.2rem;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      padding: 14px;
+      box-shadow: 0 1px 8px rgba(0, 0, 0, .04);
+    }
+
+    .section-title {
+      justify-content: space-between;
+      gap: 12px;
+      color: var(--muted);
+      font-size: .78rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+
+    .insight {
+      display: grid;
+      gap: 8px;
+      background: #f5f5f5;
+    }
+
+    .insight p {
+      margin: 0;
+      font-size: .88rem;
+      line-height: 1.35;
+      color: #2f2f2f;
+    }
+
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .stat-card {
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: #fafafa;
+      padding: 10px;
+      display: grid;
+      gap: 4px;
+      min-height: 74px;
+    }
+
+    .stat-card small,
+    .quick-field span {
+      color: var(--muted);
+      font-size: .68rem;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+
+    .stat-card strong,
+    .quick-field strong {
+      font-size: 1.2rem;
+      font-weight: 500;
+    }
+
+    .bar-chart,
+    .week-chart {
+      display: grid;
+      align-items: end;
+      padding-top: 10px;
+    }
+
+    .bar-chart {
+      grid-template-columns: repeat(7, 1fr);
+      gap: 7px;
+      height: 116px;
+    }
+
+    .week-chart {
+      grid-template-columns: repeat(10, 1fr);
+      gap: 6px;
+      height: 132px;
+    }
+
+    .bar {
+      position: relative;
+      display: flex;
+      align-items: end;
+      justify-content: center;
+      border-radius: 999px 999px 4px 4px;
+      min-height: 18px;
+      color: #111111;
+      font-size: .62rem;
+      font-weight: 400;
+      padding-bottom: 5px;
+      background: linear-gradient(to top, #ffffff 0%, var(--bar-tone, #8f8f8f) 100%);
+    }
+
+    .bar::before {
+      content: attr(data-day);
+      position: absolute;
+      bottom: -20px;
+      color: var(--muted);
+      font-size: .56rem;
+    }
+
+    .week-chart .bar::before {
+      content: attr(data-week);
+    }
+
+    .v43 { height: 43%; --bar-tone: #d6d6d6; }
+    .v52 { height: 52%; --bar-tone: #bdbdbd; }
+    .v58 { height: 58%; --bar-tone: #a8a8a8; }
+    .v66 { height: 66%; --bar-tone: #858585; }
+    .v74 { height: 74%; --bar-tone: #626262; }
+    .v82 { height: 82%; --bar-tone: #3f3f3f; }
+    .v91 { height: 91%; --bar-tone: #111111; }
+
+    .chart-note {
+      margin: 18px 0 0;
+      color: var(--muted);
+      font-size: .72rem;
+      line-height: 1.35;
+    }
+
+    .area-panel {
+      display: grid;
+      gap: 12px;
+    }
+
+    .area-chart {
+      width: 100%;
+      height: auto;
+      aspect-ratio: 320 / 190;
+      display: block;
+      overflow: visible;
+    }
+
+    .area-chart .grid-line {
+      stroke: rgba(0, 0, 0, .05);
+      stroke-width: 1;
+    }
+
+    .area-chart .area {
+      fill: url(#areaGradient);
+      opacity: .82;
+    }
+
+    .area-chart .line {
+      fill: none;
+      stroke: #111111;
+      stroke-width: 3;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .area-chart .point {
+      fill: #ffffff;
+      stroke: #111111;
+      stroke-width: 2.5;
+    }
+
+    .axis-labels {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 0;
+      color: var(--muted);
+      font-size: .68rem;
+      text-align: center;
+      margin-top: -6px;
+    }
+
+    .summary-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .summary-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: #fafafa;
+      padding: 10px 12px;
+      color: var(--muted);
+      font-size: .84rem;
+    }
+
+    .summary-row strong {
+      color: var(--ink);
+      font-weight: 500;
+    }
+
+    .compare,
+    .correlation-list,
+    .year-panel {
+      display: grid;
+      gap: 9px;
+    }
+
+    .compare-row,
+    .correlation-row {
+      display: grid;
+      align-items: center;
+      gap: 10px;
+      font-size: .82rem;
+    }
+
+    .compare-row {
+      grid-template-columns: 72px 1fr 44px;
+      font-weight: 500;
+    }
+
+    .track {
+      height: 9px;
+      border-radius: 999px;
+      background: #f5f5f5;
+      overflow: hidden;
+    }
+
+    .fill {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      width: 72%;
+      background: linear-gradient(to right, #ffffff, #a3a3a3, #111111);
+    }
+
+    .compare-row:nth-child(3) .fill { width: 64%; background: linear-gradient(to right, #ffffff, #c4c4c4, #555555); }
+    .compare-row:nth-child(4) .fill { width: 48%; background: linear-gradient(to right, #ffffff, #d4d4d4, #999999); }
+    .compare-row:nth-child(5) .fill { width: 83%; background: linear-gradient(to right, #ffffff, #a3a3a3, #2a2a2a); }
+
+    .correlation-row {
+      grid-template-columns: 1fr auto;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: #fafafa;
+      padding: 11px 12px;
+    }
+
+    .correlation-row p {
+      margin: 0;
+      font-size: .84rem;
+      line-height: 1.3;
+    }
+
+    .correlation-row small {
+      display: block;
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: .72rem;
+    }
+
+    .correlation-score {
+      min-width: 48px;
+      border-radius: 999px;
+      background: #111111;
+      color: #ffffff;
+      padding: 7px 9px;
+      text-align: center;
+      font-size: .78rem;
+    }
+
+    .correlation-score.mid { background: #737373; }
+
+    .year-grid-wrap {
+      overflow: hidden;
+      border-radius: 18px;
+      background: #fafafa;
+      border: 1px solid var(--line);
+      padding: 10px;
+    }
+
+    .month-labels {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 4px;
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: .56rem;
+      text-align: center;
+    }
+
+    .year-grid {
+      display: grid;
+      grid-template-rows: repeat(7, 1fr);
+      grid-auto-flow: column;
+      grid-auto-columns: 13px;
+      gap: 4px;
+      justify-content: center;
+    }
+
+    .year-cell {
+      aspect-ratio: 1;
+      border-radius: 4px;
+      background: linear-gradient(135deg, #ffffff 0%, var(--cell-tone, #f5f5f5) 100%);
+    }
+
+    .legend {
+      justify-content: space-between;
+      gap: 10px;
+      color: var(--muted);
+      font-size: .68rem;
+    }
+
+    .legend-scale {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+    }
+
+    .legend-scale i {
+      width: 18px;
+      height: 8px;
+      border-radius: 999px;
+      background: linear-gradient(135deg, #ffffff, var(--tone));
+    }
+
+    .legend-scale i:nth-child(1) { --tone: #e8e8e8; }
+    .legend-scale i:nth-child(2) { --tone: #bdbdbd; }
+    .legend-scale i:nth-child(3) { --tone: #858585; }
+    .legend-scale i:nth-child(4) { --tone: #3f3f3f; }
+    .legend-scale i:nth-child(5) { --tone: #111111; }
+
+    .daily-sheet {
+      position: absolute;
+      left: 14px;
+      right: 14px;
+      bottom: 78px;
+      z-index: 2;
+      display: grid;
+      gap: 12px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 26px;
+      background: rgba(255, 255, 255, .96);
+      box-shadow: 0 18px 48px rgba(0, 0, 0, .14);
+      backdrop-filter: blur(16px);
+    }
+
+    .sheet-handle {
+      width: 42px;
+      height: 4px;
+      border-radius: 999px;
+      background: #d4d4d4;
+      justify-self: center;
+    }
+
+    .sheet-head {
+      display: flex;
+      align-items: start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .sheet-head h3 {
+      margin: 0;
+      font-size: 1.05rem;
+      font-weight: 500;
+    }
+
+    .sheet-head p {
+      margin: 3px 0 0;
+      color: var(--muted);
+      font-size: .78rem;
+    }
+
+    .sheet-actions {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .date-pill {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fafafa;
+      padding: 7px 10px;
+      color: var(--muted);
+      font-size: .72rem;
+      white-space: nowrap;
+    }
+
+    .add-habit-btn {
+      width: 34px;
+      height: 34px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--line);
+      border-radius: 17px;
+      background: #fafafa;
+      color: var(--muted);
+      font: inherit;
+      font-size: 1.05rem;
+      line-height: 1;
+      padding: 0 0 2px;
+    }
+
+    .entry-section {
+      display: grid;
+      gap: 8px;
+    }
+
+    .entry-title {
+      color: var(--muted);
+      font-size: .72rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+
+    .habit-toggle-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 7px;
+    }
+
+    .habit-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: #fafafa;
+      padding: 9px 10px;
+      font-size: .8rem;
+    }
+
+    .habit-toggle.done {
+      background: #111111;
+      color: #ffffff;
+    }
+
+    .habit-toggle i {
+      width: 16px;
+      height: 16px;
+      display: grid;
+      place-items: center;
+      border-radius: 999px;
+      background: #ffffff;
+      color: #111111;
+      font-style: normal;
+      font-size: .68rem;
+    }
+
+    .quick-fields {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .quick-field {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: #fafafa;
+      padding: 10px;
+      display: grid;
+      gap: 5px;
+    }
+
+    .save-report {
+      width: 100%;
+      border: 0;
+      border-radius: 20px;
+      background: #111111;
+      color: #ffffff;
+      padding: 12px 14px;
+      font: inherit;
+      font-size: .9rem;
+    }
+
+    .bottom-nav {
+      position: absolute;
+      left: 14px;
+      right: 14px;
+      bottom: 14px;
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 6px;
+      padding: 8px;
+      background: rgba(255, 255, 255, .9);
+      border: 1px solid var(--line);
+      border-radius: 30px;
+      backdrop-filter: blur(16px);
+      box-shadow: 0 1px 8px rgba(0, 0, 0, .06);
+    }
+
+    .bottom-nav span {
+      text-align: center;
+      color: var(--muted);
+      font-size: .68rem;
+      font-weight: 500;
+      padding: 8px 2px;
+      border-radius: 18px;
+    }
+
+    .bottom-nav .active {
+      background: #111111;
+      color: #ffffff;
+    }
+
+    .home-logo {
+      width: 36px;
+      height: 36px;
+      justify-self: center;
+      display: grid;
+      place-items: center;
+      border-radius: 18px;
+      background: #f5f5f5;
+      border: 1px solid var(--line);
+      padding: 0;
+    }
+
+    .home-logo::before {
+      content: "";
+      width: 16px;
+      height: 16px;
+      border-radius: 4px;
+      background:
+        linear-gradient(#111111, #111111) left top / 6px 6px no-repeat,
+        linear-gradient(#111111, #111111) right top / 6px 6px no-repeat,
+        linear-gradient(#111111, #111111) left bottom / 6px 6px no-repeat,
+        linear-gradient(#111111, #111111) right bottom / 6px 6px no-repeat;
+    }
+
+    .module-library {
+      margin-top: 30px;
+      display: grid;
+      gap: 16px;
+    }
+
+    .library-intro {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 16px;
+      border-top: 1px solid var(--line);
+      padding-top: 24px;
+    }
+
+    .library-intro h2 {
+      margin: 0;
+      font-size: 1.45rem;
+      font-weight: 500;
+      letter-spacing: 0;
+    }
+
+    .library-intro p {
+      max-width: 470px;
+      margin: 0;
+      color: var(--muted);
+      font-size: .86rem;
+      line-height: 1.45;
+    }
+
+    .module-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .module-card {
+      min-height: 270px;
+      min-width: 0;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 14px;
+      border: 1px solid var(--line);
+      border-radius: 26px;
+      background: rgba(255, 255, 255, .88);
+      padding: 14px;
+      box-shadow: 0 1px 8px rgba(0, 0, 0, .04);
+      overflow: hidden;
+    }
+
+    .module-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .module-head h3 {
+      margin: 0;
+      font-size: .98rem;
+      line-height: 1.2;
+      font-weight: 500;
+      min-width: 0;
+    }
+
+    .module-head span {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 5px 8px;
+      color: var(--muted);
+      background: #fafafa;
+      font-size: .62rem;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      white-space: nowrap;
+    }
+
+    .module-caption {
+      margin: 0;
+      color: var(--muted);
+      font-size: .72rem;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+    }
+
+    .module-chart {
+      min-height: 156px;
+      display: grid;
+      align-items: center;
+      min-width: 0;
+    }
+
+    .module-bars,
+    .module-histogram {
+      height: 150px;
+      display: grid;
+      align-items: end;
+      gap: 8px;
+      padding: 12px 0 18px;
+    }
+
+    .module-bars {
+      grid-template-columns: repeat(7, 1fr);
+    }
+
+    .module-histogram {
+      grid-template-columns: repeat(8, 1fr);
+    }
+
+    .module-bar {
+      position: relative;
+      min-height: 18px;
+      display: flex;
+      align-items: end;
+      justify-content: center;
+      border-radius: 999px 999px 5px 5px;
+      color: #111111;
+      font-size: .58rem;
+      padding-bottom: 5px;
+      background: linear-gradient(to top, #ffffff 0%, var(--tone, #777777) 100%);
+    }
+
+    .module-bar::after {
+      content: attr(data-label);
+      position: absolute;
+      bottom: -17px;
+      color: var(--muted);
+      font-size: .52rem;
+    }
+
+    .mini-area-chart,
+    .mini-scatter,
+    .mini-ring-chart {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+
+    .mini-area-chart {
+      aspect-ratio: 320 / 170;
+      overflow: visible;
+    }
+
+    .mini-area-chart .grid-line,
+    .mini-scatter .grid-line {
+      stroke: rgba(0, 0, 0, .055);
+      stroke-width: 1;
+    }
+
+    .mini-area-chart .area {
+      fill: url(#moduleAreaGradient);
+      opacity: .82;
+    }
+
+    .mini-area-chart .line,
+    .mini-scatter .line {
+      fill: none;
+      stroke: #111111;
+      stroke-width: 3;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .mini-area-chart .point,
+    .mini-scatter .point {
+      fill: #ffffff;
+      stroke: #111111;
+      stroke-width: 2.4;
+    }
+
+    .mini-streak-wrap,
+    .mini-matrix-wrap {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: #fafafa;
+      padding: 12px;
+    }
+
+    .mini-streak-grid {
+      display: grid;
+      grid-template-rows: repeat(7, 1fr);
+      grid-auto-flow: column;
+      grid-auto-columns: 14px;
+      gap: 4px;
+      justify-content: center;
+    }
+
+    .mini-streak-grid span {
+      border-radius: 4px;
+      background: var(--tone, #eeeeee);
+    }
+
+    .matrix-grid span {
+      border-radius: 4px;
+      background: linear-gradient(135deg, #ffffff 0%, var(--tone, #eeeeee) 100%);
+    }
+
+    .mini-streak-grid span {
+      aspect-ratio: 1;
+    }
+
+    .stacked-score {
+      display: grid;
+      gap: 11px;
+      align-content: center;
+    }
+
+    .stacked-row {
+      display: grid;
+      grid-template-columns: 74px 1fr 34px;
+      align-items: center;
+      gap: 9px;
+      color: var(--muted);
+      font-size: .76rem;
+    }
+
+    .stacked-track {
+      height: 14px;
+      border-radius: 999px;
+      background: #f5f5f5;
+      overflow: hidden;
+    }
+
+    .stacked-track i {
+      display: block;
+      width: var(--value);
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(to right, #ffffff, var(--tone, #111111));
+    }
+
+    .ring-layout {
+      display: grid;
+      grid-template-columns: 122px 1fr;
+      gap: 14px;
+      align-items: center;
+    }
+
+    .score-ring {
+      width: 122px;
+      aspect-ratio: 1;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background:
+        radial-gradient(circle at center, #ffffff 0 52%, transparent 53%),
+        conic-gradient(#111111 0 var(--value), #eeeeee var(--value) 100%);
+      box-shadow: inset 0 0 0 1px var(--line);
+    }
+
+    .score-ring strong {
+      font-size: 1.35rem;
+      font-weight: 500;
+    }
+
+    .ring-list {
+      display: grid;
+      gap: 8px;
+      color: var(--muted);
+      font-size: .76rem;
+    }
+
+    .ring-list span {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 6px;
+    }
+
+    .matrix-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+    }
+
+    .matrix-grid span {
+      min-height: 34px;
+      display: grid;
+      place-items: center;
+      color: #111111;
+      font-size: .64rem;
+    }
+
+    .mini-timeline {
+      display: grid;
+      gap: 10px;
+      align-content: center;
+    }
+
+    .timeline-row {
+      display: grid;
+      grid-template-columns: 44px 1fr 40px;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: .72rem;
+    }
+
+    .timeline-track {
+      position: relative;
+      height: 2px;
+      background: #e6e6e6;
+      border-radius: 999px;
+    }
+
+    .timeline-track::before {
+      content: "";
+      position: absolute;
+      left: var(--position, 50%);
+      top: -6px;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      transform: translateX(-50%);
+      background: linear-gradient(135deg, #ffffff, var(--tone, #111111));
+      border: 1px solid rgba(0, 0, 0, .08);
+    }
+
+    @media (max-width: 860px) {
+      main { width: min(430px, calc(100% - 32px)); }
+      .pages { grid-template-columns: 1fr; }
+      .library-intro { display: grid; }
+      .module-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Archive App Layouts</h1>
+      <p>The current app base plus a modular library of monochrome infographic panels that could be added, removed, or assigned to renamed pages later.</p>
+    </header>
+
+    <section class="pages" aria-label="Home and Stats page layouts">
+      <article class="page-sample">
+        <div class="sample-label"><h2>Home</h2><span>daily summary</span></div>
+        <div class="phone">
+          <div class="screen">
+            <div class="status"><span>9:41</span><span>LTE 82%</span></div>
+            <div class="topbar"><h3>Archive Home</h3><button class="icon-btn" aria-label="Add daily stats">+</button></div>
+
+            <div class="panel insight">
+              <div class="section-title"><span>Featured record</span><span>May 2-8</span></div>
+              <p>Your highest-value days had 7+ hours of sleep, 6+ cups of water, and at least one exercise entry. Late workouts correlated with lower next-day sleep quality.</p>
+            </div>
+
+            <div class="stat-grid">
+              <div class="stat-card"><small>Avg value</small><strong>69</strong></div>
+              <div class="stat-card"><small>Best day</small><strong>91</strong></div>
+              <div class="stat-card"><small>Vs yesterday</small><strong>&uarr; +8</strong></div>
+            </div>
+
+            <div class="panel">
+              <div class="section-title"><span>Daily value</span><span>score</span></div>
+              <div class="bar-chart">
+                <span class="bar v52" data-day="M">52</span><span class="bar v66" data-day="T">66</span><span class="bar v43" data-day="W">43</span><span class="bar v74" data-day="T">74</span><span class="bar v91" data-day="F">91</span><span class="bar v58" data-day="S">58</span><span class="bar v82" data-day="S">82</span>
+              </div>
+              <p class="chart-note">Darker bars mean higher daily value. The score blends habit completion, sleep quality, water target, movement, and subjective energy.</p>
+            </div>
+
+            <div class="panel compare">
+              <div class="section-title"><span>Metric balance</span><span>last 7 days</span></div>
+              <div class="compare-row"><span>Habits</span><span class="track"><i class="fill"></i></span><b>72%</b></div>
+              <div class="compare-row"><span>Sleep</span><span class="track"><i class="fill"></i></span><b>64%</b></div>
+              <div class="compare-row"><span>Water</span><span class="track"><i class="fill"></i></span><b>48%</b></div>
+              <div class="compare-row"><span>Move</span><span class="track"><i class="fill"></i></span><b>83%</b></div>
+            </div>
+
+            <div class="panel correlation-list">
+              <div class="section-title"><span>Correlations</span><span>signals</span></div>
+              <div class="correlation-row"><div><p>Sleep to habit completion</p><small>7h+ sleep improved next-day completion.</small></div><span class="correlation-score">+.42</span></div>
+              <div class="correlation-row"><div><p>Water to energy rating</p><small>Water target had a moderate relationship.</small></div><span class="correlation-score mid">+.28</span></div>
+            </div>
+          </div>
+
+          <section class="daily-sheet" aria-label="Add previous day stats">
+            <span class="sheet-handle"></span>
+            <div class="sheet-head">
+              <div><h3>Add previous day</h3><p>Enter from your daily tracker book.</p></div>
+              <div class="sheet-actions"><span class="date-pill">May 12</span><button class="add-habit-btn" aria-label="Add new habit">+</button></div>
+            </div>
+            <div class="entry-section">
+              <div class="entry-title">Habits</div>
+              <div class="habit-toggle-grid">
+                <div class="habit-toggle done"><span>Read</span><i>&#10003;</i></div>
+                <div class="habit-toggle done"><span>Walk</span><i>&#10003;</i></div>
+                <div class="habit-toggle"><span>Workout</span><i>&#9675;</i></div>
+                <div class="habit-toggle done"><span>Journal</span><i>&#10003;</i></div>
+              </div>
+            </div>
+            <div class="quick-fields"><div class="quick-field"><span>Water</span><strong>6 cups</strong></div><div class="quick-field"><span>Sleep</span><strong>7h 20m</strong></div></div>
+            <button class="save-report">Save daily report</button>
+          </section>
+
+          <nav class="bottom-nav"><span>Habit</span><span>Water</span><span class="home-logo" aria-label="Home"></span><span>Sleep</span><span>Stats</span></nav>
+        </div>
+      </article>
+
+      <article class="page-sample">
+        <div class="sample-label"><h2>Stats</h2><span>long range</span></div>
+        <div class="phone">
+          <div class="screen">
+            <div class="status"><span>9:41</span><span>LTE 82%</span></div>
+            <div class="topbar"><h3>Stats</h3><button class="icon-btn" aria-label="Filter stats">=</button></div>
+
+            <div class="stat-grid">
+              <div class="stat-card"><small>Year avg</small><strong>68</strong></div>
+              <div class="stat-card"><small>Best week</small><strong>84</strong></div>
+              <div class="stat-card"><small>Days logged</small><strong>132</strong></div>
+            </div>
+
+            <div class="panel year-panel">
+              <div class="section-title"><span>Value grid</span><span>last 3 months</span></div>
+              <div class="year-grid-wrap">
+                <div class="month-labels"><span>March</span><span>April</span><span>May</span></div>
+                <div class="year-grid" id="yearGrid" aria-label="Last three months daily value grid"></div>
+              </div>
+              <div class="legend"><span>Lower</span><span class="legend-scale"><i></i><i></i><i></i><i></i><i></i></span><span>Higher</span></div>
+              <p class="chart-note">Each day fades from white to a score-linked tone. This rolling three-month view keeps the cells readable on mobile.</p>
+            </div>
+
+            <div class="panel">
+              <div class="section-title"><span>Previous 10 weeks</span><span>avg score</span></div>
+              <div class="week-chart">
+                <span class="bar v58" data-week="W1">58</span><span class="bar v66" data-week="W2">66</span><span class="bar v52" data-week="W3">52</span><span class="bar v74" data-week="W4">74</span><span class="bar v82" data-week="W5">82</span><span class="bar v66" data-week="W6">66</span><span class="bar v91" data-week="W7">91</span><span class="bar v74" data-week="W8">74</span><span class="bar v58" data-week="W9">58</span><span class="bar v82" data-week="W10">82</span>
+              </div>
+              <p class="chart-note">Weekly bars use the same daily value treatment: white rises into the score-correlated shade for that week.</p>
+            </div>
+
+            <div class="panel insight">
+              <div class="section-title"><span>Trend note</span><span>10 weeks</span></div>
+              <p>Your highest scoring weeks cluster around consistent sleep and 70%+ habit completion. Water appears to be the most uneven input.</p>
+            </div>
+          </div>
+
+          <nav class="bottom-nav"><span>Habit</span><span>Water</span><span class="home-logo" aria-label="Home"></span><span>Sleep</span><span class="active">Stats</span></nav>
+        </div>
+      </article>
+
+      <article class="page-sample">
+        <div class="sample-label"><h2>Habit</h2><span>weekly progress</span></div>
+        <div class="phone">
+          <div class="screen">
+            <div class="status"><span>9:41</span><span>LTE 82%</span></div>
+            <div class="topbar"><h3>Habit</h3><button class="icon-btn" aria-label="Add habit entry">+</button></div>
+
+            <div class="stat-grid">
+              <div class="stat-card"><small>Week avg</small><strong>71%</strong></div>
+              <div class="stat-card"><small>Best day</small><strong>86%</strong></div>
+              <div class="stat-card"><small>Logged</small><strong>5/7</strong></div>
+            </div>
+
+            <div class="panel area-panel">
+              <div class="section-title"><span>Habit completion</span><span>this week</span></div>
+              <svg class="area-chart" viewBox="0 0 320 190" role="img" aria-label="Habit completion this week">
+                <defs>
+                  <linearGradient id="areaGradient" x1="0" y1="170" x2="0" y2="22" gradientUnits="userSpaceOnUse">
+                    <stop offset="0" stop-color="#ffffff"/>
+                    <stop offset="1" stop-color="#111111"/>
+                  </linearGradient>
+                </defs>
+                <line class="grid-line" x1="18" y1="150" x2="304" y2="150"/>
+                <line class="grid-line" x1="18" y1="108" x2="304" y2="108"/>
+                <line class="grid-line" x1="18" y1="66" x2="304" y2="66"/>
+                <path class="area" d="M22.86 126 C53 109, 84 89, 114.29 84 C145 80, 175 118, 205.71 112 C222 108, 238 63, 251.43 50 L251.43 170 L22.86 170 Z"/>
+                <path class="line" d="M22.86 126 C53 109, 84 89, 114.29 84 C145 80, 175 118, 205.71 112 C222 108, 238 63, 251.43 50"/>
+                <circle class="point" cx="22.86" cy="126" r="4"/><circle class="point" cx="114.29" cy="84" r="4"/><circle class="point" cx="205.71" cy="112" r="4"/><circle class="point" cx="251.43" cy="50" r="4"/>
+              </svg>
+              <div class="axis-labels"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div>
+              <p class="chart-note">Only recorded days are plotted. The fill grows darker vertically as completion rises.</p>
+            </div>
+
+            <div class="panel summary-list">
+              <div class="section-title"><span>Habit detail</span><span>recorded</span></div>
+              <div class="summary-row"><span>Read</span><strong>4 / 5</strong></div>
+              <div class="summary-row"><span>Walk</span><strong>5 / 5</strong></div>
+              <div class="summary-row"><span>Workout</span><strong>2 / 5</strong></div>
+            </div>
+          </div>
+          <nav class="bottom-nav"><span class="active">Habit</span><span>Water</span><span class="home-logo" aria-label="Home"></span><span>Sleep</span><span>Stats</span></nav>
+        </div>
+      </article>
+
+      <article class="page-sample">
+        <div class="sample-label"><h2>Water</h2><span>weekly intake</span></div>
+        <div class="phone">
+          <div class="screen">
+            <div class="status"><span>9:41</span><span>LTE 82%</span></div>
+            <div class="topbar"><h3>Water</h3><button class="icon-btn" aria-label="Add water entry">+</button></div>
+
+            <div class="stat-grid">
+              <div class="stat-card"><small>Avg cups</small><strong>6.4</strong></div>
+              <div class="stat-card"><small>Target</small><strong>8</strong></div>
+              <div class="stat-card"><small>Logged</small><strong>5/7</strong></div>
+            </div>
+
+            <div class="panel area-panel">
+              <div class="section-title"><span>Water consumption</span><span>this week</span></div>
+              <svg class="area-chart" viewBox="0 0 320 190" role="img" aria-label="Water consumption this week">
+                <defs>
+                  <linearGradient id="waterGradient" x1="0" y1="170" x2="0" y2="22" gradientUnits="userSpaceOnUse">
+                    <stop offset="0" stop-color="#ffffff"/>
+                    <stop offset="1" stop-color="#111111"/>
+                  </linearGradient>
+                </defs>
+                <line class="grid-line" x1="18" y1="150" x2="304" y2="150"/>
+                <line class="grid-line" x1="18" y1="108" x2="304" y2="108"/>
+                <line class="grid-line" x1="18" y1="66" x2="304" y2="66"/>
+                <path class="area" style="fill:url(#waterGradient)" d="M22.86 118 C38 122, 54 132, 68.57 124 C88 113, 96 88, 114.29 82 C144 72, 174 96, 205.71 90 C242 84, 268 56, 297.14 44 L297.14 170 L22.86 170 Z"/>
+                <path class="line" d="M22.86 118 C38 122, 54 132, 68.57 124 C88 113, 96 88, 114.29 82 C144 72, 174 96, 205.71 90 C242 84, 268 56, 297.14 44"/>
+                <circle class="point" cx="22.86" cy="118" r="4"/><circle class="point" cx="68.57" cy="124" r="4"/><circle class="point" cx="114.29" cy="82" r="4"/><circle class="point" cx="205.71" cy="90" r="4"/><circle class="point" cx="297.14" cy="44" r="4"/>
+              </svg>
+              <div class="axis-labels"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div>
+              <p class="chart-note">Only recorded days are plotted. The vertical fill darkens as cups approach or exceed the target.</p>
+            </div>
+
+            <div class="panel summary-list">
+              <div class="section-title"><span>Water detail</span><span>cups</span></div>
+              <div class="summary-row"><span>Best day</span><strong>9 cups</strong></div>
+              <div class="summary-row"><span>Lowest day</span><strong>4 cups</strong></div>
+              <div class="summary-row"><span>Target met</span><strong>2 days</strong></div>
+            </div>
+          </div>
+          <nav class="bottom-nav"><span>Habit</span><span class="active">Water</span><span class="home-logo" aria-label="Home"></span><span>Sleep</span><span>Stats</span></nav>
+        </div>
+      </article>
+
+      <article class="page-sample">
+        <div class="sample-label"><h2>Sleep</h2><span>weekly rest</span></div>
+        <div class="phone">
+          <div class="screen">
+            <div class="status"><span>9:41</span><span>LTE 82%</span></div>
+            <div class="topbar"><h3>Sleep</h3><button class="icon-btn" aria-label="Add sleep entry">+</button></div>
+
+            <div class="stat-grid">
+              <div class="stat-card"><small>Avg sleep</small><strong>7h 05</strong></div>
+              <div class="stat-card"><small>Best</small><strong>8h 10</strong></div>
+              <div class="stat-card"><small>Logged</small><strong>5/7</strong></div>
+            </div>
+
+            <div class="panel area-panel">
+              <div class="section-title"><span>Sleep duration</span><span>this week</span></div>
+              <svg class="area-chart" viewBox="0 0 320 190" role="img" aria-label="Sleep duration this week">
+                <defs>
+                  <linearGradient id="sleepGradient" x1="0" y1="170" x2="0" y2="22" gradientUnits="userSpaceOnUse">
+                    <stop offset="0" stop-color="#ffffff"/>
+                    <stop offset="1" stop-color="#111111"/>
+                  </linearGradient>
+                </defs>
+                <line class="grid-line" x1="18" y1="150" x2="304" y2="150"/>
+                <line class="grid-line" x1="18" y1="108" x2="304" y2="108"/>
+                <line class="grid-line" x1="18" y1="66" x2="304" y2="66"/>
+                <path class="area" style="fill:url(#sleepGradient)" d="M22.86 76 C51 64, 84 61, 114.29 70 C137 77, 142 137, 160 128 C177 119, 186 79, 205.71 74 C235 67, 268 91, 297.14 84 L297.14 170 L22.86 170 Z"/>
+                <path class="line" d="M22.86 76 C51 64, 84 61, 114.29 70 C137 77, 142 137, 160 128 C177 119, 186 79, 205.71 74 C235 67, 268 91, 297.14 84"/>
+                <circle class="point" cx="22.86" cy="76" r="4"/><circle class="point" cx="114.29" cy="70" r="4"/><circle class="point" cx="160" cy="128" r="4"/><circle class="point" cx="205.71" cy="74" r="4"/><circle class="point" cx="297.14" cy="84" r="4"/>
+              </svg>
+              <div class="axis-labels"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div>
+              <p class="chart-note">Only recorded nights are plotted. The fill darkens vertically as duration moves toward the sleep target.</p>
+            </div>
+
+            <div class="panel summary-list">
+              <div class="section-title"><span>Sleep detail</span><span>recorded</span></div>
+              <div class="summary-row"><span>7h+ nights</span><strong>4</strong></div>
+              <div class="summary-row"><span>Short night</span><strong>5h 45</strong></div>
+              <div class="summary-row"><span>Quality avg</span><strong>3.8 / 5</strong></div>
+            </div>
+          </div>
+          <nav class="bottom-nav"><span>Habit</span><span>Water</span><span class="home-logo" aria-label="Home"></span><span class="active">Sleep</span><span>Stats</span></nav>
+        </div>
+      </article>
+    </section>
+
+    <section class="module-library" aria-label="Modular infographic examples">
+      <div class="library-intro">
+        <div>
+          <h2>Infographic Modules</h2>
+        </div>
+        <p>Standalone panel ideas for a modular tracker: each one can become a home card, page section, or replaceable widget inside Habit, Water, Sleep, Stats, or renamed pages.</p>
+      </div>
+
+      <div class="module-grid">
+        <article class="module-card">
+          <div class="module-head"><h3>Daily Value Histogram</h3><span>existing</span></div>
+          <div class="module-chart">
+            <div class="module-bars">
+              <span class="module-bar" data-label="M" style="height:52%; --tone:#bdbdbd;">52</span>
+              <span class="module-bar" data-label="T" style="height:66%; --tone:#858585;">66</span>
+              <span class="module-bar" data-label="W" style="height:43%; --tone:#d6d6d6;">43</span>
+              <span class="module-bar" data-label="T" style="height:74%; --tone:#626262;">74</span>
+              <span class="module-bar" data-label="F" style="height:91%; --tone:#111111;">91</span>
+              <span class="module-bar" data-label="S" style="height:58%; --tone:#a8a8a8;">58</span>
+              <span class="module-bar" data-label="S" style="height:82%; --tone:#3f3f3f;">82</span>
+            </div>
+          </div>
+          <p class="module-caption">Best for daily composite score, habit score, water target score, or a week-at-a-glance summary.</p>
+        </article>
+
+        <article class="module-card">
+          <div class="module-head"><h3>Recorded Days Area Line</h3><span>existing</span></div>
+          <div class="module-chart">
+            <svg class="mini-area-chart" viewBox="0 0 320 170" role="img" aria-label="Weekly line graph with filled area">
+              <defs>
+                <linearGradient id="moduleAreaGradient" x1="0" y1="154" x2="0" y2="18" gradientUnits="userSpaceOnUse">
+                  <stop offset="0" stop-color="#ffffff"/>
+                  <stop offset="1" stop-color="#111111"/>
+                </linearGradient>
+              </defs>
+              <line class="grid-line" x1="18" y1="132" x2="304" y2="132"/>
+              <line class="grid-line" x1="18" y1="94" x2="304" y2="94"/>
+              <line class="grid-line" x1="18" y1="56" x2="304" y2="56"/>
+              <path class="area" d="M22.86 110 C58 110, 80 72, 114.29 70 C140 68, 142 124, 160 122 C184 119, 182 69, 205.71 64 C235 58, 268 82, 297.14 76 L297.14 154 L22.86 154 Z"/>
+              <path class="line" d="M22.86 110 C58 110, 80 72, 114.29 70 C140 68, 142 124, 160 122 C184 119, 182 69, 205.71 64 C235 58, 268 82, 297.14 76"/>
+              <circle class="point" cx="22.86" cy="110" r="4"/>
+              <circle class="point" cx="114.29" cy="70" r="4"/>
+              <circle class="point" cx="160" cy="122" r="4"/>
+              <circle class="point" cx="205.71" cy="64" r="4"/>
+              <circle class="point" cx="297.14" cy="76" r="4"/>
+            </svg>
+            <div class="axis-labels"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div>
+          </div>
+          <p class="module-caption">Useful for metrics where only recorded days should appear: sleep duration, water intake, weight, energy, or mood.</p>
+        </article>
+
+        <article class="module-card">
+          <div class="module-head"><h3>Three-Month Streak Grid</h3><span>existing</span></div>
+          <div class="module-chart">
+            <div class="mini-streak-wrap">
+              <div class="month-labels"><span>Mar</span><span>Apr</span><span>May</span></div>
+              <div class="mini-streak-grid" id="moduleStreakGrid" aria-label="Three month streak grid"></div>
+            </div>
+          </div>
+          <p class="module-caption">A compact physical-feeling consistency record for overall productivity, individual habits, or any binary completion score.</p>
+        </article>
+
+        <article class="module-card">
+          <div class="module-head"><h3>Sleep Distribution Histogram</h3><span>new</span></div>
+          <div class="module-chart">
+            <div class="module-histogram">
+              <span class="module-bar" data-label="5h" style="height:26%; --tone:#e1e1e1;">2</span>
+              <span class="module-bar" data-label="6h" style="height:58%; --tone:#a8a8a8;">7</span>
+              <span class="module-bar" data-label="6.5" style="height:71%; --tone:#737373;">9</span>
+              <span class="module-bar" data-label="7h" style="height:92%; --tone:#111111;">14</span>
+              <span class="module-bar" data-label="7.5" style="height:84%; --tone:#333333;">12</span>
+              <span class="module-bar" data-label="8h" style="height:62%; --tone:#969696;">8</span>
+              <span class="module-bar" data-label="8.5" style="height:38%; --tone:#cfcfcf;">4</span>
+              <span class="module-bar" data-label="9h" style="height:20%; --tone:#ededed;">1</span>
+            </div>
+          </div>
+          <p class="module-caption">Shows where your entries cluster instead of only showing averages; helpful for sleep, water, steps, calories, or mood ratings.</p>
+        </article>
+
+        <article class="module-card">
+          <div class="module-head"><h3>Metric Balance Stack</h3><span>new</span></div>
+          <div class="module-chart">
+            <div class="stacked-score">
+              <div class="stacked-row"><span>Habits</span><span class="stacked-track"><i style="--value:78%; --tone:#333333;"></i></span><b>78</b></div>
+              <div class="stacked-row"><span>Water</span><span class="stacked-track"><i style="--value:54%; --tone:#9a9a9a;"></i></span><b>54</b></div>
+              <div class="stacked-row"><span>Sleep</span><span class="stacked-track"><i style="--value:83%; --tone:#222222;"></i></span><b>83</b></div>
+              <div class="stacked-row"><span>Move</span><span class="stacked-track"><i style="--value:61%; --tone:#777777;"></i></span><b>61</b></div>
+              <div class="stacked-row"><span>Energy</span><span class="stacked-track"><i style="--value:69%; --tone:#5f5f5f;"></i></span><b>69</b></div>
+            </div>
+          </div>
+          <p class="module-caption">Good as a home panel because it compares the major categories without requiring separate charts for each one.</p>
+        </article>
+
+        <article class="module-card">
+          <div class="module-head"><h3>Score Ring Breakdown</h3><span>new</span></div>
+          <div class="module-chart">
+            <div class="ring-layout">
+              <div class="score-ring" style="--value:74%;"><strong>74</strong></div>
+              <div class="ring-list">
+                <span><small>Habits</small><b>31</b></span>
+                <span><small>Sleep</small><b>24</b></span>
+                <span><small>Water</small><b>12</b></span>
+                <span><small>Move</small><b>7</b></span>
+              </div>
+            </div>
+          </div>
+          <p class="module-caption">A quick score card for a single day, with the surrounding ring showing total value and the list showing what contributed.</p>
+        </article>
+
+        <article class="module-card">
+          <div class="module-head"><h3>Correlation Scatter</h3><span>new</span></div>
+          <div class="module-chart">
+            <svg class="mini-scatter" viewBox="0 0 320 170" role="img" aria-label="Sleep and habit correlation scatter plot">
+              <line class="grid-line" x1="30" y1="132" x2="292" y2="132"/>
+              <line class="grid-line" x1="30" y1="94" x2="292" y2="94"/>
+              <line class="grid-line" x1="30" y1="56" x2="292" y2="56"/>
+              <path class="line" d="M44 128 C92 112, 144 96, 188 76 C220 62, 253 51, 284 42"/>
+              <circle class="point" cx="54" cy="124" r="4"/>
+              <circle class="point" cx="86" cy="116" r="4"/>
+              <circle class="point" cx="126" cy="104" r="4"/>
+              <circle class="point" cx="150" cy="92" r="4"/>
+              <circle class="point" cx="176" cy="84" r="4"/>
+              <circle class="point" cx="212" cy="64" r="4"/>
+              <circle class="point" cx="246" cy="58" r="4"/>
+              <circle class="point" cx="278" cy="44" r="4"/>
+            </svg>
+          </div>
+          <p class="module-caption">Works for relationships like sleep vs habit completion, water vs energy, exercise vs next-day sleep, or screen time vs mood.</p>
+        </article>
+
+        <article class="module-card">
+          <div class="module-head"><h3>Correlation Matrix</h3><span>new</span></div>
+          <div class="module-chart">
+            <div class="mini-matrix-wrap">
+              <div class="matrix-grid" id="moduleMatrix" aria-label="Correlation matrix"></div>
+            </div>
+          </div>
+          <p class="module-caption">A dense statistical panel for comparing relationships across categories when the app has enough logged entries.</p>
+        </article>
+
+        <article class="module-card">
+          <div class="module-head"><h3>Delta Timeline</h3><span>new</span></div>
+          <div class="module-chart">
+            <div class="mini-timeline">
+              <div class="timeline-row"><span>Mon</span><span class="timeline-track" style="--position:22%; --tone:#d5d5d5;"></span><b>-4</b></div>
+              <div class="timeline-row"><span>Tue</span><span class="timeline-track" style="--position:68%; --tone:#999999;"></span><b>+3</b></div>
+              <div class="timeline-row"><span>Wed</span><span class="timeline-track" style="--position:5%; --tone:#e3e3e3;"></span><b>-8</b></div>
+              <div class="timeline-row"><span>Thu</span><span class="timeline-track" style="--position:88%; --tone:#5f5f5f;"></span><b>+7</b></div>
+              <div class="timeline-row"><span>Fri</span><span class="timeline-track" style="--position:100%; --tone:#111111;"></span><b>+12</b></div>
+            </div>
+          </div>
+          <p class="module-caption">Shows increase or decrease from a previous day, baseline, or rolling average without needing a full line chart.</p>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const toneForScore = (score) => {
+      const value = Math.round(235 - score * 2.2);
+      const clamped = Math.max(17, Math.min(232, value));
+      return `rgb(${clamped}, ${clamped}, ${clamped})`;
+    };
+
+    const scoreForDay = (day, base = 62) => {
+      const wave = Math.sin(day / 13) * 18 + Math.cos(day / 31) * 12;
+      const rhythm = ((day * 17) % 41) - 20;
+      return Math.max(8, Math.min(96, Math.round(base + wave + rhythm)));
+    };
+
+    const grid = document.getElementById("yearGrid");
+    for (let day = 0; day < 98 && grid; day += 1) {
+      const cell = document.createElement("span");
+      cell.className = "year-cell";
+
+      if (day < 92) {
+        const score = scoreForDay(day);
+        cell.style.setProperty("--cell-tone", toneForScore(score));
+        cell.title = `Day ${day + 1} of last 3 months: ${score}`;
+      } else {
+        cell.style.opacity = ".18";
+      }
+
+      grid.appendChild(cell);
+    }
+
+    const moduleStreakGrid = document.getElementById("moduleStreakGrid");
+    for (let day = 0; day < 91 && moduleStreakGrid; day += 1) {
+      const cell = document.createElement("span");
+      const score = scoreForDay(day, 66);
+      cell.style.setProperty("--tone", toneForScore(score));
+      cell.title = `Module grid day ${day + 1}: ${score}`;
+      moduleStreakGrid.appendChild(cell);
+    }
+
+    const matrix = document.getElementById("moduleMatrix");
+    const matrixValues = [
+      "1.0", ".28", ".42", ".18",
+      ".28", "1.0", ".21", ".33",
+      ".42", ".21", "1.0", ".36",
+      ".18", ".33", ".36", "1.0"
+    ];
+
+    matrixValues.forEach((value) => {
+      if (!matrix) return;
+      const cell = document.createElement("span");
+      const score = Math.round(Math.abs(Number(value)) * 100);
+      cell.style.setProperty("--tone", toneForScore(score));
+      cell.textContent = value;
+      matrix.appendChild(cell);
+    });
+  </script>
+</body>
+</html>
