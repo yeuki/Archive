@@ -2989,10 +2989,29 @@ function routineScore(routine, exercises = []) {
 }
 
 function previousExerciseSets(workouts = [], exerciseId) {
-  const recent = [...workouts]
-    .sort((a, b) => b.date.localeCompare(a.date))
-    .find((workout) => workout.exercises?.some((exercise) => exercise.exerciseId === exerciseId));
+  const recent = workouts
+    .map((workout, index) => ({ workout, index }))
+    .sort((a, b) => (
+      b.workout.date.localeCompare(a.workout.date)
+      || b.index - a.index
+    ))
+    .find(({ workout }) => workout.exercises?.some((exercise) => exercise.exerciseId === exerciseId))
+    ?.workout;
   return recent?.exercises?.find((exercise) => exercise.exerciseId === exerciseId)?.sets ?? null;
+}
+
+function routinePlanFromPreviousWorkout(workouts = [], exerciseId) {
+  const previousSets = previousExerciseSets(workouts, exerciseId)
+    ?.filter((set) => set.done !== false);
+  if (!previousSets?.length) return { sets: 3, reps: "8", weight: 0, rest: 90 };
+
+  const latestSet = previousSets.at(-1);
+  return {
+    sets: previousSets.length,
+    reps: String(latestSet.reps ?? "8").trim() || "8",
+    weight: Number.isFinite(Number(latestSet.weight)) ? Number(latestSet.weight) : 0,
+    rest: 90,
+  };
 }
 
 function workoutDayIndex(date = new Date()) {
@@ -4146,7 +4165,7 @@ function RoutinePlanInput({ label, type = "text", min, step, value, onCommit }) 
   );
 }
 
-function RoutineBuilder({ routine, routines, exercises, onSelectRoutine, onCreateRoutine, onUpdateRoutine }) {
+function RoutineBuilder({ routine, routines, exercises, workouts, onSelectRoutine, onCreateRoutine, onUpdateRoutine }) {
   const [newRoutineName, setNewRoutineName] = useState("");
   const [exerciseToAdd, setExerciseToAdd] = useState(exercises[0]?.id ?? "");
   const [routinePickerOpen, setRoutinePickerOpen] = useState(false);
@@ -4179,7 +4198,7 @@ function RoutineBuilder({ routine, routines, exercises, onSelectRoutine, onCreat
       exerciseIds: [...routine.exerciseIds, exerciseId],
       plan: {
         ...routine.plan,
-        [exerciseId]: { sets: 3, reps: "8", weight: 0, rest: 90 },
+        [exerciseId]: routinePlanFromPreviousWorkout(workouts, exerciseId),
       },
     });
     const next = availableExercises.find((exercise) => exercise.id !== exerciseId)?.id ?? "";
@@ -4959,6 +4978,7 @@ function WorkoutSettingsView({ workout, routine, workoutActions, onSetSchedule, 
           routine={routine}
           routines={workout.routines}
           exercises={workout.exercises}
+          workouts={workout.workouts}
           onSelectRoutine={workoutActions.selectRoutine}
           onCreateRoutine={workoutActions.createRoutine}
           onUpdateRoutine={workoutActions.updateRoutine}
