@@ -3005,6 +3005,17 @@ function scheduledRoutineForDay(workout, dayIndex = workoutDayIndex()) {
   return data.routines.find((routine) => routine.id === routineId) ?? null;
 }
 
+function scheduledRoutineForDate(workout, date) {
+  const routineId = workout?.schedule?.[dayIndexForDate(date)] ?? "";
+  return workout?.routines?.find((routine) => routine.id === routineId) ?? null;
+}
+
+function workoutMatchesRoutine(savedWorkout, routine) {
+  if (!savedWorkout || !routine) return false;
+  return savedWorkout.routineId === routine.id
+    || (!savedWorkout.routineId && savedWorkout.routineName === routine.name);
+}
+
 function nextScheduledWorkout(workout, fromDate = new Date()) {
   const data = normalizeWorkoutState(workout);
   for (let offset = 0; offset < 7; offset += 1) {
@@ -4279,7 +4290,17 @@ function RoutineBuilder({ routine, routines, exercises, onSelectRoutine, onCreat
   );
 }
 
-function WorkoutLogger({ draft, exercises, workouts, onChange, onSave, onCancel }) {
+function WorkoutLogger({
+  draft,
+  exercises,
+  workouts,
+  onChange,
+  onSave,
+  onCancel,
+  title = "Active workout",
+  saveLabel = "Finish workout",
+  lockDate = false,
+}) {
   const exerciseMap = workoutExerciseMap(exercises);
 
   const updateExerciseSet = (exerciseIndex, setIndex, field, value) => {
@@ -4312,17 +4333,28 @@ function WorkoutLogger({ draft, exercises, workouts, onChange, onSave, onCancel 
 
   return (
     <div className="panel workout-logger">
-      <SectionTitle title="Active workout" meta={draft.routineName} />
+      <SectionTitle title={title} meta={draft.routineName} />
       <div className="workout-log-meta">
         <label className="date-pill">
           <span>Date</span>
-          <input type="date" value={draft.date} onChange={(event) => onChange({ ...draft, date: event.target.value })} />
+          <input
+            type="date"
+            value={draft.date}
+            disabled={lockDate}
+            onChange={(event) => onChange({ ...draft, date: event.target.value })}
+          />
         </label>
         <label className="quick-field">
           <span>Minutes</span>
           <input type="number" min="1" max="600" value={draft.duration} onChange={(event) => onChange({ ...draft, duration: Number(event.target.value) })} />
         </label>
       </div>
+      {!draft.exercises.length && (
+        <div className="workout-log-empty">
+          <strong>No set details needed</strong>
+          <span>Add the duration and any useful notes, then save this completed workout.</span>
+        </div>
+      )}
       {draft.exercises.map((loggedExercise, exerciseIndex) => {
         const exercise = exerciseMap.get(loggedExercise.exerciseId);
         const previousSets = previousExerciseSets(workouts, loggedExercise.exerciseId);
@@ -4362,7 +4394,7 @@ function WorkoutLogger({ draft, exercises, workouts, onChange, onSave, onCancel 
       </label>
       <div className="sheet-footer-actions">
         <button className="delete-report" onClick={onCancel}>Cancel</button>
-        <button className="save-report" onClick={() => onSave(draft)}>Finish workout</button>
+        <button className="save-report" onClick={() => onSave(draft)}>{saveLabel}</button>
       </div>
     </div>
   );
@@ -4463,15 +4495,19 @@ function WorkoutHistoryPanel({ workouts }) {
   );
 }
 
-function WorkoutHistoryPage({ workout }) {
+function WorkoutHistoryPage({ workout, onWorkoutChange }) {
   const data = normalizeWorkoutState(workout);
   const sortedWorkouts = [...data.workouts].sort((a, b) => b.date.localeCompare(a.date));
   const latestWorkout = sortedWorkouts[0] ?? null;
-  const [viewMonth, setViewMonth] = useState(() => {
-    const source = latestWorkout ? parseDateKey(latestWorkout.date) : new Date();
-    return new Date(source.getFullYear(), source.getMonth(), 1);
-  });
-  const [selectedDate, setSelectedDate] = useState(latestWorkout?.date ?? null);
+  const now = new Date();
+  const today = dateKey(now);
+  const latestWorkoutDate = latestWorkout ? parseDateKey(latestWorkout.date) : null;
+  const latestWorkoutIsCurrentMonth = latestWorkoutDate
+    && latestWorkoutDate.getFullYear() === now.getFullYear()
+    && latestWorkoutDate.getMonth() === now.getMonth();
+  const [viewMonth, setViewMonth] = useState(() => new Date(now.getFullYear(), now.getMonth(), 1));
+  const [selectedDate, setSelectedDate] = useState(latestWorkoutIsCurrentMonth ? latestWorkout.date : null);
+  const [backfillDraft, setBackfillDraft] = useState(null);
   const workoutsByDate = useMemo(() => {
     const grouped = new Map();
     data.workouts.forEach((savedWorkout) => {
@@ -4485,17 +4521,61 @@ function WorkoutHistoryPage({ workout }) {
     const dayNumber = index - firstDayOffset + 1;
     if (dayNumber < 1 || dayNumber > daysInMonth) return null;
     const date = dateKey(new Date(viewMonth.getFullYear(), viewMonth.getMonth(), dayNumber));
+    const workouts = workoutsByDate.get(date) ?? [];
+    const scheduledRoutine = date < today ? scheduledRoutineForDate(data, date) : null;
+    const scheduledCompleted = scheduledRoutine
+      ? workouts.some((savedWorkout) => workoutMatchesRoutine(savedWorkout, scheduledRoutine))
+      : false;
     return {
       date,
       dayNumber,
-      workouts: workoutsByDate.get(date) ?? [],
+      workouts,
+      scheduledRoutine,
+      missedScheduled: Boolean(scheduledRoutine && !scheduledCompleted),
     };
   });
   const selectedWorkouts = selectedDate ? workoutsByDate.get(selectedDate) ?? [] : [];
+  const selectedScheduledRoutine = selectedDate && selectedDate < today
+    ? scheduledRoutineForDate(data, selectedDate)
+    : null;
+  const selectedScheduledCompleted = selectedScheduledRoutine
+    ? selectedWorkouts.some((savedWorkout) => workoutMatchesRoutine(savedWorkout, selectedScheduledRoutine))
+    : false;
+  const selectedMissedRoutine = selectedScheduledRoutine && !selectedScheduledCompleted
+    ? selectedScheduledRoutine
+    : null;
 
   const shiftMonth = (offset) => {
     setViewMonth((current) => new Date(current.getFullYear(), current.getMonth() + offset, 1));
     setSelectedDate(null);
+    setBackfillDraft(null);
+  };
+
+  const selectCalendarDate = (cell) => {
+    if (!cell.workouts.length && !cell.missedScheduled) return;
+    setSelectedDate(cell.date);
+    setBackfillDraft(null);
+  };
+
+  const startBackfill = () => {
+    if (!selectedDate || !selectedMissedRoutine) return;
+    setBackfillDraft({
+      ...buildWorkoutDraft(selectedMissedRoutine, data.exercises, data.workouts),
+      id: `workout-backfill-${selectedDate}-${Date.now()}`,
+      date: selectedDate,
+    });
+  };
+
+  const saveBackfill = (draft) => {
+    onWorkoutChange((current) => ({
+      ...current,
+      workouts: [
+        ...current.workouts,
+        normalizeWorkoutLog(draft, current.exercises, current.routines, current.workouts.length),
+      ].sort((a, b) => a.date.localeCompare(b.date)),
+    }));
+    setSelectedDate(draft.date);
+    setBackfillDraft(null);
   };
 
   return (
@@ -4517,13 +4597,17 @@ function WorkoutHistoryPage({ workout }) {
           {monthCells.map((cell, index) => {
             if (!cell) return <span className="workout-calendar-spacer" key={`empty-${index}`} />;
             const completed = cell.workouts.length > 0;
+            const statusParts = [];
+            if (completed) statusParts.push(`${cell.workouts.length} completed workout${cell.workouts.length === 1 ? "" : "s"}`);
+            if (cell.missedScheduled) statusParts.push(`scheduled ${cell.scheduledRoutine.name}, not recorded`);
+            if (!statusParts.length) statusParts.push("no completed workout");
             return (
               <button
                 type="button"
-                className={`workout-calendar-day ${completed ? "completed" : ""} ${selectedDate === cell.date ? "selected" : ""}`}
-                aria-label={`${formatShortDate(cell.date)}${completed ? `, ${cell.workouts.length} completed workout${cell.workouts.length === 1 ? "" : "s"}` : ", no completed workout"}`}
+                className={`workout-calendar-day ${completed ? "completed" : ""} ${cell.missedScheduled ? "scheduled-missed" : ""} ${selectedDate === cell.date ? "selected" : ""}`}
+                aria-label={`${formatShortDate(cell.date)}, ${statusParts.join(", ")}`}
                 aria-pressed={selectedDate === cell.date}
-                onClick={() => completed && setSelectedDate(cell.date)}
+                onClick={() => selectCalendarDate(cell)}
                 key={cell.date}
               >
                 {cell.dayNumber}
@@ -4532,61 +4616,101 @@ function WorkoutHistoryPage({ workout }) {
           })}
         </div>
         <div className="workout-calendar-key">
-          <i />
-          <span>Completed workout</span>
+          <span><i className="completed" />Completed</span>
+          <span><i className="scheduled" />Scheduled, not logged</span>
         </div>
       </div>
 
-      <div className="panel workout-day-history">
-        <SectionTitle
-          title={selectedDate ? formatShortDate(selectedDate) : "Workout details"}
-          meta={selectedWorkouts.length ? `${selectedWorkouts.length} completed` : "select a black date"}
+      {backfillDraft ? (
+        <WorkoutLogger
+          draft={backfillDraft}
+          exercises={data.exercises}
+          workouts={data.workouts}
+          onChange={setBackfillDraft}
+          onSave={saveBackfill}
+          onCancel={() => setBackfillDraft(null)}
+          title="Record past workout"
+          saveLabel="Save completed workout"
+          lockDate
         />
-        {selectedWorkouts.length ? (
-          <div className="workout-day-sessions">
-            {selectedWorkouts.map((savedWorkout, workoutIndex) => (
-              <article className="workout-history-session" key={savedWorkout.id}>
-                <div className="workout-history-session-head">
-                  <div>
-                    <span>Workout {selectedWorkouts.length > 1 ? workoutIndex + 1 : ""}</span>
-                    <strong>{savedWorkout.routineName}</strong>
-                    <small>{savedWorkout.duration} min / {workoutSetCount(savedWorkout)} sets</small>
-                  </div>
-                  <b>{Math.round(workoutVolume(savedWorkout))}</b>
+      ) : (
+        <div className="panel workout-day-history">
+          <SectionTitle
+            title={selectedDate ? formatShortDate(selectedDate) : "Workout details"}
+            meta={selectedWorkouts.length
+              ? `${selectedWorkouts.length} completed`
+              : selectedMissedRoutine
+                ? "scheduled workout"
+                : "select a marked date"}
+          />
+          {selectedMissedRoutine && (
+            <div className="scheduled-workout-backfill">
+              <div className="scheduled-workout-backfill-head">
+                <div>
+                  <span>Planned from weekly schedule</span>
+                  <strong>{selectedMissedRoutine.name}</strong>
+                  <small>
+                    {selectedMissedRoutine.exerciseIds.length
+                      ? `${routineScore(selectedMissedRoutine, data.exercises).totalSets} planned sets`
+                      : "No exercise sets in this routine"}
+                  </small>
                 </div>
-
-                <div className="workout-history-exercises">
-                  {savedWorkout.exercises.map((loggedExercise, exerciseIndex) => (
-                    <div className="workout-history-exercise" key={`${loggedExercise.exerciseId}-${exerciseIndex}`}>
-                      <strong>{loggedExercise.name}</strong>
-                      <div className="workout-history-set-head">
-                        <span>Set</span>
-                        <span>Weight</span>
-                        <span>Reps</span>
-                        <span>RPE</span>
-                      </div>
-                      {loggedExercise.sets.map((set, setIndex) => (
-                        <div className="workout-history-set" key={`${loggedExercise.exerciseId}-set-${setIndex}`}>
-                          <b>{setIndex + 1}</b>
-                          <span>{set.weight}</span>
-                          <span>{set.reps}</span>
-                          <span>{set.rpe || "--"}</span>
-                        </div>
-                      ))}
-                      {loggedExercise.notes && <p>{loggedExercise.notes}</p>}
+              </div>
+              <p>Did you complete this workout?</p>
+              <div className="sheet-footer-actions">
+                <button className="delete-report" onClick={() => setSelectedDate(null)}>No, leave missed</button>
+                <button className="save-report" onClick={startBackfill}>Yes, record it</button>
+              </div>
+            </div>
+          )}
+          {selectedWorkouts.length ? (
+            <div className="workout-day-sessions">
+              {selectedWorkouts.map((savedWorkout, workoutIndex) => (
+                <article className="workout-history-session" key={savedWorkout.id}>
+                  <div className="workout-history-session-head">
+                    <div>
+                      <span>Workout {selectedWorkouts.length > 1 ? workoutIndex + 1 : ""}</span>
+                      <strong>{savedWorkout.routineName}</strong>
+                      <small>{savedWorkout.duration} min / {workoutSetCount(savedWorkout)} sets</small>
                     </div>
-                  ))}
-                </div>
-                {savedWorkout.notes && <p className="workout-history-notes">{savedWorkout.notes}</p>}
-              </article>
-            ))}
-          </div>
-        ) : (
-          <div className="history-empty">
-            {data.workouts.length ? "Choose a black calendar square to review that workout." : "Finished workouts will appear here."}
-          </div>
-        )}
-      </div>
+                    <b>{Math.round(workoutVolume(savedWorkout))}</b>
+                  </div>
+
+                  <div className="workout-history-exercises">
+                    {savedWorkout.exercises.map((loggedExercise, exerciseIndex) => (
+                      <div className="workout-history-exercise" key={`${loggedExercise.exerciseId}-${exerciseIndex}`}>
+                        <strong>{loggedExercise.name}</strong>
+                        <div className="workout-history-set-head">
+                          <span>Set</span>
+                          <span>Weight</span>
+                          <span>Reps</span>
+                          <span>RPE</span>
+                        </div>
+                        {loggedExercise.sets.map((set, setIndex) => (
+                          <div className="workout-history-set" key={`${loggedExercise.exerciseId}-set-${setIndex}`}>
+                            <b>{setIndex + 1}</b>
+                            <span>{set.weight}</span>
+                            <span>{set.reps}</span>
+                            <span>{set.rpe || "--"}</span>
+                          </div>
+                        ))}
+                        {loggedExercise.notes && <p>{loggedExercise.notes}</p>}
+                      </div>
+                    ))}
+                  </div>
+                  {savedWorkout.notes && <p className="workout-history-notes">{savedWorkout.notes}</p>}
+                </article>
+              ))}
+            </div>
+          ) : !selectedMissedRoutine && (
+            <div className="history-empty">
+              {data.workouts.length
+                ? "Choose a black or outlined calendar square to review it."
+                : "Finished workouts and missed scheduled days will appear here."}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -6825,7 +6949,7 @@ export default function App() {
 
   const pages = {
     workout: <WorkoutPage workout={state.workout} onWorkoutChange={updateWorkoutData} onAdd={openModulePicker} onBackup={openBackupChoice} modules={pageModules.workout} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
-    workoutHistory: <WorkoutHistoryPage workout={state.workout} />,
+    workoutHistory: <WorkoutHistoryPage workout={state.workout} onWorkoutChange={updateWorkoutData} />,
     home: <HomePage weekDays={weekDays} habitNames={trackedHabitNames} goals={goals} onAdd={openAddChoice} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.home} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
     habit: <HabitPage weekDays={weekDays} habitNames={state.habitNames} trackedHabits={trackedHabitNames} goals={goals} onAdd={openAddChoice} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.habit} moduleContext={moduleContext} onToggleHabitTracking={toggleHabitTracking} onRenameHabit={setEditingHabit} onReorderHabit={reorderHabit} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
     water: <WaterPage weekDays={weekDays} goals={goals} onAdd={openAddChoice} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.water} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,

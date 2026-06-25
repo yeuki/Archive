@@ -2444,11 +2444,37 @@ button:disabled {
   color: #ffffff;
 }
 
+.workout-calendar-day.scheduled-missed {
+  position: relative;
+  cursor: pointer;
+}
+
+.workout-calendar-day.scheduled-missed:not(.completed) {
+  border: 1px dashed #555555;
+  background: #ffffff;
+  color: var(--ink);
+}
+
+.workout-calendar-day.scheduled-missed::after {
+  content: "";
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #555555;
+}
+
+.workout-calendar-day.completed.scheduled-missed::after {
+  background: #ffffff;
+}
+
 .workout-calendar-day.selected {
   box-shadow: 0 0 0 2px #a3a3a3;
 }
 
-.workout-calendar-day:not(.completed) {
+.workout-calendar-day:not(.completed):not(.scheduled-missed) {
   cursor: default;
 }
 
@@ -2456,16 +2482,86 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 7px;
+  flex-wrap: wrap;
+  gap: 7px 12px;
   color: var(--muted);
   font-size: 0.68rem;
+}
+
+.workout-calendar-key span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .workout-calendar-key i {
   width: 11px;
   height: 11px;
   border-radius: 3px;
+}
+
+.workout-calendar-key i.completed {
   background: #111111;
+}
+
+.workout-calendar-key i.scheduled {
+  border: 1px dashed #555555;
+  background: #ffffff;
+}
+
+.scheduled-workout-backfill {
+  display: grid;
+  gap: var(--stack-gap);
+  border: 1px dashed rgba(0, 0, 0, 0.28);
+  border-radius: 18px;
+  background: var(--paper);
+  padding: 12px;
+}
+
+.scheduled-workout-backfill-head > div {
+  display: grid;
+  gap: 3px;
+}
+
+.scheduled-workout-backfill span,
+.scheduled-workout-backfill small {
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.scheduled-workout-backfill strong {
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.scheduled-workout-backfill p {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.workout-log-empty {
+  display: grid;
+  gap: 4px;
+  border: 1px dashed var(--line);
+  border-radius: 18px;
+  background: var(--paper);
+  padding: 12px;
+}
+
+.workout-log-empty strong {
+  font-weight: 500;
+}
+
+.workout-log-empty span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.workout-logger .date-pill input:disabled {
+  color: var(--ink);
+  opacity: 1;
+  -webkit-text-fill-color: var(--ink);
 }
 
 .workout-day-sessions {
