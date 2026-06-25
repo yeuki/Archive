@@ -694,7 +694,8 @@ button {
 }
 
 .schedule-picker,
-.routine-picker {
+.routine-picker,
+.exercise-picker {
   min-width: 0;
   position: relative;
   border: 1px solid var(--line);
@@ -717,7 +718,8 @@ button {
 }
 
 .schedule-picker::after,
-.routine-picker::after {
+.routine-picker::after,
+.exercise-picker::after {
   content: "";
   position: absolute;
   right: 11px;
@@ -731,12 +733,14 @@ button {
 }
 
 .schedule-day.open .schedule-picker::after,
-.routine-picker-field.open .routine-picker::after {
+.routine-picker-field.open .routine-picker::after,
+.exercise-picker-field.open .exercise-picker::after {
   transform: translateY(-25%) rotate(225deg);
 }
 
 .schedule-options,
-.routine-picker-options {
+.routine-picker-options,
+.exercise-picker-options {
   grid-column: 1 / -1;
   display: grid;
   gap: 6px;
@@ -749,7 +753,8 @@ button {
 }
 
 .schedule-options button,
-.routine-picker-options button {
+.routine-picker-options button,
+.exercise-picker-options button {
   min-width: 0;
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -769,7 +774,8 @@ button {
 }
 
 .schedule-options button.active,
-.routine-picker-options button.active {
+.routine-picker-options button.active,
+.exercise-picker-options button.active {
   border-color: var(--ink);
   background: var(--ink);
   color: #fff;
@@ -803,6 +809,40 @@ button {
   color: var(--ink);
   padding: 10px 11px;
   outline: 0;
+}
+
+.exercise-add-row {
+  align-items: start;
+}
+
+.exercise-picker-field {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.exercise-picker {
+  width: 100%;
+  border-radius: 18px;
+  background: var(--paper);
+  padding-block: 10px;
+  font-size: 1rem;
+  text-align: left;
+}
+
+.exercise-picker:disabled {
+  color: var(--muted);
+}
+
+.exercise-picker-options {
+  max-height: min(280px, 42vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.exercise-picker-options button {
+  text-align: left;
 }
 
 .routine-picker-field {
@@ -3467,8 +3507,10 @@ button:disabled {
 
 .schedule-picker:active,
 .routine-picker:active,
+.exercise-picker:active,
 .schedule-options button:active,
-.routine-picker-options button:active {
+.routine-picker-options button:active,
+.exercise-picker-options button:active {
   transform: scale(0.985);
 }
 

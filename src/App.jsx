@@ -4150,9 +4150,13 @@ function RoutineBuilder({ routine, routines, exercises, onSelectRoutine, onCreat
   const [newRoutineName, setNewRoutineName] = useState("");
   const [exerciseToAdd, setExerciseToAdd] = useState(exercises[0]?.id ?? "");
   const [routinePickerOpen, setRoutinePickerOpen] = useState(false);
+  const [exercisePickerOpen, setExercisePickerOpen] = useState(false);
   if (!routine) return null;
   const exerciseMap = workoutExerciseMap(exercises);
   const availableExercises = exercises.filter((exercise) => !routine.exerciseIds.includes(exercise.id));
+  const selectedExercise = availableExercises.find((exercise) => exercise.id === exerciseToAdd)
+    ?? availableExercises[0]
+    ?? null;
 
   const updatePlan = (exerciseId, field, value) => {
     onUpdateRoutine({
@@ -4168,17 +4172,19 @@ function RoutineBuilder({ routine, routines, exercises, onSelectRoutine, onCreat
   };
 
   const addExercise = () => {
-    if (!exerciseToAdd || routine.exerciseIds.includes(exerciseToAdd)) return;
+    const exerciseId = selectedExercise?.id ?? "";
+    if (!exerciseId || routine.exerciseIds.includes(exerciseId)) return;
     onUpdateRoutine({
       ...routine,
-      exerciseIds: [...routine.exerciseIds, exerciseToAdd],
+      exerciseIds: [...routine.exerciseIds, exerciseId],
       plan: {
         ...routine.plan,
-        [exerciseToAdd]: { sets: 3, reps: "8", weight: 0, rest: 90 },
+        [exerciseId]: { sets: 3, reps: "8", weight: 0, rest: 90 },
       },
     });
-    const next = availableExercises.find((exercise) => exercise.id !== exerciseToAdd)?.id ?? "";
+    const next = availableExercises.find((exercise) => exercise.id !== exerciseId)?.id ?? "";
     setExerciseToAdd(next);
+    setExercisePickerOpen(false);
   };
 
   const removeExercise = (exerciseId) => {
@@ -4201,6 +4207,12 @@ function RoutineBuilder({ routine, routines, exercises, onSelectRoutine, onCreat
   const chooseRoutine = (routineId) => {
     onSelectRoutine(routineId);
     setRoutinePickerOpen(false);
+    setExercisePickerOpen(false);
+  };
+
+  const chooseExercise = (exerciseId) => {
+    setExerciseToAdd(exerciseId);
+    setExercisePickerOpen(false);
   };
 
   return (
@@ -4276,10 +4288,40 @@ function RoutineBuilder({ routine, routines, exercises, onSelectRoutine, onCreat
         })}
       </div>
 
-      <div className="routine-add-row">
-        <select value={exerciseToAdd} onChange={(event) => setExerciseToAdd(event.target.value)} aria-label="Exercise to add">
-          {availableExercises.map((exercise) => <option value={exercise.id} key={exercise.id}>{exercise.name}</option>)}
-        </select>
+      <div className="routine-add-row exercise-add-row">
+        <div className={`exercise-picker-field ${exercisePickerOpen ? "open" : ""}`}>
+          <button
+            type="button"
+            className="exercise-picker"
+            aria-label="Exercise to add"
+            aria-haspopup="listbox"
+            aria-expanded={exercisePickerOpen}
+            aria-controls="exercise-picker-options"
+            onClick={() => setExercisePickerOpen((current) => !current)}
+            disabled={!availableExercises.length}
+          >
+            {selectedExercise?.name ?? "All exercises added"}
+          </button>
+          {exercisePickerOpen && availableExercises.length > 0 && (
+            <div className="exercise-picker-options" id="exercise-picker-options" role="listbox">
+              {availableExercises.map((exercise) => {
+                const active = exercise.id === selectedExercise?.id;
+                return (
+                  <button
+                    type="button"
+                    className={active ? "active" : ""}
+                    role="option"
+                    aria-selected={active}
+                    onClick={() => chooseExercise(exercise.id)}
+                    key={exercise.id}
+                  >
+                    {exercise.name}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
         <button className="ghost-btn" onClick={addExercise} disabled={!availableExercises.length}>Add</button>
       </div>
       <div className="routine-add-row">
