@@ -17,6 +17,17 @@ const DEFAULT_PAGE_MODULES = {
   coach: [],
   settings: [],
 };
+const PAGE_MOTION_ORDER = {
+  workout: -4,
+  workoutHistory: -3,
+  habit: -2,
+  coach: -1,
+  home: 0,
+  water: 1,
+  sleep: 2,
+  stats: 3,
+  settings: 4,
+};
 const DEFAULT_COACH_MESSAGES = [
   {
     id: "coach-welcome",
@@ -686,6 +697,10 @@ function makeSlugId(value, fallback = "item") {
   return slug || fallback;
 }
 
+function exerciseLookupKey(value) {
+  return makeSlugId(value, "");
+}
+
 function positiveNumber(value, fallback, min = 0, max = 100) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
@@ -855,9 +870,10 @@ function normalizeWorkoutLog(log = {}, exercises = DEFAULT_EXERCISES, routines =
   const routine = routines.find((item) => item.id === log.routineId);
   const date = typeof log.date === "string" ? log.date : dateKey(addDays(new Date(), -index));
   const loggedExercises = (log.exercises ?? [])
-    .map((item) => {
+    .map((item, exerciseIndex) => {
       const exercise = exerciseMap.get(item.exerciseId);
-      if (!exercise) return null;
+      const historicalName = String(item.name ?? item.exerciseName ?? item.exerciseId ?? `Exercise ${exerciseIndex + 1}`).trim();
+      if (!exercise && !historicalName) return null;
       const sets = (item.sets ?? []).map((set) => ({
         weight: Number.isFinite(Number(set.weight)) ? Number(set.weight) : 0,
         reps: String(set.reps ?? "").trim() || "0",
@@ -865,8 +881,8 @@ function normalizeWorkoutLog(log = {}, exercises = DEFAULT_EXERCISES, routines =
         done: set.done !== false,
       }));
       return {
-        exerciseId: exercise.id,
-        name: exercise.name,
+        exerciseId: exercise?.id ?? makeSlugId(item.exerciseId ?? historicalName, `logged-exercise-${exerciseIndex + 1}`),
+        name: exercise?.name ?? historicalName,
         sets: sets.length ? sets : [{ weight: 0, reps: "0", rpe: "", done: true }],
         notes: String(item.notes ?? "").trim(),
       };
@@ -1258,10 +1274,85 @@ function entryScore(entry, habitNames, goals = DEFAULT_GOALS) {
   return Math.round(((habit * weights.habits) + (water * weights.water) + (sleep * weights.sleep)) / totalWeight);
 }
 
-function toneForScore(score) {
+const METRIC_TONE_PALETTES = {
+  neutral: {
+    low: [248, 248, 248],
+    mid: [191, 191, 191],
+    high: [17, 17, 17],
+  },
+  home: {
+    low: [248, 248, 248],
+    mid: [191, 191, 191],
+    high: [17, 17, 17],
+  },
+  stats: {
+    low: [248, 248, 248],
+    mid: [202, 202, 208],
+    high: [31, 31, 38],
+  },
+  habit: {
+    low: [255, 252, 245],
+    mid: [242, 226, 190],
+    high: [82, 62, 18],
+  },
+  water: {
+    low: [246, 252, 255],
+    mid: [214, 236, 247],
+    high: [14, 55, 72],
+  },
+  sleep: {
+    low: [250, 248, 255],
+    mid: [230, 225, 248],
+    high: [36, 30, 73],
+  },
+  workout: {
+    low: [247, 252, 248],
+    mid: [220, 239, 225],
+    high: [22, 59, 34],
+  },
+  workoutHistory: {
+    low: [247, 252, 248],
+    mid: [220, 239, 225],
+    high: [22, 59, 34],
+  },
+  coach: {
+    low: [247, 253, 252],
+    mid: [220, 241, 238],
+    high: [20, 62, 58],
+  },
+};
+
+function mixRgb(start, end, amount) {
+  const ratio = clamp(amount, 0, 1);
+  return start.map((channel, index) => Math.round(channel + (end[index] - channel) * ratio));
+}
+
+function rgbString(rgb) {
+  return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
+}
+
+function metricTypeForLabel(label) {
+  const key = String(label ?? "").toLowerCase();
+  if (key.includes("habit")) return "habit";
+  if (key.includes("water")) return "water";
+  if (key.includes("sleep")) return "sleep";
+  if (key.includes("move") || key.includes("workout") || key.includes("exercise")) return "workout";
+  if (key.includes("coach") || key.includes("energy")) return "coach";
+  return "neutral";
+}
+
+function toneForScore(score, metricType = "neutral") {
   const value = Math.round(235 - score * 2.2);
   const clamped = clamp(value, 17, 232);
-  return `rgb(${clamped}, ${clamped}, ${clamped})`;
+  const fallbackTone = [clamped, clamped, clamped];
+  const palette = METRIC_TONE_PALETTES[metricType] ?? METRIC_TONE_PALETTES.neutral;
+  if (!palette || metricType === "neutral") return rgbString(fallbackTone);
+
+  const ratio = clamp((Number(score) || 0) / 100, 0, 1);
+  const color = ratio < 0.42
+    ? mixRgb(palette.low, palette.mid, ratio / 0.42)
+    : mixRgb(palette.mid, palette.high, (ratio - 0.42) / 0.58);
+  return rgbString(color);
 }
 
 function parseRepValue(reps) {
@@ -2961,7 +3052,7 @@ async function createGeminiCoachReply(message, analytics, aiSettings, apiKey, hi
 function muscleTone(load, muscle) {
   const maxLoad = Math.max(1, ...Object.values(load).map((value) => Number(value) || 0));
   const score = Math.round(((load[muscle] ?? 0) / maxLoad) * 100);
-  return toneForScore(score);
+  return toneForScore(score, "workout");
 }
 
 function recentWorkoutDays(workouts = [], count = 8) {
@@ -2988,20 +3079,35 @@ function routineScore(routine, exercises = []) {
   return { score, coverage, totalSets, estimatedMinutes };
 }
 
-function previousExerciseSets(workouts = [], exerciseId) {
+function exerciseMatchesTarget(loggedExercise = {}, targetExercise = {}) {
+  const targetKeys = [
+    targetExercise.id,
+    targetExercise.exerciseId,
+    targetExercise.name,
+  ].map(exerciseLookupKey).filter(Boolean);
+  const loggedKeys = [
+    loggedExercise.exerciseId,
+    loggedExercise.name,
+  ].map(exerciseLookupKey).filter(Boolean);
+
+  return targetKeys.some((key) => loggedKeys.includes(key));
+}
+
+function previousExerciseSets(workouts = [], targetExercise) {
+  const target = typeof targetExercise === "string" ? { id: targetExercise } : (targetExercise ?? {});
   const recent = workouts
     .map((workout, index) => ({ workout, index }))
     .sort((a, b) => (
       b.workout.date.localeCompare(a.workout.date)
       || b.index - a.index
     ))
-    .find(({ workout }) => workout.exercises?.some((exercise) => exercise.exerciseId === exerciseId))
+    .find(({ workout }) => workout.exercises?.some((exercise) => exerciseMatchesTarget(exercise, target)))
     ?.workout;
-  return recent?.exercises?.find((exercise) => exercise.exerciseId === exerciseId)?.sets ?? null;
+  return recent?.exercises?.find((exercise) => exerciseMatchesTarget(exercise, target))?.sets ?? null;
 }
 
-function routinePlanFromPreviousWorkout(workouts = [], exerciseId) {
-  const previousSets = previousExerciseSets(workouts, exerciseId)
+function routinePlanFromPreviousWorkout(workouts = [], targetExercise) {
+  const previousSets = previousExerciseSets(workouts, targetExercise)
     ?.filter((set) => set.done !== false);
   if (!previousSets?.length) return { sets: 3, reps: "8", weight: 0, rest: 90 };
 
@@ -3133,7 +3239,7 @@ function chartPoints(days, getValue, maxValue = 100) {
     .filter(Boolean);
 }
 
-function AreaChart({ days, getValue, gradientId, label, maxValue = 100, targetValue = null, targetLabel = "" }) {
+function AreaChart({ days, getValue, gradientId, label, maxValue = 100, targetValue = null, targetLabel = "", metricType = "neutral" }) {
   const points = chartPoints(days, getValue, maxValue);
   const linePath = buildSmoothPath(points);
   const areaPath = points.length
@@ -3147,7 +3253,8 @@ function AreaChart({ days, getValue, gradientId, label, maxValue = 100, targetVa
         <defs>
           <linearGradient id={gradientId} x1="0" y1="170" x2="0" y2="22" gradientUnits="userSpaceOnUse">
             <stop offset="0" stopColor="#ffffff" />
-            <stop offset="1" stopColor="#111111" />
+            <stop offset="0.52" stopColor={toneForScore(42, metricType)} />
+            <stop offset="1" stopColor={toneForScore(96, metricType)} />
           </linearGradient>
         </defs>
         <line className="grid-line" x1="18" y1="150" x2="304" y2="150" />
@@ -3174,7 +3281,7 @@ function AreaChart({ days, getValue, gradientId, label, maxValue = 100, targetVa
   );
 }
 
-function BarChart({ values, labels, className = "bar-chart" }) {
+function BarChart({ values, labels, className = "bar-chart", metricType = "neutral" }) {
   return (
     <div className={className}>
       {values.map((score, index) => {
@@ -3188,7 +3295,7 @@ function BarChart({ values, labels, className = "bar-chart" }) {
             key={`${labels[index]}-${index}`}
             style={{
               height: `${height}%`,
-              "--bar-tone": realScore ? toneForScore(realScore) : "#f1f1f1",
+              "--bar-tone": realScore ? toneForScore(realScore, metricType) : "#f1f1f1",
             }}
           >
             {realScore ?? ""}
@@ -3338,7 +3445,7 @@ function BottomNav({ activePage, onPageChange }) {
   );
 
   return (
-    <nav className={`bottom-nav ${expandedGroup ? `expanded ${expandedGroup}` : "collapsed"}`} aria-label="Primary">
+    <nav className={`bottom-nav metric-${activePage} ${expandedGroup ? `expanded ${expandedGroup}` : "collapsed"}`} aria-label="Primary">
       <span className="nav-shell" aria-hidden="true" />
       <div className={`nav-group productivity ${expandedGroup === "productivity" ? "open" : ""}`}>
         {expandedGroup === "productivity" && groups.productivity.map(renderPageButton)}
@@ -3402,7 +3509,7 @@ function MetricBalance({ weekDays, habitNames, goals }) {
         <div className="compare-row" key={label}>
           <span>{label}</span>
           <span className="track">
-            <i className="fill" style={{ width: `${Math.round(value)}%`, background: `linear-gradient(to right, #ffffff, ${toneForScore(value)})` }} />
+            <i className="fill" style={{ width: `${Math.round(value)}%`, background: `linear-gradient(to right, #ffffff, ${toneForScore(value, metricTypeForLabel(label))})` }} />
           </span>
           <b>{Math.round(value)}%</b>
         </div>
@@ -3437,7 +3544,7 @@ function HomePage({ weekDays, habitNames, goals, onAdd, onBackup, onHistory, mod
 
       <div className="panel">
         <SectionTitle title="Daily value" meta="score" />
-        <BarChart values={scores} labels={DAY_LABELS} />
+        <BarChart values={scores} labels={DAY_LABELS} metricType="home" />
         <p className="chart-note">Darker bars indicate higher daily value from habits, sleep, water, and movement.</p>
       </div>
 
@@ -3481,7 +3588,7 @@ function WeeklyMetricPage({ type, title, statCards, sectionTitle, detailRows, ge
 
       <div className="panel area-panel">
         <SectionTitle title={sectionTitle} meta="this week" />
-        <AreaChart days={weekDays} getValue={getValue} gradientId={gradientId} label={`${sectionTitle} this week`} maxValue={areaMax} targetValue={targetValue} targetLabel={targetLabel} />
+        <AreaChart days={weekDays} getValue={getValue} gradientId={gradientId} label={`${sectionTitle} this week`} maxValue={areaMax} targetValue={targetValue} targetLabel={targetLabel} metricType={type} />
       </div>
 
       {extraPanels}
@@ -3750,7 +3857,7 @@ function ValueGrid({ entries, habitNames, goals }) {
             title={cell.empty ? "" : `${cell.label}: ${cell.score}`}
             style={{
               opacity: cell.empty ? 0.18 : 1,
-              "--cell-tone": cell.empty ? "#f5f5f5" : toneForScore(cell.score),
+              "--cell-tone": cell.empty ? "#f5f5f5" : toneForScore(cell.score, "stats"),
             }}
           />
         ))}
@@ -3792,7 +3899,7 @@ function StatsPage({ entries, habitNames, goals, onAdd, onBackup, onHistory, mod
 
       <div className="panel">
         <SectionTitle title="Previous 10 weeks" meta="avg score" />
-        <BarChart values={weeklyValues} labels={weeklyValues.map((_, index) => `W${index + 1}`)} className="week-chart" />
+        <BarChart values={weeklyValues} labels={weeklyValues.map((_, index) => `W${index + 1}`)} className="week-chart" metricType="stats" />
       </div>
 
       <AddedModules modules={modules} context={{ ...moduleContext, metricType: "stats" }} onRemoveModule={onRemoveModule} onEditModule={onEditModule} onReorderModule={onReorderModule} />
@@ -4102,7 +4209,7 @@ function MuscleBalancePanel({ workouts, exercises }) {
         <div className="compare-row" key={muscle}>
           <span>{muscle}</span>
           <span className="track">
-            <i className="fill" style={{ width: `${Math.round((value / maxLoad) * 100)}%`, background: `linear-gradient(to right, #ffffff, ${toneForScore((value / maxLoad) * 100)})` }} />
+            <i className="fill" style={{ width: `${Math.round((value / maxLoad) * 100)}%`, background: `linear-gradient(to right, #ffffff, ${toneForScore((value / maxLoad) * 100, "workout")})` }} />
           </span>
           <b>{trimNumber(value, 1)}</b>
         </div>
@@ -4198,7 +4305,7 @@ function RoutineBuilder({ routine, routines, exercises, workouts, onSelectRoutin
       exerciseIds: [...routine.exerciseIds, exerciseId],
       plan: {
         ...routine.plan,
-        [exerciseId]: routinePlanFromPreviousWorkout(workouts, exerciseId),
+        [exerciseId]: routinePlanFromPreviousWorkout(workouts, selectedExercise),
       },
     });
     const next = availableExercises.find((exercise) => exercise.id !== exerciseId)?.id ?? "";
@@ -4418,9 +4525,10 @@ function WorkoutLogger({
       )}
       {draft.exercises.map((loggedExercise, exerciseIndex) => {
         const exercise = exerciseMap.get(loggedExercise.exerciseId);
-        const previousSets = previousExerciseSets(workouts, loggedExercise.exerciseId);
-        const previousLabel = previousSets
-          ? previousSets.slice(0, 2).map((set) => `${set.weight} x ${set.reps}`).join(", ")
+        const previousSets = previousExerciseSets(workouts, exercise ?? loggedExercise);
+        const completedPreviousSets = previousSets?.filter((set) => set.done !== false) ?? [];
+        const previousLabel = completedPreviousSets.length
+          ? completedPreviousSets.map((set, setIndex) => `${setIndex + 1}: ${set.weight} x ${set.reps}`).join(" / ")
           : "No previous sets";
         return (
           <div className="logged-exercise" key={`${loggedExercise.exerciseId}-${exerciseIndex}`}>
@@ -4789,7 +4897,8 @@ function buildWorkoutDraft(routine, exercises, workouts) {
     exercises: routine.exerciseIds.map((exerciseId) => {
       const exercise = exerciseMap.get(exerciseId);
       const plan = routine.plan?.[exerciseId] ?? { sets: 3, reps: "8", weight: 0, rest: 90 };
-      const previousSets = previousExerciseSets(workouts, exerciseId);
+      const previousSets = previousExerciseSets(workouts, exercise ?? { id: exerciseId })
+        ?.filter((set) => set.done !== false);
       return {
         exerciseId,
         name: exercise?.name ?? "Exercise",
@@ -4858,8 +4967,8 @@ function WorkoutSchedulePanel({ workout, onSetSchedule }) {
   };
 
   return (
-    <div className="panel workout-schedule-panel">
-      <SectionTitle title="Week plan" meta="scheduled" />
+    <div className="settings-stack workout-schedule-panel">
+      <SettingsSection title="Week Plan">
       <div className="schedule-grid">
         {DAY_NAMES.map((day, index) => {
           const selectedId = workout.schedule[index] ?? "";
@@ -4901,62 +5010,80 @@ function WorkoutSchedulePanel({ workout, onSetSchedule }) {
           );
         })}
       </div>
+      </SettingsSection>
     </div>
   );
 }
 
 function WorkoutAestheticPanel({ workout, onSetAesthetic, onSetEquipmentProfile }) {
+  const [focusOpen, setFocusOpen] = useState(false);
+  const [equipmentOpen, setEquipmentOpen] = useState(false);
   const analysis = buildFocusAnalysis(workout);
   const equipmentProfile = EQUIPMENT_PROFILES.find((profile) => profile.id === workout.equipmentProfileId) ?? EQUIPMENT_PROFILES[0];
 
   return (
-    <div className="panel workout-aesthetic-panel">
-      <SectionTitle title="Build focus" meta="aesthetic" />
-      <div className="workout-choice-group">
-        <span className="workout-field-label">Current focus</span>
-        <div className="workout-choice-list">
+    <div className="settings-stack workout-aesthetic-panel">
+      <SettingsSection title="Training Profile">
+        <SettingsRow label="Build focus" value={analysis.aesthetic.shortName} chevron open={focusOpen} onClick={() => setFocusOpen((current) => !current)} />
+        {focusOpen && (
+          <div className="settings-option-list">
           {AESTHETIC_BUILDS.map((build) => {
             const active = build.id === analysis.aesthetic.id;
             return (
               <button
                 type="button"
-                className={`workout-choice-card ${active ? "active" : ""}`}
+                className={`settings-option ${active ? "active" : ""}`}
                 aria-pressed={active}
-                onClick={() => onSetAesthetic(build.id)}
+                onClick={() => {
+                  onSetAesthetic(build.id);
+                  setFocusOpen(false);
+                }}
                 key={build.id}
               >
-                <strong>{build.name}</strong>
+                <span>
+                  <strong>{build.name}</strong>
                 <small>{build.description}</small>
+                </span>
+                <b>{active ? "Selected" : ""}</b>
               </button>
             );
           })}
         </div>
-      </div>
-      <div className="workout-choice-group">
-        <span className="workout-field-label">Equipment access</span>
-        <div className="workout-choice-list equipment-choice-list">
+        )}
+        <SettingsRow label="Equipment" value={equipmentProfile.shortName} chevron open={equipmentOpen} onClick={() => setEquipmentOpen((current) => !current)} />
+        {equipmentOpen && (
+          <div className="settings-option-list">
           {EQUIPMENT_PROFILES.map((profile) => {
             const active = profile.id === equipmentProfile.id;
             return (
               <button
                 type="button"
-                className={`workout-choice-card ${active ? "active" : ""}`}
+                className={`settings-option ${active ? "active" : ""}`}
                 aria-pressed={active}
-                onClick={() => onSetEquipmentProfile(profile.id)}
+                onClick={() => {
+                  onSetEquipmentProfile(profile.id);
+                  setEquipmentOpen(false);
+                }}
                 key={profile.id}
               >
-                <strong>{profile.shortName}</strong>
+                <span>
+                  <strong>{profile.shortName}</strong>
                 <small>{profile.description}</small>
+                </span>
+                <b>{active ? "Selected" : ""}</b>
               </button>
             );
           })}
         </div>
-      </div>
+        )}
+      </SettingsSection>
+      <SettingsSection title="Set Targets">
       <div className="aesthetic-targets">
         {Object.entries(analysis.aesthetic.targets).map(([muscle, target]) => (
           <span key={muscle}>{muscle}<b>{target}</b></span>
         ))}
       </div>
+      </SettingsSection>
     </div>
   );
 }
@@ -5138,65 +5265,99 @@ function SettingsPage({ goals, onUpdateGoals, aiSettings, geminiApiKey, onUpdate
   );
 }
 
+function SettingsSection({ title, meta, children }) {
+  return (
+    <section className="panel settings-section">
+      <div className="settings-section-head">
+        <span>{title}</span>
+        {meta && <b>{meta}</b>}
+      </div>
+      <div className="settings-group">
+        {children}
+      </div>
+    </section>
+  );
+}
+
+function SettingsRow({ label, value, detail, children, chevron = false, open = false, onClick }) {
+  const content = (
+    <>
+      <span className="settings-row-label">{label}</span>
+      <span className="settings-row-value">
+        {children ?? value}
+        {detail && <small>{detail}</small>}
+      </span>
+      {chevron && <i className="settings-chevron" aria-hidden="true" />}
+    </>
+  );
+
+  if (onClick) {
+    return (
+      <button type="button" className={`settings-row settings-row-button ${open ? "open" : ""}`} onClick={onClick}>
+        {content}
+      </button>
+    );
+  }
+
+  return <div className="settings-row">{content}</div>;
+}
+
 function AISettingsPanel({ aiSettings, geminiApiKey, onUpdateAISettings, onUpdateGeminiApiKey }) {
   const settings = normalizeAISettings(aiSettings);
 
   return (
-    <div className="panel ai-settings-panel">
-      <SectionTitle title="AI coach" meta={settings.useGemini ? "Gemini" : "local"} />
+    <div className="settings-stack ai-settings-panel">
+      <SettingsSection title="AI Coach" meta={settings.useGemini ? "Gemini" : "Local"}>
+        <SettingsRow label="Mode">
+          <div className="setting-segmented">
+            <button className={!settings.useGemini ? "active" : ""} onClick={() => onUpdateAISettings({ useGemini: false })}>
+              Local
+            </button>
+            <button className={settings.useGemini ? "active" : ""} onClick={() => onUpdateAISettings({ useGemini: true })}>
+              Gemini
+            </button>
+          </div>
+        </SettingsRow>
+        <SettingsRow label="API key">
+          <input
+            className="settings-text-input"
+            type="password"
+            value={geminiApiKey}
+            onChange={(event) => onUpdateGeminiApiKey(event.target.value)}
+            placeholder="Paste key"
+            autoComplete="off"
+          />
+        </SettingsRow>
+        <SettingsRow label="Text model">
+          <input
+            className="settings-text-input"
+            value={settings.geminiModel}
+            onChange={(event) => onUpdateAISettings({ geminiModel: event.target.value })}
+            placeholder={DEFAULT_AI_SETTINGS.geminiModel}
+          />
+        </SettingsRow>
+        <SettingsRow label="Voice coach">
+          <button
+            className={`settings-pill-toggle ${settings.ttsEnabled ? "active" : ""}`}
+            onClick={() => onUpdateAISettings({ ttsEnabled: !settings.ttsEnabled })}
+          >
+            {settings.ttsEnabled ? "On" : "Off"}
+          </button>
+        </SettingsRow>
+        {settings.ttsEnabled && (
+          <>
+            <SettingsRow label="TTS model">
+              <input className="settings-text-input" value={settings.ttsModel} onChange={(event) => onUpdateAISettings({ ttsModel: event.target.value })} />
+            </SettingsRow>
+            <SettingsRow label="Voice">
+              <input className="settings-text-input" value={settings.ttsVoice} onChange={(event) => onUpdateAISettings({ ttsVoice: event.target.value })} />
+            </SettingsRow>
+          </>
+        )}
+      </SettingsSection>
       <div className="ai-disclosure">
         Gemini mode sends a compact snapshot of your health, productivity, and workout data to Google's Gemini API. Your API key is stored only on this device and is not included in JSON backups.
       </div>
-      <div className="setting-options ai-toggle-options">
-        <button className={!settings.useGemini ? "active" : ""} onClick={() => onUpdateAISettings({ useGemini: false })}>
-          Local
-        </button>
-        <button className={settings.useGemini ? "active" : ""} onClick={() => onUpdateAISettings({ useGemini: true })}>
-          Gemini
-        </button>
-      </div>
-      <label className="goal-field full">
-        <span>Gemini API key</span>
-        <input
-          type="password"
-          value={geminiApiKey}
-          onChange={(event) => onUpdateGeminiApiKey(event.target.value)}
-          placeholder="Paste your API key"
-          autoComplete="off"
-        />
-      </label>
-      <label className="goal-field full">
-        <span>Text model</span>
-        <input
-          value={settings.geminiModel}
-          onChange={(event) => onUpdateAISettings({ geminiModel: event.target.value })}
-          placeholder={DEFAULT_AI_SETTINGS.geminiModel}
-        />
-      </label>
-      <div className="ai-voice-box">
-        <div>
-          <strong>Voice coach</strong>
-          <span>Prepared for Gemini TTS; audio playback can be wired after text coaching feels right.</span>
-        </div>
-        <button
-          className={settings.ttsEnabled ? "active" : ""}
-          onClick={() => onUpdateAISettings({ ttsEnabled: !settings.ttsEnabled })}
-        >
-          {settings.ttsEnabled ? "On" : "Off"}
-        </button>
-      </div>
-      {settings.ttsEnabled && (
-        <div className="goal-grid">
-          <label className="goal-field full">
-            <span>TTS model</span>
-            <input value={settings.ttsModel} onChange={(event) => onUpdateAISettings({ ttsModel: event.target.value })} />
-          </label>
-          <label className="goal-field full">
-            <span>Voice</span>
-            <input value={settings.ttsVoice} onChange={(event) => onUpdateAISettings({ ttsVoice: event.target.value })} />
-          </label>
-        </div>
-      )}
     </div>
   );
 }
@@ -5322,7 +5483,7 @@ function CoachProposalReview({ proposal, workout, onApply, onClose }) {
               <div className="compare-row" key={row.muscle}>
                 <span>{row.muscle}</span>
                 <span className="track">
-                  <i className="fill" style={{ width: `${Math.round(clamp(row.ratio, 0, 1) * 100)}%`, background: `linear-gradient(to right, #ffffff, ${toneForScore(clamp(row.ratio, 0, 1) * 100)})` }} />
+                  <i className="fill" style={{ width: `${Math.round(clamp(row.ratio, 0, 1) * 100)}%`, background: `linear-gradient(to right, #ffffff, ${toneForScore(clamp(row.ratio, 0, 1) * 100, "workout")})` }} />
                 </span>
                 <b>{trimNumber(row.current, 1)} / {row.target}</b>
               </div>
@@ -5491,11 +5652,9 @@ function GoalSettingsPanel({ goals, onUpdateGoals }) {
   };
 
   return (
-    <div className="panel goal-settings-panel">
-      <SectionTitle title="Goals & scoring" meta="personal" />
-      <div className="goal-grid">
-        <label className="goal-field">
-          <span>Water target</span>
+    <div className="settings-stack goal-settings-panel">
+      <SettingsSection title="Health Goals" meta="Personal">
+        <SettingsRow label="Water target">
           <div className="goal-combo">
             <input
               type="number"
@@ -5510,52 +5669,46 @@ function GoalSettingsPanel({ goals, onUpdateGoals }) {
               <option value="l">L</option>
             </select>
           </div>
-        </label>
-        <label className="goal-field">
-          <span>Sleep target</span>
+        </SettingsRow>
+        <SettingsRow label="Sleep target">
           <div className="goal-combo">
             <input type="number" min="0.25" max="24" step="0.25" value={normalizedGoals.sleepTarget} onChange={(event) => updateGoal("sleepTarget", event.target.value)} />
             <em className="goal-unit">h</em>
           </div>
-        </label>
-        <label className="goal-field">
-          <span>Sleep min</span>
+        </SettingsRow>
+        <SettingsRow label="Sleep min">
           <div className="goal-combo">
             <input type="number" min="0" max="24" step="0.25" value={normalizedGoals.sleepMin} onChange={(event) => updateGoal("sleepMin", event.target.value)} />
             <em className="goal-unit">h</em>
           </div>
-        </label>
-        <label className="goal-field">
-          <span>Sleep max</span>
+        </SettingsRow>
+        <SettingsRow label="Sleep max">
           <div className="goal-combo">
             <input type="number" min="0.25" max="24" step="0.25" value={normalizedGoals.sleepMax} onChange={(event) => updateGoal("sleepMax", event.target.value)} />
             <em className="goal-unit">h</em>
           </div>
-        </label>
-      </div>
-      <div className="weight-grid">
-        <label>
-          <span>Habits</span>
+        </SettingsRow>
+      </SettingsSection>
+      <SettingsSection title="Scoring">
+        <SettingsRow label="Habits">
           <div className="goal-combo">
             <input type="number" min="0" max="100" value={normalizedGoals.weights.habits} onChange={(event) => updateWeight("habits", event.target.value)} />
             <em className="goal-unit">%</em>
           </div>
-        </label>
-        <label>
-          <span>Water</span>
+        </SettingsRow>
+        <SettingsRow label="Water">
           <div className="goal-combo">
             <input type="number" min="0" max="100" value={normalizedGoals.weights.water} onChange={(event) => updateWeight("water", event.target.value)} />
             <em className="goal-unit">%</em>
           </div>
-        </label>
-        <label>
-          <span>Sleep</span>
+        </SettingsRow>
+        <SettingsRow label="Sleep">
           <div className="goal-combo">
             <input type="number" min="0" max="100" value={normalizedGoals.weights.sleep} onChange={(event) => updateWeight("sleep", event.target.value)} />
             <em className="goal-unit">%</em>
           </div>
-        </label>
-      </div>
+        </SettingsRow>
+      </SettingsSection>
     </div>
   );
 }
@@ -5675,7 +5828,7 @@ const MODULES = [
   },
 ];
 
-function ModuleBars({ values, labels }) {
+function ModuleBars({ values, labels, metricType = "neutral" }) {
   return (
     <div className="module-bars" style={{ gridTemplateColumns: `repeat(${values.length}, 1fr)` }}>
       {values.map((value, index) => {
@@ -5687,7 +5840,7 @@ function ModuleBars({ values, labels }) {
             key={`${labels[index]}-${index}`}
             style={{
               height: `${clamp(score, 18, 96)}%`,
-              "--tone": toneForScore(score),
+              "--tone": toneForScore(score, metricType),
             }}
           >
             {score || ""}
@@ -5698,7 +5851,7 @@ function ModuleBars({ values, labels }) {
   );
 }
 
-function VariableAreaChart({ values, labels, gradientId, label, maxValue = 100, targetValue = null, targetLabel = "" }) {
+function VariableAreaChart({ values, labels, gradientId, label, maxValue = 100, targetValue = null, targetLabel = "", metricType = "neutral" }) {
   const top = 18;
   const bottom = 154;
   const scaleMax = Math.max(1, Number(maxValue) || 100);
@@ -5718,7 +5871,8 @@ function VariableAreaChart({ values, labels, gradientId, label, maxValue = 100, 
         <defs>
           <linearGradient id={gradientId} x1="0" y1={bottom} x2="0" y2={top} gradientUnits="userSpaceOnUse">
             <stop offset="0" stopColor="#ffffff" />
-            <stop offset="1" stopColor="#111111" />
+            <stop offset="0.52" stopColor={toneForScore(42, metricType)} />
+            <stop offset="1" stopColor={toneForScore(96, metricType)} />
           </linearGradient>
         </defs>
         <line className="grid-line" x1="18" y1="132" x2="304" y2="132" />
@@ -5743,7 +5897,7 @@ function VariableAreaChart({ values, labels, gradientId, label, maxValue = 100, 
   );
 }
 
-function ModuleStreakGrid({ months = 3 }) {
+function ModuleStreakGrid({ months = 3, metricType = "neutral" }) {
   const monthCount = clamp(Number(months) || 3, 1, 5);
   const cellCount = monthCount * 31;
   const cells = Array.from({ length: cellCount }, (_, index) => {
@@ -5762,17 +5916,17 @@ function ModuleStreakGrid({ months = 3 }) {
       </div>
       <div className="module-streak-grid" style={{ gridAutoColumns: monthCount >= 4 ? "10px" : "13px" }}>
         {cells.map((cell) => (
-          <span key={cell.key} style={{ "--tone": toneForScore(cell.score) }} />
+          <span key={cell.key} style={{ "--tone": toneForScore(cell.score, metricType) }} />
         ))}
       </div>
     </div>
   );
 }
 
-function ModuleDistribution() {
+function ModuleDistribution({ metricType = "sleep" }) {
   const values = [22, 54, 68, 92, 84, 58, 36, 18];
   const labels = ["5h", "6h", "6.5", "7h", "7.5", "8h", "8.5", "9h"];
-  return <ModuleBars values={values} labels={labels} />;
+  return <ModuleBars values={values} labels={labels} metricType={metricType} />;
 }
 
 function ModuleStack({ context }) {
@@ -5790,7 +5944,7 @@ function ModuleStack({ context }) {
       {rows.map(([label, value]) => (
         <div className="module-stack-row" key={label}>
           <span>{label}</span>
-          <i><b style={{ width: `${Math.round(value)}%`, background: `linear-gradient(to right, #ffffff, ${toneForScore(value)})` }} /></i>
+          <i><b style={{ width: `${Math.round(value)}%`, background: `linear-gradient(to right, #ffffff, ${toneForScore(value, metricTypeForLabel(label))})` }} /></i>
           <strong>{Math.round(value)}</strong>
         </div>
       ))}
@@ -5834,7 +5988,7 @@ function ModuleMatrix() {
   return (
     <div className="module-matrix">
       {values.map((value, index) => (
-        <span key={`${value}-${index}`} style={{ "--tone": toneForScore(Math.abs(Number(value)) * 100) }}>{value}</span>
+        <span key={`${value}-${index}`} style={{ "--tone": toneForScore(Math.abs(Number(value)) * 100, "stats") }}>{value}</span>
       ))}
     </div>
   );
@@ -5854,7 +6008,7 @@ function ModuleDeltaTimeline({ context }) {
       {rows.map((row) => (
         <div className="module-timeline-row" key={row.label}>
           <span>{row.label}</span>
-          <i style={{ "--position": `${row.position}%`, "--tone": toneForScore(clamp(50 + row.delta * 4, 10, 96)) }} />
+          <i style={{ "--position": `${row.position}%`, "--tone": toneForScore(clamp(50 + row.delta * 4, 10, 96), "stats") }} />
           <b>{row.delta >= 0 ? "+" : ""}{row.delta}</b>
         </div>
       ))}
@@ -5909,7 +6063,7 @@ function ModuleVisual({ moduleId, context, instanceId, settings = {} }) {
 
   switch (moduleId) {
     case "daily-histogram":
-      return <ModuleBars values={dailyScores} labels={labels} />;
+      return <ModuleBars values={dailyScores} labels={labels} metricType={context.metricType} />;
     case "area-line":
       return (
         <VariableAreaChart
@@ -5920,12 +6074,13 @@ function ModuleVisual({ moduleId, context, instanceId, settings = {} }) {
           maxValue={areaSeries.maxValue}
           targetValue={areaSeries.targetValue}
           targetLabel={areaSeries.targetLabel}
+          metricType={context.metricType}
         />
       );
     case "streak-grid":
-      return <ModuleStreakGrid months={settings.months} />;
+      return <ModuleStreakGrid months={settings.months} metricType={context.metricType} />;
     case "sleep-distribution":
-      return <ModuleDistribution />;
+      return <ModuleDistribution metricType="sleep" />;
     case "metric-stack":
       return <ModuleStack context={context} />;
     case "score-ring":
@@ -6103,11 +6258,16 @@ function AddedModules({ modules = [], context, onRemoveModule, onEditModule, onR
     dragReadyRef.current = false;
     capturedTarget.current = event.currentTarget;
     capturedPointerId.current = event.pointerId;
-    event.currentTarget.setPointerCapture?.(event.pointerId);
     clearModuleHold();
 
     holdTimer.current = window.setTimeout(() => {
+      if (draggedModuleRef.current !== instanceId) return;
       dragReadyRef.current = true;
+      try {
+        capturedTarget.current?.setPointerCapture?.(capturedPointerId.current);
+      } catch {
+        // The pointer may already belong to native page scrolling; normal scroll should win.
+      }
       holdTimer.current = null;
     }, 180);
   };
@@ -6121,6 +6281,8 @@ function AddedModules({ modules = [], context, onRemoveModule, onEditModule, onR
       clearModuleHold();
       draggedModuleRef.current = null;
       dragOverModuleRef.current = null;
+      capturedTarget.current = null;
+      capturedPointerId.current = null;
       return;
     }
 
@@ -6288,7 +6450,7 @@ function HistorySheet({ entries, habitNames, goals, onEditDate, onClose }) {
                   disabled={!cell}
                   key={cell?.date ?? `empty-${index}`}
                   onClick={() => cell && onEditDate(cell.date)}
-                  style={{ "--day-tone": Number.isFinite(score) ? toneForScore(score) : "#f5f5f5" }}
+                  style={{ "--day-tone": Number.isFinite(score) ? toneForScore(score, "home") : "#f5f5f5" }}
                 >
                   {cell?.dayNumber ?? ""}
                 </button>
@@ -6400,7 +6562,7 @@ function ModulePicker({ pageId, pageName, context, addedModuleIds = [], moduleTe
   ));
 
   return (
-    <section className="module-picker" aria-label="Add module">
+    <section className={`module-picker metric-${pageId}`} aria-label="Add module">
       <div className="module-picker-topbar">
         <div>
           <h2>Add module</h2>
@@ -6650,6 +6812,7 @@ export {
 export default function App() {
   const [state, setTrackerState] = useTrackerState();
   const [activePage, setActivePage] = useState("home");
+  const [pageMotion, setPageMotion] = useState("center");
   const [choiceOpen, setChoiceOpen] = useState(false);
   const [backupOpen, setBackupOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -6682,6 +6845,20 @@ export default function App() {
     weekDays,
     workout: state.workout,
   }), [state.entries, state.habitNames, trackedHabitNames, goals, weekDays, state.workout]);
+
+  const changeActivePage = (nextPage) => {
+    setActivePage((currentPage) => {
+      if (currentPage === nextPage) {
+        setPageMotion("center");
+        return currentPage;
+      }
+
+      const currentOrder = PAGE_MOTION_ORDER[currentPage] ?? 0;
+      const nextOrder = PAGE_MOTION_ORDER[nextPage] ?? 0;
+      setPageMotion(nextOrder < currentOrder ? "from-left" : "from-right");
+      return nextPage;
+    });
+  };
 
   const openAddChoice = () => {
     setBackupOpen(false);
@@ -7023,10 +7200,10 @@ export default function App() {
 
   return (
     <main className="app-shell">
-      <div className="page-stage" key={activePage}>
+      <div className={`page-stage page-${pageMotion} metric-${activePage}`} key={activePage}>
         {pages[activePage]}
       </div>
-      <BottomNav activePage={activePage} onPageChange={setActivePage} />
+      <BottomNav activePage={activePage} onPageChange={changeActivePage} />
       <input
         ref={importInputRef}
         className="backup-file-input"
