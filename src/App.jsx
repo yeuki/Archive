@@ -1355,6 +1355,16 @@ function toneForScore(score, metricType = "neutral") {
   return rgbString(color);
 }
 
+function valueTierForScore(score) {
+  const value = Number(score);
+  if (!Number.isFinite(value)) return 0;
+  if (value >= 91) return 5;
+  if (value >= 71) return 4;
+  if (value >= 51) return 3;
+  if (value >= 26) return 2;
+  return 1;
+}
+
 function parseRepValue(reps) {
   const match = String(reps ?? "0").match(/\d+(\.\d+)?/);
   return match ? Number(match[0]) : 0;
@@ -3828,45 +3838,72 @@ function SleepPage({ weekDays, goals, onAdd, onBackup, onHistory, modules, modul
   );
 }
 
-function ValueGrid({ entries, habitNames, goals }) {
+function ValueGrid({ entries, habitNames, goals, onEditDate }) {
   const entriesByDate = new Map(entries.map((entry) => [entry.date, entry]));
   const today = new Date();
-  const start = addDays(today, -91);
-  const cells = Array.from({ length: 98 }, (_, index) => {
-    if (index >= 92) return { empty: true, key: `empty-${index}` };
-    const current = addDays(start, index);
+  const todayKey = dateKey(today);
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+  const firstDayOffset = (monthStart.getDay() + 6) % 7;
+  const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+  const monthCells = Array.from({ length: 42 }, (_, index) => {
+    const dayNumber = index - firstDayOffset + 1;
+    if (dayNumber < 1 || dayNumber > daysInMonth) return null;
+    const current = new Date(today.getFullYear(), today.getMonth(), dayNumber);
     const key = dateKey(current);
     const entry = entriesByDate.get(key);
-    const fallback = Math.round(58 + Math.sin(index / 8) * 18 + (((index * 19) % 37) - 18));
-    const score = entry ? entryScore(entry, habitNames, goals) : clamp(fallback, 10, 96);
-    return { key, score, label: formatShortDate(key) };
+    const score = entry ? entryScore(entry, habitNames, goals) : null;
+    return {
+      key,
+      date: key,
+      dayNumber,
+      entry,
+      score,
+      tier: valueTierForScore(score),
+      isToday: key === todayKey,
+      isFuture: key > todayKey,
+      label: current.toLocaleDateString(undefined, { month: "long", day: "numeric" }),
+    };
   });
+  const recordedCount = monthCells.filter((cell) => cell?.entry).length;
 
   return (
-    <div className="year-grid-wrap">
-      <div className="month-labels">
-        <span>{addDays(start, 5).toLocaleDateString(undefined, { month: "short" })}</span>
-        <span>{addDays(start, 43).toLocaleDateString(undefined, { month: "short" })}</span>
-        <span>{addDays(start, 78).toLocaleDateString(undefined, { month: "short" })}</span>
+    <div className="value-month-wrap">
+      <div className="value-month-head">
+        <strong>{today.toLocaleDateString(undefined, { month: "long", year: "numeric" })}</strong>
+        <span>{recordedCount}/{Math.min(today.getDate(), daysInMonth)} recorded</span>
       </div>
-      <div className="year-grid" aria-label="Last three months daily value grid">
-        {cells.map((cell) => (
-          <span
-            className="year-cell"
-            key={cell.key}
-            title={cell.empty ? "" : `${cell.label}: ${cell.score}`}
-            style={{
-              opacity: cell.empty ? 0.18 : 1,
-              "--cell-tone": cell.empty ? "#f5f5f5" : toneForScore(cell.score, "stats"),
-            }}
-          />
-        ))}
+      <div className="value-weekdays">
+        {DAY_LABELS.map((label, index) => <span key={`${label}-${index}`}>{label}</span>)}
+      </div>
+      <div className="value-month-grid" aria-label="This month daily value grid">
+        {monthCells.map((cell, index) => {
+          const ariaLabel = cell
+            ? `${cell.label}${cell.score == null ? ", no record" : `, score ${cell.score}`}`
+            : "Empty calendar slot";
+          return (
+            <button
+              className={`value-month-cell tier-${cell?.tier ?? 0} ${cell?.entry ? "recorded" : "missing"} ${cell?.isToday ? "today" : ""} ${cell?.isFuture ? "future" : ""}`}
+              disabled={!cell || cell.isFuture}
+              key={cell?.date ?? `empty-${index}`}
+              onClick={() => cell && onEditDate?.(cell.date)}
+              aria-label={ariaLabel}
+              title={ariaLabel}
+            >
+              {cell && (
+                <>
+                  <span className="value-day-number">{cell.dayNumber}</span>
+                  {cell.score != null && <span className="value-day-score">{cell.score}</span>}
+                </>
+              )}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
 }
 
-function StatsPage({ entries, habitNames, goals, onAdd, onBackup, onHistory, modules, moduleContext, onRemoveModule, onEditModule, onReorderModule }) {
+function StatsPage({ entries, habitNames, goals, onAdd, onBackup, onHistory, onEditDate, modules, moduleContext, onRemoveModule, onEditModule, onReorderModule }) {
   const weekDays = buildWeek(entries);
   const currentWeekScore = Math.round(average(weekDays.map((day) => entryScore(day.entry, habitNames, goals))));
   const weeklyValues = [58, 66, 52, 74, 82, 66, 91, 74, 58, currentWeekScore || 82];
@@ -3882,11 +3919,12 @@ function StatsPage({ entries, habitNames, goals, onAdd, onBackup, onHistory, mod
       </div>
 
       <div className="panel year-panel">
-        <SectionTitle title="Value grid" meta="last 3 months" />
-        <ValueGrid entries={entries} habitNames={habitNames} goals={goals} />
+        <SectionTitle title="Value grid" meta="this month" />
+        <ValueGrid entries={entries} habitNames={habitNames} goals={goals} onEditDate={onEditDate} />
         <div className="legend">
-          <span>Lower</span>
+          <span>No record</span>
           <span className="legend-scale">
+            <i />
             <i />
             <i />
             <i />
@@ -7193,7 +7231,7 @@ export default function App() {
     habit: <HabitPage weekDays={weekDays} habitNames={state.habitNames} trackedHabits={trackedHabitNames} goals={goals} onAdd={openAddChoice} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.habit} moduleContext={moduleContext} onToggleHabitTracking={toggleHabitTracking} onRenameHabit={setEditingHabit} onReorderHabit={reorderHabit} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
     water: <WaterPage weekDays={weekDays} goals={goals} onAdd={openAddChoice} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.water} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
     sleep: <SleepPage weekDays={weekDays} goals={goals} onAdd={openAddChoice} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.sleep} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
-    stats: <StatsPage entries={state.entries} habitNames={trackedHabitNames} goals={goals} onAdd={openAddChoice} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.stats} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
+    stats: <StatsPage entries={state.entries} habitNames={trackedHabitNames} goals={goals} onAdd={openAddChoice} onBackup={openBackupChoice} onHistory={openHistory} onEditDate={openRecordForDate} modules={pageModules.stats} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
     coach: <CoachPage analytics={coachAnalytics} workout={state.workout} aiSettings={aiSettings} geminiApiKey={geminiApiKey} coachMessages={state.coachMessages} onSaveMessages={saveCoachMessages} onApplyProposal={applyCoachProposal} />,
     settings: <SettingsPage goals={goals} onUpdateGoals={updateGoals} aiSettings={aiSettings} geminiApiKey={geminiApiKey} onUpdateAISettings={updateAISettings} onUpdateGeminiApiKey={updateGeminiApiKey} />,
   };
