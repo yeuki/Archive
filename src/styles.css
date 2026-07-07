@@ -29,56 +29,56 @@
 }
 
 .metric-habit {
-  --accent-pale: #fffaf0;
-  --accent-soft: #f7ebd0;
-  --accent-mid: #d8be7c;
-  --accent-deep: #523e12;
-  --accent-glow: rgba(137, 104, 30, 0.14);
-  --accent-scale-1: #f8efd9;
-  --accent-scale-2: #ead49a;
-  --accent-scale-3: #c6a95e;
-  --accent-scale-4: #83651f;
-  --accent-scale-5: #523e12;
+  --accent-pale: #fff7fa;
+  --accent-soft: #f8dbe5;
+  --accent-mid: #eeb5c8;
+  --accent-deep: #7a3750;
+  --accent-glow: rgba(186, 91, 127, 0.14);
+  --accent-scale-1: #fdeef4;
+  --accent-scale-2: #f8d4e1;
+  --accent-scale-3: #edaec4;
+  --accent-scale-4: #bc6e8b;
+  --accent-scale-5: #7a3750;
 }
 
 .metric-water {
-  --accent-pale: #f3fbff;
-  --accent-soft: #d6ecf7;
-  --accent-mid: #8bbcd1;
-  --accent-deep: #0e3748;
-  --accent-glow: rgba(24, 104, 136, 0.14);
-  --accent-scale-1: #e5f4fa;
-  --accent-scale-2: #bfe0ed;
-  --accent-scale-3: #78adbf;
-  --accent-scale-4: #2d6b84;
-  --accent-scale-5: #0e3748;
+  --accent-pale: #f5fbff;
+  --accent-soft: #dceffb;
+  --accent-mid: #a9d3ec;
+  --accent-deep: #235c78;
+  --accent-glow: rgba(75, 151, 194, 0.14);
+  --accent-scale-1: #edf8fe;
+  --accent-scale-2: #d6edf9;
+  --accent-scale-3: #aad3eb;
+  --accent-scale-4: #6fa9c8;
+  --accent-scale-5: #235c78;
 }
 
 .metric-sleep {
-  --accent-pale: #faf8ff;
-  --accent-soft: #e6e1f8;
-  --accent-mid: #a79bd1;
-  --accent-deep: #241e49;
-  --accent-glow: rgba(66, 53, 136, 0.14);
-  --accent-scale-1: #eeeafd;
-  --accent-scale-2: #cec6ef;
-  --accent-scale-3: #8f82c3;
-  --accent-scale-4: #514491;
-  --accent-scale-5: #241e49;
+  --accent-pale: #fbf8ff;
+  --accent-soft: #eadffc;
+  --accent-mid: #cbb6ee;
+  --accent-deep: #5b447d;
+  --accent-glow: rgba(130, 101, 178, 0.14);
+  --accent-scale-1: #f2ebff;
+  --accent-scale-2: #e1d2fb;
+  --accent-scale-3: #c6adee;
+  --accent-scale-4: #9274c0;
+  --accent-scale-5: #5b447d;
 }
 
 .metric-workout,
 .metric-workoutHistory {
-  --accent-pale: #f6fcf7;
-  --accent-soft: #dcefe1;
-  --accent-mid: #91bd9d;
-  --accent-deep: #163b22;
-  --accent-glow: rgba(35, 112, 61, 0.14);
-  --accent-scale-1: #e7f5ea;
-  --accent-scale-2: #c3e1cb;
-  --accent-scale-3: #79ab87;
-  --accent-scale-4: #326846;
-  --accent-scale-5: #163b22;
+  --accent-pale: #f7fdf8;
+  --accent-soft: #dff3e4;
+  --accent-mid: #addbb9;
+  --accent-deep: #356c49;
+  --accent-glow: rgba(92, 159, 112, 0.14);
+  --accent-scale-1: #edf8ef;
+  --accent-scale-2: #d7efde;
+  --accent-scale-3: #addbb9;
+  --accent-scale-4: #72a883;
+  --accent-scale-5: #356c49;
 }
 
 .metric-coach {
