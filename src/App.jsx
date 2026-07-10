@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Capacitor, registerPlugin } from "@capacitor/core";
 import { renderBodyMapSvg } from "./assets/bodymap.js";
 import pencilIcon from "./assets/pencil-icon.png";
 
@@ -72,12 +73,46 @@ const DEFAULT_GOALS = {
 const STORAGE_KEY = "archive-productivity-tracker";
 const GEMINI_KEY_STORAGE_KEY = "archive-productivity-tracker-gemini-key";
 const BACKUP_VERSION = 1;
+const ConnectedHealthNative = registerPlugin("ConnectedHealth");
 const DEFAULT_AI_SETTINGS = {
   useGemini: false,
   geminiModel: "gemini-3.5-flash",
   ttsEnabled: false,
   ttsModel: "gemini-3.1-flash-tts-preview",
   ttsVoice: "Kore",
+};
+const WATCH_METRIC_DEFINITIONS = [
+  { id: "steps", label: "Steps", unit: "steps", cadence: "daily", category: "Movement", defaultEnabled: true },
+  { id: "sleep", label: "Sleep", unit: "sessions", cadence: "nightly", category: "Recovery", defaultEnabled: true },
+  { id: "exercise", label: "Exercise sessions", unit: "workouts", cadence: "as completed", category: "Training", defaultEnabled: true },
+  { id: "distance", label: "Distance", unit: "m", cadence: "daily", category: "Movement", defaultEnabled: true },
+  { id: "activeCalories", label: "Active calories", unit: "kcal", cadence: "daily", category: "Energy", defaultEnabled: true },
+  { id: "heartRate", label: "Heart rate", unit: "bpm", cadence: "samples", category: "Vitals", defaultEnabled: true },
+  { id: "heartRateVariability", label: "HRV", unit: "ms", cadence: "samples", category: "Recovery", defaultEnabled: true },
+  { id: "floors", label: "Floors climbed", unit: "floors", cadence: "daily", category: "Movement", defaultEnabled: false },
+];
+const DEFAULT_CONNECTED_HEALTH = {
+  enabled: false,
+  provider: "healthConnect",
+  sourceName: "Health Connect",
+  status: "notChecked",
+  statusMessage: "",
+  platform: "",
+  lastCheckedAt: "",
+  lastSyncAt: "",
+  systemIntegrated: false,
+  packageInstalled: false,
+  settingsResolvable: false,
+  metrics: Object.fromEntries(WATCH_METRIC_DEFINITIONS.map((metric) => [metric.id, metric.defaultEnabled])),
+};
+const DEFAULT_WATCH_DATA = {
+  dailySummaries: [],
+  sleepSessions: [],
+  workouts: [],
+  samples: {
+    heartRate: [],
+    heartRateVariability: [],
+  },
 };
 const GEMINI_REQUEST_TIMEOUT_MS = 45000;
 const GEMINI_RETRY_ATTEMPTS = 2;
@@ -757,6 +792,127 @@ function normalizeAISettings(settings = {}) {
   };
 }
 
+function normalizeConnectedHealth(settings = {}) {
+  const source = settings && typeof settings === "object" ? settings : {};
+  const statusOptions = new Set(["notChecked", "available", "unavailable", "error", "opened", "webPreview"]);
+  const rawMetrics = source.metrics ?? {};
+  const metrics = Object.fromEntries(WATCH_METRIC_DEFINITIONS.map((metric) => {
+    const rawValue = rawMetrics[metric.id];
+    const enabled = typeof rawValue === "object"
+      ? rawValue.enabled
+      : rawValue;
+    return [metric.id, enabled === undefined ? metric.defaultEnabled : Boolean(enabled)];
+  }));
+  const status = statusOptions.has(source.status) ? source.status : DEFAULT_CONNECTED_HEALTH.status;
+
+  return {
+    enabled: Boolean(source.enabled),
+    provider: source.provider === "healthConnect" ? "healthConnect" : DEFAULT_CONNECTED_HEALTH.provider,
+    sourceName: String(source.sourceName ?? DEFAULT_CONNECTED_HEALTH.sourceName).trim() || DEFAULT_CONNECTED_HEALTH.sourceName,
+    status,
+    statusMessage: String(source.statusMessage ?? "").trim().slice(0, 300),
+    platform: String(source.platform ?? "").trim().slice(0, 40),
+    lastCheckedAt: typeof source.lastCheckedAt === "string" ? source.lastCheckedAt : "",
+    lastSyncAt: typeof source.lastSyncAt === "string" ? source.lastSyncAt : "",
+    systemIntegrated: Boolean(source.systemIntegrated),
+    packageInstalled: Boolean(source.packageInstalled),
+    settingsResolvable: Boolean(source.settingsResolvable),
+    metrics,
+  };
+}
+
+function validDateKey(value) {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function normalizeTimestamp(value) {
+  if (typeof value !== "string" || !value.trim()) return "";
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : value.trim().slice(0, 60);
+}
+
+function normalizeWatchDailySummary(summary = {}) {
+  const source = summary && typeof summary === "object" ? summary : {};
+  if (!validDateKey(source.date)) return null;
+
+  return {
+    date: source.date,
+    source: String(source.source ?? source.sourceName ?? DEFAULT_CONNECTED_HEALTH.sourceName).trim().slice(0, 60) || DEFAULT_CONNECTED_HEALTH.sourceName,
+    steps: Math.round(positiveNumber(source.steps, 0, 0, 300000)),
+    distanceMeters: positiveNumber(source.distanceMeters ?? source.distance, 0, 0, 1000000),
+    activeCalories: positiveNumber(source.activeCalories, 0, 0, 20000),
+    totalCalories: positiveNumber(source.totalCalories, 0, 0, 30000),
+    floors: Math.round(positiveNumber(source.floors, 0, 0, 500)),
+    sleepMinutes: Math.round(positiveNumber(source.sleepMinutes, 0, 0, 1440)),
+    restingHeartRate: positiveNumber(source.restingHeartRate, 0, 0, 250),
+    averageHeartRate: positiveNumber(source.averageHeartRate, 0, 0, 250),
+    hrvMs: positiveNumber(source.hrvMs ?? source.heartRateVariability, 0, 0, 500),
+    updatedAt: normalizeTimestamp(source.updatedAt),
+  };
+}
+
+function normalizeWatchSession(session = {}, index = 0, type = "session") {
+  const source = session && typeof session === "object" ? session : {};
+  const startedAt = normalizeTimestamp(source.startedAt ?? source.startTime);
+  const endedAt = normalizeTimestamp(source.endedAt ?? source.endTime);
+  const fallbackId = `${type}-${startedAt || source.date || index}`;
+
+  return {
+    id: String(source.id ?? fallbackId).trim().slice(0, 100) || fallbackId,
+    source: String(source.source ?? source.sourceName ?? DEFAULT_CONNECTED_HEALTH.sourceName).trim().slice(0, 60) || DEFAULT_CONNECTED_HEALTH.sourceName,
+    date: validDateKey(source.date) ? source.date : (startedAt ? startedAt.slice(0, 10) : ""),
+    startedAt,
+    endedAt,
+    durationMinutes: Math.round(positiveNumber(source.durationMinutes ?? source.duration, 0, 0, 1440)),
+    type: String(source.type ?? type).trim().slice(0, 60) || type,
+    distanceMeters: positiveNumber(source.distanceMeters ?? source.distance, 0, 0, 1000000),
+    activeCalories: positiveNumber(source.activeCalories, 0, 0, 20000),
+    averageHeartRate: positiveNumber(source.averageHeartRate, 0, 0, 250),
+    notes: String(source.notes ?? "").trim().slice(0, 500),
+  };
+}
+
+function normalizeWatchSample(sample = {}, index = 0, type = "sample") {
+  const source = sample && typeof sample === "object" ? sample : {};
+  const timestamp = normalizeTimestamp(source.timestamp ?? source.time);
+  const fallbackId = `${type}-${timestamp || index}`;
+
+  return {
+    id: String(source.id ?? fallbackId).trim().slice(0, 100) || fallbackId,
+    timestamp,
+    value: positiveNumber(source.value, 0, 0, 10000),
+    source: String(source.source ?? source.sourceName ?? DEFAULT_CONNECTED_HEALTH.sourceName).trim().slice(0, 60) || DEFAULT_CONNECTED_HEALTH.sourceName,
+  };
+}
+
+function normalizeWatchData(data = {}) {
+  const source = data && typeof data === "object" ? data : {};
+  const samples = source.samples ?? {};
+
+  return {
+    dailySummaries: (source.dailySummaries ?? [])
+      .map((summary) => normalizeWatchDailySummary(summary))
+      .filter(Boolean)
+      .sort((a, b) => a.date.localeCompare(b.date)),
+    sleepSessions: (source.sleepSessions ?? [])
+      .map((session, index) => normalizeWatchSession(session, index, "sleep"))
+      .filter((session) => session.date || session.startedAt)
+      .sort((a, b) => (a.startedAt || a.date).localeCompare(b.startedAt || b.date)),
+    workouts: (source.workouts ?? source.exerciseSessions ?? [])
+      .map((session, index) => normalizeWatchSession(session, index, "exercise"))
+      .filter((session) => session.date || session.startedAt)
+      .sort((a, b) => (a.startedAt || a.date).localeCompare(b.startedAt || b.date)),
+    samples: {
+      heartRate: (samples.heartRate ?? [])
+        .map((sample, index) => normalizeWatchSample(sample, index, "heart-rate"))
+        .filter((sample) => sample.timestamp),
+      heartRateVariability: (samples.heartRateVariability ?? samples.hrv ?? [])
+        .map((sample, index) => normalizeWatchSample(sample, index, "hrv"))
+        .filter((sample) => sample.timestamp),
+    },
+  };
+}
+
 function normalizeCoachMessages(messages = DEFAULT_COACH_MESSAGES) {
   const source = Array.isArray(messages) && messages.length ? messages : DEFAULT_COACH_MESSAGES;
   const normalized = source
@@ -1011,6 +1167,8 @@ function normalizeTrackerState(rawState = {}) {
     goals: normalizeGoals(rawState.goals),
     workout: normalizeWorkoutState(workoutSource),
     aiSettings: normalizeAISettings(rawState.aiSettings),
+    connectedHealth: normalizeConnectedHealth(rawState.connectedHealth),
+    watchData: normalizeWatchData(rawState.watchData),
     coachMessages: normalizeCoachMessages(rawState.coachMessages),
   };
 }
@@ -1161,6 +1319,8 @@ function loadInitialState() {
     goals: normalizeGoals(),
     workout: normalizeWorkoutState(),
     aiSettings: normalizeAISettings(),
+    connectedHealth: normalizeConnectedHealth(),
+    watchData: normalizeWatchData(),
     coachMessages: normalizeCoachMessages(),
   };
 }
@@ -1660,6 +1820,8 @@ function buildCoachAnalytics(state = {}) {
     .filter((habit) => (state.habitNames ?? DEFAULT_HABITS).includes(habit));
   const entries = [...(state.entries ?? [])].sort((a, b) => a.date.localeCompare(b.date));
   const workout = normalizeWorkoutState(state.workout);
+  const connectedHealth = normalizeConnectedHealth(state.connectedHealth);
+  const watchData = normalizeWatchData(state.watchData);
   const recent7 = recentEntriesByDays(entries, 7);
   const previous7 = previousEntriesByDays(entries, 7);
   const recent30 = recentEntriesByDays(entries, 30);
@@ -1745,6 +1907,16 @@ function buildCoachAnalytics(state = {}) {
       activeWorkoutDays,
       workoutCount: workout.workouts.length,
       recentWorkoutVolume: average(workoutLogs.slice(-5).map(workoutVolume)),
+    },
+    connectedHealth,
+    watchData: {
+      dailySummaries: watchData.dailySummaries,
+      sleepSessions: watchData.sleepSessions,
+      workouts: watchData.workouts,
+      sampleCounts: {
+        heartRate: watchData.samples.heartRate.length,
+        heartRateVariability: watchData.samples.heartRateVariability.length,
+      },
     },
     flags,
   };
@@ -5286,19 +5458,190 @@ function WorkoutPage({ workout, onWorkoutChange, onAdd, onBackup, modules, modul
   );
 }
 
-function SettingsPage({ goals, onUpdateGoals, aiSettings, geminiApiKey, onUpdateAISettings, onUpdateGeminiApiKey }) {
+function connectedHealthStatusLabel(settings) {
+  const normalized = normalizeConnectedHealth(settings);
+  if (normalized.enabled && normalized.status === "available") return "Ready";
+  if (normalized.status === "available") return "Available";
+  if (normalized.status === "opened") return "Opened";
+  if (normalized.status === "webPreview") return "Android only";
+  if (normalized.status === "error") return "Needs check";
+  if (normalized.status === "unavailable") return "Not found";
+  return "Not checked";
+}
+
+function connectedHealthStatusDetail(settings) {
+  const normalized = normalizeConnectedHealth(settings);
+  if (normalized.statusMessage) return normalized.statusMessage;
+  if (normalized.status === "available") return "Health Connect can be used as the bridge for Samsung Health now and other sources later.";
+  if (normalized.status === "webPreview") return "This setting is visible in the browser, but watch sync runs inside the Android app.";
+  if (normalized.status === "unavailable") return "Install or enable Health Connect, then check again.";
+  if (normalized.status === "error") return "Archive could not reach the native Health Connect bridge.";
+  return "Check the connection from your phone before importing watch data.";
+}
+
+function formatSettingsTimestamp(value) {
+  if (!value) return "Never";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "Recently";
+  return parsed.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function SettingsPage({
+  goals,
+  onUpdateGoals,
+  aiSettings,
+  geminiApiKey,
+  connectedHealth,
+  watchData,
+  onUpdateConnectedHealth,
+  onCheckConnectedHealth,
+  onOpenConnectedHealthSettings,
+  onUpdateAISettings,
+  onUpdateGeminiApiKey,
+}) {
   return (
     <div className="screen">
       <div className="topbar">
         <h1>Settings</h1>
       </div>
       <GoalSettingsPanel goals={goals} onUpdateGoals={onUpdateGoals} />
+      <ConnectedHealthPanel
+        connectedHealth={connectedHealth}
+        watchData={watchData}
+        onUpdateConnectedHealth={onUpdateConnectedHealth}
+        onCheckStatus={onCheckConnectedHealth}
+        onOpenSettings={onOpenConnectedHealthSettings}
+      />
       <AISettingsPanel
         aiSettings={aiSettings}
         geminiApiKey={geminiApiKey}
         onUpdateAISettings={onUpdateAISettings}
         onUpdateGeminiApiKey={onUpdateGeminiApiKey}
       />
+    </div>
+  );
+}
+
+function ConnectedHealthPanel({ connectedHealth, watchData, onUpdateConnectedHealth, onCheckStatus, onOpenSettings }) {
+  const [busyAction, setBusyAction] = useState("");
+  const settings = normalizeConnectedHealth(connectedHealth);
+  const data = normalizeWatchData(watchData);
+  const enabledMetrics = WATCH_METRIC_DEFINITIONS.filter((metric) => settings.metrics[metric.id]);
+  const statusLabel = connectedHealthStatusLabel(settings);
+
+  const runAction = async (actionName, action) => {
+    if (!action) return;
+    setBusyAction(actionName);
+    try {
+      await action();
+    } finally {
+      setBusyAction("");
+    }
+  };
+
+  const toggleMetric = (metricId) => {
+    onUpdateConnectedHealth?.({
+      metrics: {
+        [metricId]: !settings.metrics[metricId],
+      },
+    });
+  };
+
+  return (
+    <div className="settings-stack connected-health-panel">
+      <SettingsSection title="Connected Health" meta={settings.enabled ? statusLabel : "Off"}>
+        <SettingsRow
+          label="Source"
+          value="Health Connect"
+          detail="Samsung Health now; Garmin and HealthKit can map here later."
+        />
+        <SettingsRow label="Import">
+          <button
+            type="button"
+            className={`settings-pill-toggle ${settings.enabled ? "active" : ""}`}
+            onClick={() => onUpdateConnectedHealth?.({ enabled: !settings.enabled })}
+          >
+            {settings.enabled ? "On" : "Off"}
+          </button>
+        </SettingsRow>
+        <SettingsRow
+          label="Status"
+          value={statusLabel}
+          detail={connectedHealthStatusDetail(settings)}
+        />
+        <SettingsRow
+          label="Last check"
+          value={formatSettingsTimestamp(settings.lastCheckedAt)}
+          detail={settings.platform ? `${settings.platform}${settings.systemIntegrated ? " / system" : ""}` : ""}
+        />
+        <div className="settings-option-list">
+          <button
+            type="button"
+            className="settings-option"
+            onClick={() => runAction("check", onCheckStatus)}
+            disabled={busyAction === "check"}
+          >
+            <span>
+              <strong>{busyAction === "check" ? "Checking..." : "Check connection"}</strong>
+              <small>Detect whether your phone can use Health Connect as Archive's watch-data bridge.</small>
+            </span>
+            <b>Run</b>
+          </button>
+          <button
+            type="button"
+            className="settings-option"
+            onClick={() => runAction("open", onOpenSettings)}
+            disabled={busyAction === "open"}
+          >
+            <span>
+              <strong>{busyAction === "open" ? "Opening..." : "Open Health Connect"}</strong>
+              <small>Use this to let Samsung Health share steps, sleep, workouts, and vitals.</small>
+            </span>
+            <b>Open</b>
+          </button>
+        </div>
+      </SettingsSection>
+
+      <SettingsSection title="Watch Data Layers" meta={`${enabledMetrics.length}/${WATCH_METRIC_DEFINITIONS.length}`}>
+        <SettingsRow
+          label="Stored"
+          value={`${data.dailySummaries.length} days`}
+          detail={`${data.sleepSessions.length} sleep sessions / ${data.workouts.length} workouts`}
+        />
+        <SettingsRow
+          label="Samples"
+          value={`${data.samples.heartRate.length} HR`}
+          detail={`${data.samples.heartRateVariability.length} HRV samples`}
+        />
+        <div className="settings-option-list">
+          {WATCH_METRIC_DEFINITIONS.map((metric) => {
+            const active = settings.metrics[metric.id];
+            return (
+              <button
+                type="button"
+                className={`settings-option ${active ? "active" : ""}`}
+                aria-pressed={active}
+                onClick={() => toggleMetric(metric.id)}
+                key={metric.id}
+              >
+                <span>
+                  <strong>{metric.label}</strong>
+                  <small>{metric.category} / {metric.cadence} / {metric.unit}</small>
+                </span>
+                <b>{active ? "On" : "Off"}</b>
+              </button>
+            );
+          })}
+        </div>
+      </SettingsSection>
+      <div className="ai-disclosure">
+        First step: connection setup and storage. Next step: requesting Health Connect permissions and importing real records into these layers.
+      </div>
     </div>
   );
 }
@@ -6867,6 +7210,8 @@ export default function App() {
   const trackedHabitNames = (state.trackedHabits ?? state.habitNames).filter((habit) => state.habitNames.includes(habit));
   const goals = normalizeGoals(state.goals);
   const aiSettings = normalizeAISettings(state.aiSettings);
+  const connectedHealth = normalizeConnectedHealth(state.connectedHealth);
+  const watchData = normalizeWatchData(state.watchData);
   const pageModules = normalizePageModules(state.pageModules);
   const moduleTemplates = normalizeModuleTemplates(state.moduleTemplates);
   const coachAnalytics = useMemo(() => buildCoachAnalytics(state), [state]);
@@ -6882,7 +7227,9 @@ export default function App() {
     goals,
     weekDays,
     workout: state.workout,
-  }), [state.entries, state.habitNames, trackedHabitNames, goals, weekDays, state.workout]);
+    connectedHealth,
+    watchData,
+  }), [state.entries, state.habitNames, trackedHabitNames, goals, weekDays, state.workout, connectedHealth, watchData]);
 
   const changeActivePage = (nextPage) => {
     setActivePage((currentPage) => {
@@ -7085,6 +7432,94 @@ export default function App() {
     }));
   };
 
+  const updateConnectedHealth = (patch) => {
+    setTrackerState((current) => {
+      const currentConnectedHealth = normalizeConnectedHealth(current.connectedHealth);
+
+      return {
+        ...current,
+        connectedHealth: normalizeConnectedHealth({
+          ...currentConnectedHealth,
+          ...patch,
+          metrics: {
+            ...currentConnectedHealth.metrics,
+            ...(patch.metrics ?? {}),
+          },
+        }),
+      };
+    });
+  };
+
+  const checkConnectedHealth = async () => {
+    const checkedAt = new Date().toISOString();
+    const isNative = typeof Capacitor.isNativePlatform === "function" && Capacitor.isNativePlatform();
+
+    if (!isNative) {
+      updateConnectedHealth({
+        status: "webPreview",
+        statusMessage: "Connected health sync is configured on the Android app, not the browser preview.",
+        platform: "web",
+        lastCheckedAt: checkedAt,
+      });
+      return;
+    }
+
+    try {
+      const status = await ConnectedHealthNative.getStatus();
+      updateConnectedHealth({
+        status: status?.status === "available" || status?.available ? "available" : "unavailable",
+        statusMessage: String(status?.message ?? "").trim(),
+        platform: String(status?.platform ?? Capacitor.getPlatform?.() ?? "android"),
+        lastCheckedAt: checkedAt,
+        systemIntegrated: Boolean(status?.systemIntegrated),
+        packageInstalled: Boolean(status?.packageInstalled),
+        settingsResolvable: Boolean(status?.settingsResolvable),
+      });
+    } catch (error) {
+      updateConnectedHealth({
+        status: "error",
+        statusMessage: error?.message ? `Native bridge error: ${error.message}` : "Archive could not check Health Connect.",
+        platform: String(Capacitor.getPlatform?.() ?? "android"),
+        lastCheckedAt: checkedAt,
+      });
+    }
+  };
+
+  const openConnectedHealthSettings = async () => {
+    const openedAt = new Date().toISOString();
+    const isNative = typeof Capacitor.isNativePlatform === "function" && Capacitor.isNativePlatform();
+
+    if (!isNative) {
+      updateConnectedHealth({
+        status: "webPreview",
+        statusMessage: "Open this from the Android app to configure Health Connect.",
+        platform: "web",
+        lastCheckedAt: openedAt,
+      });
+      return;
+    }
+
+    try {
+      const result = await ConnectedHealthNative.openSettings();
+      updateConnectedHealth({
+        status: result?.opened === false ? "unavailable" : "opened",
+        statusMessage: String(result?.message ?? "Opened Health Connect settings.").trim(),
+        platform: String(result?.platform ?? Capacitor.getPlatform?.() ?? "android"),
+        lastCheckedAt: openedAt,
+        systemIntegrated: Boolean(result?.systemIntegrated),
+        packageInstalled: Boolean(result?.packageInstalled),
+        settingsResolvable: Boolean(result?.settingsResolvable),
+      });
+    } catch (error) {
+      updateConnectedHealth({
+        status: "error",
+        statusMessage: error?.message ? `Could not open Health Connect: ${error.message}` : "Archive could not open Health Connect.",
+        platform: String(Capacitor.getPlatform?.() ?? "android"),
+        lastCheckedAt: openedAt,
+      });
+    }
+  };
+
   const updateGeminiApiKey = (nextKey) => {
     setGeminiApiKey(nextKey);
     saveGeminiApiKey(nextKey);
@@ -7233,7 +7668,7 @@ export default function App() {
     sleep: <SleepPage weekDays={weekDays} goals={goals} onAdd={openAddChoice} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.sleep} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
     stats: <StatsPage entries={state.entries} habitNames={trackedHabitNames} goals={goals} onAdd={openAddChoice} onBackup={openBackupChoice} onHistory={openHistory} onEditDate={openRecordForDate} modules={pageModules.stats} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
     coach: <CoachPage analytics={coachAnalytics} workout={state.workout} aiSettings={aiSettings} geminiApiKey={geminiApiKey} coachMessages={state.coachMessages} onSaveMessages={saveCoachMessages} onApplyProposal={applyCoachProposal} />,
-    settings: <SettingsPage goals={goals} onUpdateGoals={updateGoals} aiSettings={aiSettings} geminiApiKey={geminiApiKey} onUpdateAISettings={updateAISettings} onUpdateGeminiApiKey={updateGeminiApiKey} />,
+    settings: <SettingsPage goals={goals} onUpdateGoals={updateGoals} aiSettings={aiSettings} geminiApiKey={geminiApiKey} connectedHealth={connectedHealth} watchData={watchData} onUpdateConnectedHealth={updateConnectedHealth} onCheckConnectedHealth={checkConnectedHealth} onOpenConnectedHealthSettings={openConnectedHealthSettings} onUpdateAISettings={updateAISettings} onUpdateGeminiApiKey={updateGeminiApiKey} />,
   };
 
   return (
