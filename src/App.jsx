@@ -951,6 +951,41 @@ function mergeWatchData(currentData = {}, incomingData = {}) {
   });
 }
 
+function mergeWatchSleepIntoEntries(entries = [], incomingData = {}, habitNames = DEFAULT_HABITS) {
+  const incoming = normalizeWatchData(incomingData);
+  const sleepByDate = new Map(
+    incoming.dailySummaries
+      .filter((summary) => summary.sleepMinutes > 0)
+      .map((summary) => [summary.date, trimNumber(summary.sleepMinutes / 60, 2)]),
+  );
+
+  if (!sleepByDate.size) return entries;
+
+  const byDate = new Map(entries.map((entry) => [entry.date, entry]));
+
+  sleepByDate.forEach((sleepHours, date) => {
+    const existing = byDate.get(date);
+
+    if (existing) {
+      const existingSleep = Number(existing.sleep);
+      byDate.set(date, {
+        ...existing,
+        sleep: Number.isFinite(existingSleep) && existingSleep > 0 ? existing.sleep : sleepHours,
+      });
+      return;
+    }
+
+    byDate.set(date, {
+      date,
+      habits: habitMap([], habitNames),
+      water: 0,
+      sleep: sleepHours,
+    });
+  });
+
+  return normalizeEntries([...byDate.values()], habitNames);
+}
+
 function normalizeCoachMessages(messages = DEFAULT_COACH_MESSAGES) {
   const source = Array.isArray(messages) && messages.length ? messages : DEFAULT_COACH_MESSAGES;
   const normalized = source
@@ -1195,18 +1230,24 @@ function normalizeTrackerState(rawState = {}) {
   const workoutSource = matchesLegacySeedWorkoutLogs(rawState.workout?.workouts)
     ? { ...rawState.workout, workouts: [] }
     : rawState.workout;
+  const watchData = normalizeWatchData(rawState.watchData);
+  const entries = mergeWatchSleepIntoEntries(
+    normalizeEntries(entriesSource ?? createSeedEntries(), habitNames, legacyWaterScale),
+    watchData,
+    habitNames,
+  );
 
   return {
     habitNames,
     trackedHabits,
-    entries: normalizeEntries(entriesSource ?? createSeedEntries(), habitNames, legacyWaterScale),
+    entries,
     pageModules: normalizePageModules(rawState.pageModules),
     moduleTemplates: normalizeModuleTemplates(rawState.moduleTemplates),
     goals: normalizeGoals(rawState.goals),
     workout: normalizeWorkoutState(workoutSource),
     aiSettings: normalizeAISettings(rawState.aiSettings),
     connectedHealth: normalizeConnectedHealth(rawState.connectedHealth),
-    watchData: normalizeWatchData(rawState.watchData),
+    watchData,
     coachMessages: normalizeCoachMessages(rawState.coachMessages),
   };
 }
@@ -7665,6 +7706,7 @@ export default function App() {
 
         return {
           ...current,
+          entries: mergeWatchSleepIntoEntries(current.entries, result, current.habitNames),
           connectedHealth: normalizeConnectedHealth({
             ...currentConnectedHealth,
             enabled: true,
