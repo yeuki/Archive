@@ -100,6 +100,10 @@ const DEFAULT_CONNECTED_HEALTH = {
   platform: "",
   lastCheckedAt: "",
   lastSyncAt: "",
+  permissionsGranted: false,
+  grantedPermissions: [],
+  missingPermissions: [],
+  requestedPermissions: [],
   systemIntegrated: false,
   packageInstalled: false,
   settingsResolvable: false,
@@ -794,7 +798,7 @@ function normalizeAISettings(settings = {}) {
 
 function normalizeConnectedHealth(settings = {}) {
   const source = settings && typeof settings === "object" ? settings : {};
-  const statusOptions = new Set(["notChecked", "available", "unavailable", "error", "opened", "webPreview"]);
+  const statusOptions = new Set(["notChecked", "available", "unavailable", "error", "opened", "webPreview", "permissionsNeeded", "synced"]);
   const rawMetrics = source.metrics ?? {};
   const metrics = Object.fromEntries(WATCH_METRIC_DEFINITIONS.map((metric) => {
     const rawValue = rawMetrics[metric.id];
@@ -814,6 +818,10 @@ function normalizeConnectedHealth(settings = {}) {
     platform: String(source.platform ?? "").trim().slice(0, 40),
     lastCheckedAt: typeof source.lastCheckedAt === "string" ? source.lastCheckedAt : "",
     lastSyncAt: typeof source.lastSyncAt === "string" ? source.lastSyncAt : "",
+    permissionsGranted: Boolean(source.permissionsGranted ?? source.allGranted),
+    grantedPermissions: uniqueStrings(source.grantedPermissions).slice(0, 40),
+    missingPermissions: uniqueStrings(source.missingPermissions ?? source.deniedPermissions).slice(0, 40),
+    requestedPermissions: uniqueStrings(source.requestedPermissions).slice(0, 40),
     systemIntegrated: Boolean(source.systemIntegrated),
     packageInstalled: Boolean(source.packageInstalled),
     settingsResolvable: Boolean(source.settingsResolvable),
@@ -911,6 +919,36 @@ function normalizeWatchData(data = {}) {
         .filter((sample) => sample.timestamp),
     },
   };
+}
+
+function mergeWatchData(currentData = {}, incomingData = {}) {
+  const current = normalizeWatchData(currentData);
+  const incoming = normalizeWatchData(incomingData);
+  const dailyByDate = new Map(current.dailySummaries.map((summary) => [summary.date, summary]));
+  const mergeById = (existing = [], incomingItems = []) => {
+    const byId = new Map(existing.map((item) => [item.id, item]));
+    incomingItems.forEach((item) => byId.set(item.id, item));
+    return [...byId.values()];
+  };
+  const mergeSamples = (existing = [], incomingSamples = []) => {
+    const byId = new Map(existing.map((sample) => [sample.id, sample]));
+    incomingSamples.forEach((sample) => byId.set(sample.id, sample));
+    return [...byId.values()]
+      .sort((a, b) => a.timestamp.localeCompare(b.timestamp))
+      .slice(-1000);
+  };
+
+  incoming.dailySummaries.forEach((summary) => dailyByDate.set(summary.date, summary));
+
+  return normalizeWatchData({
+    dailySummaries: [...dailyByDate.values()],
+    sleepSessions: mergeById(current.sleepSessions, incoming.sleepSessions),
+    workouts: mergeById(current.workouts, incoming.workouts),
+    samples: {
+      heartRate: mergeSamples(current.samples.heartRate, incoming.samples.heartRate),
+      heartRateVariability: mergeSamples(current.samples.heartRateVariability, incoming.samples.heartRateVariability),
+    },
+  });
 }
 
 function normalizeCoachMessages(messages = DEFAULT_COACH_MESSAGES) {
@@ -5460,6 +5498,8 @@ function WorkoutPage({ workout, onWorkoutChange, onAdd, onBackup, modules, modul
 
 function connectedHealthStatusLabel(settings) {
   const normalized = normalizeConnectedHealth(settings);
+  if (normalized.status === "synced") return "Synced";
+  if (normalized.status === "permissionsNeeded") return "Needs permission";
   if (normalized.enabled && normalized.status === "available") return "Ready";
   if (normalized.status === "available") return "Available";
   if (normalized.status === "opened") return "Opened";
@@ -5472,6 +5512,8 @@ function connectedHealthStatusLabel(settings) {
 function connectedHealthStatusDetail(settings) {
   const normalized = normalizeConnectedHealth(settings);
   if (normalized.statusMessage) return normalized.statusMessage;
+  if (normalized.status === "synced") return "Archive imported the latest available Health Connect records.";
+  if (normalized.status === "permissionsNeeded") return "Review Health Connect permissions so Archive can import watch data.";
   if (normalized.status === "available") return "Health Connect can be used as the bridge for Samsung Health now and other sources later.";
   if (normalized.status === "webPreview") return "This setting is visible in the browser, but watch sync runs inside the Android app.";
   if (normalized.status === "unavailable") return "Install or enable Health Connect, then check again.";
@@ -5501,6 +5543,8 @@ function SettingsPage({
   onUpdateConnectedHealth,
   onCheckConnectedHealth,
   onOpenConnectedHealthSettings,
+  onRequestConnectedHealthPermissions,
+  onSyncConnectedHealth,
   onUpdateAISettings,
   onUpdateGeminiApiKey,
 }) {
@@ -5516,6 +5560,8 @@ function SettingsPage({
         onUpdateConnectedHealth={onUpdateConnectedHealth}
         onCheckStatus={onCheckConnectedHealth}
         onOpenSettings={onOpenConnectedHealthSettings}
+        onRequestPermissions={onRequestConnectedHealthPermissions}
+        onSync={onSyncConnectedHealth}
       />
       <AISettingsPanel
         aiSettings={aiSettings}
@@ -5527,12 +5573,16 @@ function SettingsPage({
   );
 }
 
-function ConnectedHealthPanel({ connectedHealth, watchData, onUpdateConnectedHealth, onCheckStatus, onOpenSettings }) {
+function ConnectedHealthPanel({ connectedHealth, watchData, onUpdateConnectedHealth, onCheckStatus, onOpenSettings, onRequestPermissions, onSync }) {
   const [busyAction, setBusyAction] = useState("");
   const settings = normalizeConnectedHealth(connectedHealth);
   const data = normalizeWatchData(watchData);
   const enabledMetrics = WATCH_METRIC_DEFINITIONS.filter((metric) => settings.metrics[metric.id]);
   const statusLabel = connectedHealthStatusLabel(settings);
+  const requestedPermissionCount = settings.requestedPermissions.length || WATCH_METRIC_DEFINITIONS.length;
+  const grantedPermissionCount = settings.permissionsGranted
+    ? requestedPermissionCount
+    : Math.min(settings.grantedPermissions.length, requestedPermissionCount);
 
   const runAction = async (actionName, action) => {
     if (!action) return;
@@ -5575,9 +5625,19 @@ function ConnectedHealthPanel({ connectedHealth, watchData, onUpdateConnectedHea
           detail={connectedHealthStatusDetail(settings)}
         />
         <SettingsRow
+          label="Permissions"
+          value={settings.permissionsGranted ? "Granted" : "Needed"}
+          detail={`${grantedPermissionCount}/${requestedPermissionCount} Health Connect data types granted`}
+        />
+        <SettingsRow
           label="Last check"
           value={formatSettingsTimestamp(settings.lastCheckedAt)}
           detail={settings.platform ? `${settings.platform}${settings.systemIntegrated ? " / system" : ""}` : ""}
+        />
+        <SettingsRow
+          label="Last sync"
+          value={formatSettingsTimestamp(settings.lastSyncAt)}
+          detail="Imports the last 30 days Health Connect allows without history permission."
         />
         <div className="settings-option-list">
           <button
@@ -5591,6 +5651,30 @@ function ConnectedHealthPanel({ connectedHealth, watchData, onUpdateConnectedHea
               <small>Detect whether your phone can use Health Connect as Archive's watch-data bridge.</small>
             </span>
             <b>Run</b>
+          </button>
+          <button
+            type="button"
+            className="settings-option"
+            onClick={() => runAction("permissions", onRequestPermissions)}
+            disabled={busyAction === "permissions"}
+          >
+            <span>
+              <strong>{busyAction === "permissions" ? "Requesting..." : "Request permissions"}</strong>
+              <small>Open Android's Health Connect permission screen for Archive.</small>
+            </span>
+            <b>Review</b>
+          </button>
+          <button
+            type="button"
+            className="settings-option"
+            onClick={() => runAction("sync", onSync)}
+            disabled={busyAction === "sync"}
+          >
+            <span>
+              <strong>{busyAction === "sync" ? "Syncing..." : "Sync watch data"}</strong>
+              <small>Import recent steps, sleep, workouts, distance, calories, HR, HRV, and floors.</small>
+            </span>
+            <b>Sync</b>
           </button>
           <button
             type="button"
@@ -5640,7 +5724,7 @@ function ConnectedHealthPanel({ connectedHealth, watchData, onUpdateConnectedHea
         </div>
       </SettingsSection>
       <div className="ai-disclosure">
-        First step: connection setup and storage. Next step: requesting Health Connect permissions and importing real records into these layers.
+        Health Connect import is read-only. Samsung Health must be set to share data with Health Connect before Archive can import anything useful here.
       </div>
     </div>
   );
@@ -7466,11 +7550,22 @@ export default function App() {
 
     try {
       const status = await ConnectedHealthNative.getStatus();
+      const permissionStatus = (status?.available || status?.status === "available")
+        ? await ConnectedHealthNative.checkHealthPermissions().catch(() => null)
+        : null;
+      const nativeStatus = permissionStatus ?? status;
+      const permissionsGranted = Boolean(nativeStatus?.allGranted ?? nativeStatus?.permissionsGranted);
       updateConnectedHealth({
-        status: status?.status === "available" || status?.available ? "available" : "unavailable",
-        statusMessage: String(status?.message ?? "").trim(),
-        platform: String(status?.platform ?? Capacitor.getPlatform?.() ?? "android"),
+        status: nativeStatus?.status === "permissionsNeeded"
+          ? "permissionsNeeded"
+          : status?.status === "available" || status?.available ? "available" : "unavailable",
+        statusMessage: String(nativeStatus?.message ?? status?.message ?? "").trim(),
+        platform: String(nativeStatus?.platform ?? status?.platform ?? Capacitor.getPlatform?.() ?? "android"),
         lastCheckedAt: checkedAt,
+        permissionsGranted,
+        grantedPermissions: nativeStatus?.grantedPermissions ?? [],
+        missingPermissions: nativeStatus?.missingPermissions ?? [],
+        requestedPermissions: nativeStatus?.requestedPermissions ?? [],
         systemIntegrated: Boolean(status?.systemIntegrated),
         packageInstalled: Boolean(status?.packageInstalled),
         settingsResolvable: Boolean(status?.settingsResolvable),
@@ -7479,6 +7574,121 @@ export default function App() {
       updateConnectedHealth({
         status: "error",
         statusMessage: error?.message ? `Native bridge error: ${error.message}` : "Archive could not check Health Connect.",
+        platform: String(Capacitor.getPlatform?.() ?? "android"),
+        lastCheckedAt: checkedAt,
+      });
+    }
+  };
+
+  const requestConnectedHealthPermissions = async () => {
+    const requestedAt = new Date().toISOString();
+    const isNative = typeof Capacitor.isNativePlatform === "function" && Capacitor.isNativePlatform();
+
+    if (!isNative) {
+      updateConnectedHealth({
+        status: "webPreview",
+        statusMessage: "Request Health Connect permissions from the Android app, not the browser preview.",
+        platform: "web",
+        lastCheckedAt: requestedAt,
+      });
+      return;
+    }
+
+    try {
+      const result = await ConnectedHealthNative.requestHealthPermissions();
+      const permissionsGranted = Boolean(result?.allGranted ?? result?.permissionsGranted);
+      updateConnectedHealth({
+        enabled: true,
+        status: permissionsGranted ? "available" : "permissionsNeeded",
+        statusMessage: String(result?.message ?? (permissionsGranted
+          ? "Health Connect permissions are granted."
+          : "Archive still needs Health Connect permission before it can import watch data.")).trim(),
+        platform: String(result?.platform ?? Capacitor.getPlatform?.() ?? "android"),
+        lastCheckedAt: requestedAt,
+        permissionsGranted,
+        grantedPermissions: result?.grantedPermissions ?? [],
+        missingPermissions: result?.missingPermissions ?? [],
+        requestedPermissions: result?.requestedPermissions ?? [],
+        systemIntegrated: Boolean(result?.systemIntegrated),
+        packageInstalled: Boolean(result?.packageInstalled),
+        settingsResolvable: Boolean(result?.settingsResolvable),
+      });
+    } catch (error) {
+      updateConnectedHealth({
+        status: "error",
+        statusMessage: error?.message ? `Could not request Health Connect permissions: ${error.message}` : "Archive could not request Health Connect permissions.",
+        platform: String(Capacitor.getPlatform?.() ?? "android"),
+        lastCheckedAt: requestedAt,
+      });
+    }
+  };
+
+  const syncConnectedHealth = async () => {
+    const checkedAt = new Date().toISOString();
+    const isNative = typeof Capacitor.isNativePlatform === "function" && Capacitor.isNativePlatform();
+
+    if (!isNative) {
+      updateConnectedHealth({
+        status: "webPreview",
+        statusMessage: "Watch-data import runs inside the Android app.",
+        platform: "web",
+        lastCheckedAt: checkedAt,
+      });
+      return;
+    }
+
+    try {
+      const result = await ConnectedHealthNative.syncRecentData({ days: 30 });
+      const permissionsGranted = Boolean(result?.allGranted ?? result?.permissionsGranted);
+
+      if (result?.needsPermissions || !permissionsGranted) {
+        updateConnectedHealth({
+          enabled: true,
+          status: "permissionsNeeded",
+          statusMessage: String(result?.message ?? "Archive needs Health Connect permissions before syncing watch data.").trim(),
+          platform: String(result?.platform ?? Capacitor.getPlatform?.() ?? "android"),
+          lastCheckedAt: checkedAt,
+          permissionsGranted,
+          grantedPermissions: result?.grantedPermissions ?? [],
+          missingPermissions: result?.missingPermissions ?? [],
+          requestedPermissions: result?.requestedPermissions ?? [],
+          systemIntegrated: Boolean(result?.systemIntegrated),
+          packageInstalled: Boolean(result?.packageInstalled),
+          settingsResolvable: Boolean(result?.settingsResolvable),
+        });
+        return;
+      }
+
+      setTrackerState((current) => {
+        const currentConnectedHealth = normalizeConnectedHealth(current.connectedHealth);
+        const syncedAt = typeof result?.syncedAt === "string" ? result.syncedAt : checkedAt;
+
+        return {
+          ...current,
+          connectedHealth: normalizeConnectedHealth({
+            ...currentConnectedHealth,
+            enabled: true,
+            status: result?.synced ? "synced" : "available",
+            statusMessage: String(result?.message ?? "Health Connect data synced.").trim(),
+            platform: String(result?.platform ?? Capacitor.getPlatform?.() ?? "android"),
+            lastCheckedAt: checkedAt,
+            lastSyncAt: syncedAt,
+            permissionsGranted: true,
+            grantedPermissions: result?.grantedPermissions ?? currentConnectedHealth.grantedPermissions,
+            missingPermissions: result?.missingPermissions ?? [],
+            requestedPermissions: result?.requestedPermissions ?? currentConnectedHealth.requestedPermissions,
+            systemIntegrated: Boolean(result?.systemIntegrated),
+            packageInstalled: Boolean(result?.packageInstalled),
+            settingsResolvable: Boolean(result?.settingsResolvable),
+            metrics: currentConnectedHealth.metrics,
+          }),
+          watchData: mergeWatchData(current.watchData, result),
+        };
+      });
+    } catch (error) {
+      updateConnectedHealth({
+        status: "error",
+        statusMessage: error?.message ? `Health Connect sync failed: ${error.message}` : "Archive could not sync Health Connect data.",
         platform: String(Capacitor.getPlatform?.() ?? "android"),
         lastCheckedAt: checkedAt,
       });
@@ -7668,7 +7878,7 @@ export default function App() {
     sleep: <SleepPage weekDays={weekDays} goals={goals} onAdd={openAddChoice} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.sleep} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
     stats: <StatsPage entries={state.entries} habitNames={trackedHabitNames} goals={goals} onAdd={openAddChoice} onBackup={openBackupChoice} onHistory={openHistory} onEditDate={openRecordForDate} modules={pageModules.stats} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
     coach: <CoachPage analytics={coachAnalytics} workout={state.workout} aiSettings={aiSettings} geminiApiKey={geminiApiKey} coachMessages={state.coachMessages} onSaveMessages={saveCoachMessages} onApplyProposal={applyCoachProposal} />,
-    settings: <SettingsPage goals={goals} onUpdateGoals={updateGoals} aiSettings={aiSettings} geminiApiKey={geminiApiKey} connectedHealth={connectedHealth} watchData={watchData} onUpdateConnectedHealth={updateConnectedHealth} onCheckConnectedHealth={checkConnectedHealth} onOpenConnectedHealthSettings={openConnectedHealthSettings} onUpdateAISettings={updateAISettings} onUpdateGeminiApiKey={updateGeminiApiKey} />,
+    settings: <SettingsPage goals={goals} onUpdateGoals={updateGoals} aiSettings={aiSettings} geminiApiKey={geminiApiKey} connectedHealth={connectedHealth} watchData={watchData} onUpdateConnectedHealth={updateConnectedHealth} onCheckConnectedHealth={checkConnectedHealth} onOpenConnectedHealthSettings={openConnectedHealthSettings} onRequestConnectedHealthPermissions={requestConnectedHealthPermissions} onSyncConnectedHealth={syncConnectedHealth} onUpdateAISettings={updateAISettings} onUpdateGeminiApiKey={updateGeminiApiKey} />,
   };
 
   return (
