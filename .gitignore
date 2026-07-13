@@ -31,6 +31,9 @@ android/.gradle/
 android/**/build/
 android/local.properties
 android/.idea/
+# Versioned APKs live locally and in Drive; GitHub receives them as release assets.
+releases/**/*.apk
+releases/**/*.sha256
 *.apk
 *.aab
 *.jks

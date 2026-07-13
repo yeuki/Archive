@@ -1,6 +1,14 @@
 apply plugin: 'com.android.application'
 apply plugin: 'org.jetbrains.kotlin.android'
 
+def archiveVersionFile = rootProject.file('../VERSION')
+def archiveVersionName = archiveVersionFile.exists() ? archiveVersionFile.text.trim() : '0.1.0'
+def archiveVersionParts = archiveVersionName.tokenize('.').collect { it as int }
+def archiveVersionCode = Math.max(
+    1,
+    archiveVersionParts[0] * 10000 + archiveVersionParts[1] * 100 + archiveVersionParts[2]
+)
+
 android {
     namespace "com.kyle.archive"
     compileSdk rootProject.ext.compileSdkVersion
@@ -8,8 +16,8 @@ android {
         applicationId "com.kyle.archive"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode archiveVersionCode
+        versionName archiveVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

@@ -10,7 +10,9 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $AndroidRoot = Join-Path $ProjectRoot "android"
 $ApkPath = Join-Path $AndroidRoot "app\build\outputs\apk\debug\app-debug.apk"
-$DriveApkPath = "G:\My Drive\Archive Productivity Tracker\archive-productivity-tracker-debug.apk"
+$Version = (Get-Content -Raw (Join-Path $ProjectRoot "VERSION")).Trim()
+$ReleaseFileName = "Archive-v$Version.apk"
+$DriveApkPath = "G:\My Drive\Archive Productivity Tracker\Releases\v$Version\$ReleaseFileName"
 $AppId = "com.kyle.archive"
 
 function Invoke-Step {
@@ -80,12 +82,22 @@ try {
   }
 
   if (!$SkipDriveCopy) {
-    Invoke-Step "Updating Google Drive APK copy" {
+    Invoke-Step "Archiving versioned Google Drive APK" {
       $DriveDir = Split-Path -Parent $DriveApkPath
       if (!(Test-Path -LiteralPath $DriveDir)) {
         New-Item -ItemType Directory -Path $DriveDir | Out-Null
       }
-      Copy-Item -LiteralPath $ApkPath -Destination $DriveApkPath -Force
+
+      if (Test-Path -LiteralPath $DriveApkPath) {
+        $SourceHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $ApkPath).Hash
+        $DriveHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $DriveApkPath).Hash
+        if ($SourceHash -ne $DriveHash) {
+          throw "Release '$ReleaseFileName' already exists with different contents. Increase VERSION before archiving another major build."
+        }
+        Write-Host "The matching versioned Drive APK is already archived; leaving it unchanged."
+      } else {
+        Copy-Item -LiteralPath $ApkPath -Destination $DriveApkPath
+      }
       Get-Item -LiteralPath $DriveApkPath | Select-Object FullName, Length, LastWriteTime
     }
   }

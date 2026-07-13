@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
     "cap:sync": "cap sync android",
-    "android:build": "cd android && gradlew.bat assembleDebug"
+    "android:build": "cd android && gradlew.bat assembleDebug",
+    "release:build": "powershell -ExecutionPolicy Bypass -File ./scripts/build-release.ps1"
   },
   "dependencies": {
     "@capacitor/android": "^7.4.3",

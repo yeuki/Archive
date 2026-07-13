@@ -65,6 +65,16 @@ The APK is generated at:
 android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
+## Versioned releases
+
+Archive uses semantic pre-release versions recorded in [`VERSION`](VERSION). To build and preserve the current version locally and in Google Drive, run:
+
+```powershell
+npm run release:build
+```
+
+The release script refuses to overwrite an existing version. Release notes and APK locations are indexed in [`RELEASES.md`](RELEASES.md), while user-facing changes are maintained in [`CHANGELOG.md`](CHANGELOG.md).
+
 ## Data model
 
 Archive does not generate simulated history for new users. Daily records and completed workouts are persisted only after user actions. A workout enters history only after **Finish workout** is selected.
