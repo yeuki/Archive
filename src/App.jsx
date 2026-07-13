@@ -3740,9 +3740,13 @@ function BottomNav({ activePage, onPageChange }) {
 }
 
 function TopBar({ title, actionLabel, onAdd, historyLabel = "Open record history", onHistory, backupLabel = "Import or export data", onBackup }) {
+  const isHome = title === "Archive" || title === "Archive Home";
   return (
     <div className="topbar">
-      <h1>{title}</h1>
+      <div className="topbar-title">
+        <span>{isHome ? "Today" : "Archive"}</span>
+        <h1>{isHome ? "Archive" : title}</h1>
+      </div>
       <div className="topbar-actions">
         <button className="icon-btn history-btn" aria-label={historyLabel} onClick={onHistory} />
         <button className="icon-btn backup-btn" aria-label={backupLabel} onClick={onBackup} />
@@ -3787,14 +3791,48 @@ function HomePage({ weekDays, habitNames, goals, onAdd, onBackup, onHistory, mod
   const lastScore = recordedScores.at(-1) ?? 0;
   const previousScore = recordedScores.at(-2) ?? lastScore;
   const delta = lastScore - previousScore;
+  const todayKey = dateKey(new Date());
+  const todayEntry = weekDays.find((day) => day.date === todayKey)?.entry;
+  const todayScore = entryScore(todayEntry, habitNames, goals);
+  const hasTodayScore = Number.isFinite(todayScore);
+  const heroScore = hasTodayScore ? Math.round(todayScore) : 0;
+  const dateLabel = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+  const insightCopy = !recordedScores.length
+    ? "Your first daily record will become the starting point for trends across habits, sleep, water, and movement."
+    : averageValue >= 75
+      ? "Your week is trending strongly. Protect the routines that are keeping sleep, hydration, and habits in balance."
+      : "A complete record today will make your weekly patterns clearer and help Archive surface more useful signals.";
 
   return (
     <div className="screen">
-      <TopBar title="Archive Home" actionLabel="Add action" onAdd={onAdd} onBackup={onBackup} onHistory={onHistory} />
+      <TopBar title="Archive" actionLabel="Add action" onAdd={onAdd} onBackup={onBackup} onHistory={onHistory} />
+
+      <section className="panel summary-hero" aria-label="Today's Archive summary">
+        <div className="summary-hero-head">
+          <span>Daily value</span>
+          <time dateTime={todayKey}>{dateLabel}</time>
+        </div>
+        <div className="summary-hero-body">
+          <div className="summary-hero-value">
+            <strong>{hasTodayScore ? heroScore : "--"}</strong>
+            <span>{hasTodayScore ? "recorded today" : "not recorded yet"}</span>
+          </div>
+          <div className={`summary-gauge ${hasTodayScore ? "recorded" : "empty"}`} style={{ "--progress": `${heroScore * 3.6}deg` }} aria-hidden="true">
+            <i />
+          </div>
+        </div>
+        <button type="button" className="hero-action" onClick={onAdd}>
+          <span>{hasTodayScore ? "Review today's record" : "Record today"}</span>
+          <b aria-hidden="true">+</b>
+        </button>
+      </section>
 
       <div className="panel insight">
-        <SectionTitle title="Featured record" meta="current week" />
-        <p>Your best days cluster around completed habits, 7+ hours of sleep, and water near the daily target.</p>
+        <span className="insight-mark" aria-hidden="true">✦</span>
+        <div>
+          <SectionTitle title="Archive insight" meta="this week" />
+          <p>{insightCopy}</p>
+        </div>
       </div>
 
       <div className="stat-grid">
@@ -4052,40 +4090,69 @@ function WaterPage({ weekDays, goals, onAdd, onBackup, onHistory, modules, modul
 function SleepPage({ weekDays, goals, onAdd, onBackup, onHistory, modules, moduleContext, onRemoveModule, onEditModule, onReorderModule }) {
   const entries = weekDays.map((day) => day.entry).filter(Boolean);
   const sleeps = entries.map((entry) => entry.sleep);
-  const best = Math.max(...sleeps, 0);
-  const short = Math.min(...sleeps, 0);
+  const averageSleep = average(sleeps);
+  const best = sleeps.length ? Math.max(...sleeps) : 0;
+  const short = sleeps.length ? Math.min(...sleeps) : 0;
   const sleepChartMax = Math.max(10, Math.ceil(Math.max(...sleeps, goals.sleepTarget, goals.sleepMax)) || 10);
+  const targetProgress = goals.sleepTarget ? clamp((averageSleep / goals.sleepTarget) * 100, 0, 100) : 0;
 
   return (
-    <WeeklyMetricPage
-      type="sleep"
-      title="Sleep"
-      statCards={[
-        { label: "Avg sleep", value: `${average(sleeps).toFixed(1)}h` },
-        { label: "Target", value: formatSleepHours(goals.sleepTarget) },
-        { label: "Logged", value: `${entries.length}/7` },
-      ]}
-      sectionTitle="Sleep duration"
-      detailRows={[
-        [`${formatSleepHours(goals.sleepTarget)} nights`, `${entries.filter((entry) => entry.sleep >= goals.sleepTarget).length}`],
-        ["Best night", `${best.toFixed(1)}h`],
-        ["Short night", `${short.toFixed(1)}h`],
-      ]}
-      getValue={(entry) => entry?.sleep ?? null}
-      areaMax={sleepChartMax}
-      targetValue={goals.sleepTarget}
-      targetLabel={formatSleepHours(goals.sleepTarget)}
-      gradientId="sleepGradient"
-      weekDays={weekDays}
-      onAdd={onAdd}
-      onBackup={onBackup}
-      onHistory={onHistory}
-      modules={modules}
-      moduleContext={moduleContext}
-      onRemoveModule={onRemoveModule}
-      onEditModule={onEditModule}
-      onReorderModule={onReorderModule}
-    />
+    <div className="screen sleep-screen">
+      <TopBar title="Sleep" actionLabel="Add sleep action" onAdd={onAdd} onBackup={onBackup} onHistory={onHistory} />
+
+      <section className="panel metric-hero sleep-hero">
+        <div className="metric-hero-head">
+          <span>7-day average</span>
+          <small>{entries.length} of 7 nights</small>
+        </div>
+        <div className="metric-hero-value">
+          <strong>{entries.length ? averageSleep.toFixed(1) : "--"}</strong>
+          <span>hours</span>
+        </div>
+        <div className="metric-progress" aria-label={`${Math.round(targetProgress)} percent of sleep target`}>
+          <i style={{ width: `${targetProgress}%` }} />
+        </div>
+        <div className="metric-hero-foot">
+          <span>Target {formatSleepHours(goals.sleepTarget)}</span>
+          <b>{entries.length ? `${Math.round(targetProgress)}%` : "No data"}</b>
+        </div>
+      </section>
+
+      <div className="stat-grid">
+        <StatCard label="Best night" value={entries.length ? `${best.toFixed(1)}h` : "--"} />
+        <StatCard label="Shortest" value={entries.length ? `${short.toFixed(1)}h` : "--"} />
+        <StatCard label="At target" value={`${entries.filter((entry) => entry.sleep >= goals.sleepTarget).length}/7`} />
+      </div>
+
+      <div className="panel area-panel sleep-chart-panel">
+        <SectionTitle title="Sleep duration" meta="this week" />
+        <AreaChart
+          days={weekDays}
+          getValue={(entry) => entry?.sleep ?? null}
+          gradientId="sleepGradient"
+          label="Sleep duration this week"
+          maxValue={sleepChartMax}
+          targetValue={goals.sleepTarget}
+          targetLabel={formatSleepHours(goals.sleepTarget)}
+          metricType="sleep"
+        />
+      </div>
+
+      <div className="panel summary-list">
+        <SectionTitle title="Sleep detail" meta="recorded" />
+        <div className="summary-row"><span>Target nights</span><strong>{entries.filter((entry) => entry.sleep >= goals.sleepTarget).length}</strong></div>
+        <div className="summary-row"><span>Best night</span><strong>{entries.length ? `${best.toFixed(1)}h` : "--"}</strong></div>
+        <div className="summary-row"><span>Shortest night</span><strong>{entries.length ? `${short.toFixed(1)}h` : "--"}</strong></div>
+      </div>
+
+      <AddedModules
+        modules={modules}
+        context={{ ...moduleContext, metricType: "sleep" }}
+        onRemoveModule={onRemoveModule}
+        onEditModule={onEditModule}
+        onReorderModule={onReorderModule}
+      />
+    </div>
   );
 }
 
@@ -5592,8 +5659,21 @@ function SettingsPage({
   return (
     <div className="screen">
       <div className="topbar">
-        <h1>Settings</h1>
+        <div className="topbar-title">
+          <span>Archive</span>
+          <h1>Settings</h1>
+        </div>
       </div>
+      <section className="panel settings-overview">
+        <span>Private by design</span>
+        <h2>Make Archive yours.</h2>
+        <p>Your preferences and records stay on this device unless you choose to connect or export them.</p>
+        <div className="settings-overview-chips" aria-label="Archive settings highlights">
+          <i>Local first</i>
+          <i>Health connected</i>
+          <i>Reviewable AI</i>
+        </div>
+      </section>
       <GoalSettingsPanel goals={goals} onUpdateGoals={onUpdateGoals} />
       <ConnectedHealthPanel
         connectedHealth={connectedHealth}
@@ -5788,10 +5868,12 @@ function SettingsSection({ title, meta, children }) {
 function SettingsRow({ label, value, detail, children, chevron = false, open = false, onClick }) {
   const content = (
     <>
-      <span className="settings-row-label">{label}</span>
+      <span className="settings-row-copy">
+        <span className="settings-row-label">{label}</span>
+        {detail && <small className="settings-row-detail">{detail}</small>}
+      </span>
       <span className="settings-row-value">
         {children ?? value}
-        {detail && <small>{detail}</small>}
       </span>
       {chevron && <i className="settings-chevron" aria-hidden="true" />}
     </>
