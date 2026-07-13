@@ -7,6 +7,7 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $AndroidRoot = Join-Path $ProjectRoot "android"
 $BuiltApk = Join-Path $AndroidRoot "app\build\outputs\apk\debug\app-debug.apk"
+$PackageCache = Join-Path $AndroidRoot "app\build\intermediates\incremental\packageDebug\tmp"
 $Version = (Get-Content -Raw (Join-Path $ProjectRoot "VERSION")).Trim()
 $PackageVersion = (Get-Content -Raw (Join-Path $ProjectRoot "package.json") | ConvertFrom-Json).version
 
@@ -47,7 +48,20 @@ try {
 
   Push-Location $AndroidRoot
   try {
-    .\gradlew.bat assembleDebug
+    .\gradlew.bat --stop
+    if ($LASTEXITCODE -ne 0) {
+      throw "Gradle daemon shutdown failed with exit code $LASTEXITCODE."
+    }
+
+    if (Test-Path -LiteralPath $PackageCache) {
+      $ResolvedPackageCache = (Resolve-Path -LiteralPath $PackageCache).Path
+      if (-not $ResolvedPackageCache.StartsWith($AndroidRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Refusing to clear generated package cache outside the Android project: '$ResolvedPackageCache'."
+      }
+      Remove-Item -LiteralPath $ResolvedPackageCache -Recurse -Force
+    }
+
+    .\gradlew.bat assembleDebug --no-daemon
     if ($LASTEXITCODE -ne 0) {
       throw "The Android build failed with exit code $LASTEXITCODE."
     }
