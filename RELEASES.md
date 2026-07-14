@@ -4,6 +4,7 @@ Release APKs are immutable. If a packaged build changes, Archive receives a new 
 
 | Version | Release date | APK | Summary | Source reference |
 | --- | --- | --- | --- | --- |
+| 0.4.2 | 2026-07-14 | `Archive-v0.4.2.apk` | Watch-first sleep entry with manual fallback and start-night attribution. | `main`, tag `v0.4.2` |
 | 0.4.1 | 2026-07-14 | `Archive-v0.4.1.apk` | Roomier liquid-glass dock with stronger optics, larger controls, and preserved scroll compaction. | `main`, tag `v0.4.1` |
 | 0.4.0 | 2026-07-14 | `Archive-v0.4.0.apk` | Archive Canvas with integrated metric stories, reduced card chrome, and scroll-reactive continuity. | `main`, tag `v0.4.0` |
 | 0.3.1 | 2026-07-14 | `Archive-v0.3.1.apk` | Layered liquid-glass bottom navigation with responsive optics and refined interaction. | `main`, tag `v0.3.1` |
@@ -11,6 +12,19 @@ Release APKs are immutable. If a packaged build changes, Archive receives a new 
 | 0.2.1 | 2026-07-13 | `Archive-v0.2.1.apk` | Restores Archive's signature gradient on compact charts while preserving solid dense-data views. | `main`, tag `v0.2.1` |
 | 0.2.0 | 2026-07-13 | `Archive-v0.2.0.apk` | Archive Design System 2.0 with premium Home, Sleep, Settings, chart, surface, and navigation refinements. | `main`, tag `v0.2.0` |
 | 0.1.0 | 2026-07-13 | `Archive-v0.1.0.apk` | Formal baseline of the current productivity, health, workout, AI coach, and Health Connect experience. | `main`, tag `v0.1.0` |
+
+## 0.4.2 - Watch-first sleep records
+
+- APK filename: `Archive-v0.4.2.apk`
+- Local archive: `releases/v0.4.2/Archive-v0.4.2.apk`
+- Google Drive archive: `Archive Productivity Tracker/Releases/v0.4.2/Archive-v0.4.2.apk`
+- GitHub reference: `main`, tag `v0.4.2`
+- SHA-256: `b74c0d31277548fe568de776ed9b3d132e27deceb3afddd1e5d07ce2fba479a7`
+- Summary: Makes Health Connect the primary sleep source in daily recording while retaining a deliberate manual fallback.
+- Main UI changes: Sync and Manual segmented control, synced duration and sleep-window summary, clear missing-session guidance, and a compact manual-hours fallback.
+- Structural changes: daily records can retain sleep source, sync timestamp, and contributing session identifiers; focused policy checks cover the migration path.
+- Functional changes: overnight sleep is attributed to the date it started, synced values can refresh safely, legacy wake-date imports are moved when confidently matched, and manual values are protected from later syncs.
+- Known issues: synchronization remains user-initiated, Android Health Connect is the only live watch bridge, and iOS health integration remains future work.
 
 ## 0.4.1 — Roomier liquid-glass dock
 

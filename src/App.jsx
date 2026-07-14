@@ -839,6 +839,12 @@ function normalizeTimestamp(value) {
   return Number.isFinite(parsed) ? new Date(parsed).toISOString() : value.trim().slice(0, 60);
 }
 
+function localDateKeyFromTimestamp(value) {
+  if (typeof value !== "string" || !value.trim()) return "";
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.getTime()) ? dateKey(parsed) : "";
+}
+
 function normalizeWatchDailySummary(summary = {}) {
   const source = summary && typeof summary === "object" ? summary : {};
   if (!validDateKey(source.date)) return null;
@@ -864,11 +870,13 @@ function normalizeWatchSession(session = {}, index = 0, type = "session") {
   const startedAt = normalizeTimestamp(source.startedAt ?? source.startTime);
   const endedAt = normalizeTimestamp(source.endedAt ?? source.endTime);
   const fallbackId = `${type}-${startedAt || source.date || index}`;
+  const startedDate = localDateKeyFromTimestamp(startedAt);
+  const providedDate = validDateKey(source.date) ? source.date : "";
 
   return {
     id: String(source.id ?? fallbackId).trim().slice(0, 100) || fallbackId,
     source: String(source.source ?? source.sourceName ?? DEFAULT_CONNECTED_HEALTH.sourceName).trim().slice(0, 60) || DEFAULT_CONNECTED_HEALTH.sourceName,
-    date: validDateKey(source.date) ? source.date : (startedAt ? startedAt.slice(0, 10) : ""),
+    date: type === "sleep" ? (startedDate || providedDate) : (providedDate || startedDate),
     startedAt,
     endedAt,
     durationMinutes: Math.round(positiveNumber(source.durationMinutes ?? source.duration, 0, 0, 1440)),
@@ -896,16 +904,51 @@ function normalizeWatchSample(sample = {}, index = 0, type = "sample") {
 function normalizeWatchData(data = {}) {
   const source = data && typeof data === "object" ? data : {};
   const samples = source.samples ?? {};
+  const sleepSessions = (source.sleepSessions ?? [])
+    .map((session, index) => normalizeWatchSession(session, index, "sleep"))
+    .filter((session) => session.date || session.startedAt)
+    .sort((a, b) => (a.startedAt || a.date).localeCompare(b.startedAt || b.date));
+  const dailySummaries = (source.dailySummaries ?? [])
+    .map((summary) => normalizeWatchDailySummary(summary))
+    .filter(Boolean);
+  const summariesByDate = new Map(dailySummaries.map((summary) => [summary.date, summary]));
+
+  if (sleepSessions.length) {
+    const sleepMinutesByStartDate = new Map();
+    const sessionContextByDate = new Map();
+
+    sleepSessions.forEach((session) => {
+      if (!session.date || session.durationMinutes <= 0) return;
+      sleepMinutesByStartDate.set(
+        session.date,
+        (sleepMinutesByStartDate.get(session.date) ?? 0) + session.durationMinutes,
+      );
+      sessionContextByDate.set(session.date, session);
+    });
+
+    summariesByDate.forEach((summary, date) => {
+      summariesByDate.set(date, {
+        ...summary,
+        sleepMinutes: sleepMinutesByStartDate.get(date) ?? 0,
+      });
+    });
+
+    sleepMinutesByStartDate.forEach((sleepMinutes, date) => {
+      if (summariesByDate.has(date)) return;
+      const session = sessionContextByDate.get(date);
+      summariesByDate.set(date, normalizeWatchDailySummary({
+        date,
+        source: session?.source ?? DEFAULT_CONNECTED_HEALTH.sourceName,
+        sleepMinutes,
+        updatedAt: session?.endedAt ?? session?.startedAt ?? "",
+      }));
+    });
+  }
 
   return {
-    dailySummaries: (source.dailySummaries ?? [])
-      .map((summary) => normalizeWatchDailySummary(summary))
-      .filter(Boolean)
+    dailySummaries: [...summariesByDate.values()]
       .sort((a, b) => a.date.localeCompare(b.date)),
-    sleepSessions: (source.sleepSessions ?? [])
-      .map((session, index) => normalizeWatchSession(session, index, "sleep"))
-      .filter((session) => session.date || session.startedAt)
-      .sort((a, b) => (a.startedAt || a.date).localeCompare(b.startedAt || b.date)),
+    sleepSessions,
     workouts: (source.workouts ?? source.exerciseSessions ?? [])
       .map((session, index) => normalizeWatchSession(session, index, "exercise"))
       .filter((session) => session.date || session.startedAt)
@@ -951,27 +994,100 @@ function mergeWatchData(currentData = {}, incomingData = {}) {
   });
 }
 
+function sleepValuesMatch(first, second) {
+  const left = Number(first);
+  const right = Number(second);
+  return Number.isFinite(left) && Number.isFinite(right) && Math.abs(left - right) <= 0.03;
+}
+
+function watchSleepRecordForDate(watchData = {}, date = "") {
+  const normalized = normalizeWatchData(watchData);
+  const sessions = normalized.sleepSessions.filter((session) => session.date === date);
+  const summary = normalized.dailySummaries.find((item) => item.date === date);
+  const sessionMinutes = sessions.reduce((total, session) => total + session.durationMinutes, 0);
+  const durationMinutes = Math.round(summary?.sleepMinutes || sessionMinutes || 0);
+  const firstSession = sessions[0];
+  const lastSession = sessions[sessions.length - 1];
+
+  return {
+    available: durationMinutes > 0,
+    durationMinutes,
+    hours: Number((durationMinutes / 60).toFixed(2)),
+    source: firstSession?.source ?? summary?.source ?? DEFAULT_CONNECTED_HEALTH.sourceName,
+    startedAt: firstSession?.startedAt ?? "",
+    endedAt: lastSession?.endedAt ?? "",
+    updatedAt: summary?.updatedAt ?? lastSession?.endedAt ?? "",
+    sessionIds: sessions.map((session) => session.id),
+  };
+}
+
 function mergeWatchSleepIntoEntries(entries = [], incomingData = {}, habitNames = DEFAULT_HABITS) {
   const incoming = normalizeWatchData(incomingData);
   const sleepByDate = new Map(
     incoming.dailySummaries
       .filter((summary) => summary.sleepMinutes > 0)
-      .map((summary) => [summary.date, trimNumber(summary.sleepMinutes / 60, 2)]),
+      .map((summary) => [summary.date, Number((summary.sleepMinutes / 60).toFixed(2))]),
   );
 
-  if (!sleepByDate.size) return entries;
+  if (!sleepByDate.size) return normalizeEntries(entries, habitNames);
+
+  const summariesByDate = new Map(incoming.dailySummaries.map((summary) => [summary.date, summary]));
+  const sessionIdsByDate = new Map();
+  const legacySleepByEndDate = new Map();
+
+  incoming.sleepSessions.forEach((session) => {
+    if (session.date) {
+      sessionIdsByDate.set(session.date, [...(sessionIdsByDate.get(session.date) ?? []), session.id]);
+    }
+
+    const endDate = localDateKeyFromTimestamp(session.endedAt);
+    if (!endDate || !session.date || endDate === session.date || session.durationMinutes <= 0) return;
+    legacySleepByEndDate.set(
+      endDate,
+      (legacySleepByEndDate.get(endDate) ?? 0) + (session.durationMinutes / 60),
+    );
+  });
 
   const byDate = new Map(entries.map((entry) => [entry.date, entry]));
 
+  // Versions before 0.4.2 filed imported sleep under the wake-up date. Move only
+  // unlabelled values that exactly match those imported durations; explicit manual
+  // fallbacks are never removed or overwritten.
+  legacySleepByEndDate.forEach((legacySleepHours, endDate) => {
+    if (sleepByDate.has(endDate)) return;
+    const existing = byDate.get(endDate);
+    if (!existing || existing.sleepSource || !sleepValuesMatch(existing.sleep, legacySleepHours)) return;
+    byDate.set(endDate, {
+      ...existing,
+      sleep: 0,
+      sleepSource: "sync",
+      sleepSessionIds: [],
+    });
+  });
+
   sleepByDate.forEach((sleepHours, date) => {
     const existing = byDate.get(date);
+    const summary = summariesByDate.get(date);
+    const syncMetadata = {
+      sleepSource: "sync",
+      sleepSyncedAt: summary?.updatedAt ?? "",
+      sleepSessionIds: sessionIdsByDate.get(date) ?? [],
+    };
 
     if (existing) {
       const existingSleep = Number(existing.sleep);
-      byDate.set(date, {
-        ...existing,
-        sleep: Number.isFinite(existingSleep) && existingSleep > 0 ? existing.sleep : sleepHours,
-      });
+      const legacyEndSleep = legacySleepByEndDate.get(date);
+      const shouldUseSyncedSleep = existing.sleepSource === "sync"
+        || (!existing.sleepSource && (
+          !Number.isFinite(existingSleep)
+          || existingSleep <= 0
+          || sleepValuesMatch(existingSleep, sleepHours)
+          || sleepValuesMatch(existingSleep, legacyEndSleep)
+        ));
+
+      byDate.set(date, shouldUseSyncedSleep
+        ? { ...existing, sleep: sleepHours, ...syncMetadata }
+        : { ...existing, sleepSource: existing.sleepSource || "manual" });
       return;
     }
 
@@ -980,6 +1096,7 @@ function mergeWatchSleepIntoEntries(entries = [], incomingData = {}, habitNames 
       habits: habitMap([], habitNames),
       water: 0,
       sleep: sleepHours,
+      ...syncMetadata,
     });
   });
 
@@ -1024,11 +1141,20 @@ function normalizeEntries(entries = [], habitNames = DEFAULT_HABITS, waterScale 
           .map(([habit, done]) => [habit, Boolean(done)]),
       );
 
+      const sleepSource = entry.sleepSource === "sync" || entry.sleepSource === "manual"
+        ? entry.sleepSource
+        : "";
+      const sleepSyncedAt = normalizeTimestamp(entry.sleepSyncedAt);
+      const sleepSessionIds = uniqueStrings(entry.sleepSessionIds).slice(0, 20);
+
       return {
         date: entry.date,
         habits,
         water: Number.isFinite(Number(entry.water)) ? Number(entry.water) * waterScale : 0,
         sleep: Number.isFinite(Number(entry.sleep)) ? Number(entry.sleep) : 0,
+        ...(sleepSource ? { sleepSource } : {}),
+        ...(sleepSyncedAt ? { sleepSyncedAt } : {}),
+        ...(sleepSessionIds.length ? { sleepSessionIds } : {}),
       };
     })
     .sort((a, b) => a.date.localeCompare(b.date));
@@ -1473,6 +1599,24 @@ function formatWaterVolume(waterMl, goals = DEFAULT_GOALS) {
 
 function formatSleepHours(hours) {
   return `${trimNumber(Number(hours) || 0, 2)}h`;
+}
+
+function formatSleepMinutes(minutes) {
+  const totalMinutes = Math.max(0, Math.round(Number(minutes) || 0));
+  const hours = Math.floor(totalMinutes / 60);
+  const remainder = totalMinutes % 60;
+  if (!hours) return `${remainder}m`;
+  return remainder ? `${hours}h ${remainder}m` : `${hours}h`;
+}
+
+function formatSleepClock(timestamp) {
+  if (!timestamp) return "";
+  const parsed = new Date(timestamp);
+  if (!Number.isFinite(parsed.getTime())) return "";
+  return parsed.toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 function habitPercent(entry, habitNames) {
@@ -7635,12 +7779,13 @@ function ModulePicker({ pageId, pageName, context, addedModuleIds = [], moduleTe
   );
 }
 
-function DailySheet({ habitNames, trackedHabits, entries, goals, initialDate, title = "Add previous day", onClose, onSave, onDelete, onAddHabit }) {
+function DailySheet({ habitNames, trackedHabits, entries, goals, watchData, connectedHealth, initialDate, title = "Add previous day", onClose, onSave, onDelete, onAddHabit, onSyncSleep }) {
   const normalizedGoals = normalizeGoals(goals);
   const defaultWater = Math.round(normalizedGoals.waterTarget * 0.75);
   const yesterday = dateKey(addDays(new Date(), -1));
   const [selectedDate, setSelectedDate] = useState(initialDate ?? yesterday);
   const existingEntry = useMemo(() => entries.find((entry) => entry.date === selectedDate), [entries, selectedDate]);
+  const watchSleep = useMemo(() => watchSleepRecordForDate(watchData, selectedDate), [watchData, selectedDate]);
   const visibleHabitNames = useMemo(() => {
     const existingHabits = existingEntry?.habits ? Object.keys(existingEntry.habits) : [];
     return habitNames.filter((habit) => trackedHabits.includes(habit) || existingHabits.includes(habit));
@@ -7650,7 +7795,16 @@ function DailySheet({ habitNames, trackedHabits, entries, goals, initialDate, ti
     return map;
   }, {}));
   const [water, setWater] = useState(() => waterInputValue(existingEntry?.water ?? defaultWater, normalizedGoals));
-  const [sleep, setSleep] = useState(existingEntry?.sleep ?? 7.25);
+  const initialSleepMode = existingEntry?.sleepSource === "manual"
+    || (!existingEntry?.sleepSource && Number(existingEntry?.sleep) > 0 && !watchSleep.available)
+    ? "manual"
+    : "sync";
+  const [sleepMode, setSleepMode] = useState(initialSleepMode);
+  const [manualSleep, setManualSleep] = useState(() => (
+    initialSleepMode === "manual" && Number(existingEntry?.sleep) > 0 ? String(existingEntry.sleep) : ""
+  ));
+  const [isSyncingSleep, setIsSyncingSleep] = useState(false);
+  const [sleepSyncNotice, setSleepSyncNotice] = useState("");
   const [newHabit, setNewHabit] = useState("");
   const [dragY, setDragY] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
@@ -7661,6 +7815,11 @@ function DailySheet({ habitNames, trackedHabits, entries, goals, initialDate, ti
   const syncDate = (nextDate) => {
     setSelectedDate(nextDate);
     const entry = entries.find((item) => item.date === nextDate);
+    const nextWatchSleep = watchSleepRecordForDate(watchData, nextDate);
+    const nextSleepMode = entry?.sleepSource === "manual"
+      || (!entry?.sleepSource && Number(entry?.sleep) > 0 && !nextWatchSleep.available)
+      ? "manual"
+      : "sync";
     const existingHabits = entry?.habits ? Object.keys(entry.habits) : [];
     const nextVisibleHabits = habitNames.filter((habit) => trackedHabits.includes(habit) || existingHabits.includes(habit));
     setHabitDraft(nextVisibleHabits.reduce((map, habit) => {
@@ -7668,7 +7827,9 @@ function DailySheet({ habitNames, trackedHabits, entries, goals, initialDate, ti
       return map;
     }, {}));
     setWater(waterInputValue(entry?.water ?? defaultWater, normalizedGoals));
-    setSleep(entry?.sleep ?? 7.25);
+    setSleepMode(nextSleepMode);
+    setManualSleep(nextSleepMode === "manual" && Number(entry?.sleep) > 0 ? String(entry.sleep) : "");
+    setSleepSyncNotice("");
   };
 
   const addHabit = () => {
@@ -7680,15 +7841,58 @@ function DailySheet({ habitNames, trackedHabits, entries, goals, initialDate, ti
   };
 
   const saveEntry = () => {
+    const existingSyncedSleep = existingEntry?.sleepSource === "sync" && Number(existingEntry.sleep) > 0
+      ? Number(existingEntry.sleep)
+      : 0;
+    const syncedSleep = watchSleep.available ? watchSleep.hours : existingSyncedSleep;
+    const parsedManualSleep = Number(manualSleep);
+    const sleep = sleepMode === "sync"
+      ? syncedSleep
+      : (Number.isFinite(parsedManualSleep) ? clamp(parsedManualSleep, 0, 14) : 0);
+
     onSave({
       date: selectedDate,
       water: waterInputToMl(water, normalizedGoals),
-      sleep: Number(sleep),
+      sleep,
+      ...(sleepMode === "sync" ? {
+        sleepSource: "sync",
+        sleepSyncedAt: watchSleep.updatedAt || connectedHealth?.lastSyncAt || existingEntry?.sleepSyncedAt || "",
+        sleepSessionIds: watchSleep.sessionIds.length
+          ? watchSleep.sessionIds
+          : (existingEntry?.sleepSessionIds ?? []),
+      } : {
+        sleepSource: "manual",
+      }),
       habits: visibleHabitNames.reduce((map, habit) => {
         map[habit] = Boolean(habitDraft[habit]);
         return map;
       }, {}),
     });
+  };
+
+  const syncSleepFromWatch = async () => {
+    if (typeof onSyncSleep !== "function" || isSyncingSleep) return;
+    setSleepMode("sync");
+    setIsSyncingSleep(true);
+    setSleepSyncNotice("");
+
+    try {
+      const result = await onSyncSleep();
+      setSleepSyncNotice(result?.ok
+        ? "Watch data refreshed."
+        : (result?.message || "Archive could not refresh watch sleep."));
+    } catch (error) {
+      setSleepSyncNotice(error?.message || "Archive could not refresh watch sleep.");
+    } finally {
+      setIsSyncingSleep(false);
+    }
+  };
+
+  const selectManualSleep = () => {
+    setSleepMode("manual");
+    if (!manualSleep && existingEntry?.sleepSource !== "sync" && Number(existingEntry?.sleep) > 0) {
+      setManualSleep(String(existingEntry.sleep));
+    }
   };
 
   const updateSheetDrag = (clientY) => {
@@ -7756,11 +7960,21 @@ function DailySheet({ habitNames, trackedHabits, entries, goals, initialDate, ti
     window.addEventListener("touchcancel", handleEnd, { once: true });
   };
 
+  const nightName = parseDateKey(selectedDate).toLocaleDateString(undefined, { weekday: "long" });
+  const existingSyncedMinutes = existingEntry?.sleepSource === "sync"
+    ? Math.round((Number(existingEntry.sleep) || 0) * 60)
+    : 0;
+  const syncedMinutes = watchSleep.available ? watchSleep.durationMinutes : existingSyncedMinutes;
+  const hasSyncedSleep = syncedMinutes > 0;
+  const sleepStartedAt = formatSleepClock(watchSleep.startedAt);
+  const sleepEndedAt = formatSleepClock(watchSleep.endedAt);
+  const sleepWindow = sleepStartedAt && sleepEndedAt ? `${sleepStartedAt} – ${sleepEndedAt}` : "";
+
   return (
     <div className="sheet-backdrop" role="presentation">
       <div className="sheet-shell">
         <section
-          className={`daily-sheet ${isDragging ? "dragging" : ""}`}
+          className={`daily-sheet metric-sleep ${isDragging ? "dragging" : ""}`}
           aria-label="Add previous day stats"
           style={{ transform: `translateY(${dragY}px)` }}
         >
@@ -7775,7 +7989,7 @@ function DailySheet({ habitNames, trackedHabits, entries, goals, initialDate, ti
           <div className="sheet-head">
             <div>
               <h2>{title}</h2>
-              <p>Enter the report from your tracker book.</p>
+              <p>Record the day and the sleep that began that night.</p>
             </div>
             <button className="ghost-btn" onClick={onClose}>
               Close
@@ -7812,7 +8026,7 @@ function DailySheet({ habitNames, trackedHabits, entries, goals, initialDate, ti
             </div>
           </div>
 
-          <div className="quick-fields">
+          <div className="quick-fields water-only">
             <label className="quick-field">
               <span>Water ({waterUnitLabel(normalizedGoals)})</span>
               <input
@@ -7824,10 +8038,66 @@ function DailySheet({ habitNames, trackedHabits, entries, goals, initialDate, ti
                 onChange={(event) => setWater(event.target.value)}
               />
             </label>
-            <label className="quick-field">
-              <span>Sleep</span>
-              <input type="number" min="0" max="14" step="0.25" value={sleep} onChange={(event) => setSleep(event.target.value)} />
-            </label>
+          </div>
+
+          <div className="entry-section sleep-entry-section">
+            <div className="sleep-entry-head">
+              <div>
+                <div className="entry-title">Sleep</div>
+                <small>{nightName} night</small>
+              </div>
+              <div className="sleep-source-toggle" role="group" aria-label="Sleep entry method">
+                <button
+                  type="button"
+                  className={sleepMode === "sync" ? "active" : ""}
+                  aria-pressed={sleepMode === "sync"}
+                  onClick={() => setSleepMode("sync")}
+                >
+                  Sync
+                </button>
+                <button
+                  type="button"
+                  className={sleepMode === "manual" ? "active" : ""}
+                  aria-pressed={sleepMode === "manual"}
+                  onClick={selectManualSleep}
+                >
+                  Manual
+                </button>
+              </div>
+            </div>
+
+            {sleepMode === "sync" ? (
+              <div className={`sleep-sync-card ${hasSyncedSleep ? "has-data" : "missing"}`}>
+                <div className="sleep-sync-copy">
+                  <small>{watchSleep.source || "Health Connect"}</small>
+                  <strong>{hasSyncedSleep ? formatSleepMinutes(syncedMinutes) : "No watch sleep found"}</strong>
+                  <span>
+                    {hasSyncedSleep
+                      ? `${sleepWindow ? `${sleepWindow} · ` : ""}Filed under ${nightName} because sleep began then.`
+                      : `Sync again, or use Manual if your watch missed ${nightName} night.`}
+                  </span>
+                  {sleepSyncNotice && <em>{sleepSyncNotice}</em>}
+                </div>
+                <button type="button" className="sleep-sync-action" onClick={syncSleepFromWatch} disabled={isSyncingSleep}>
+                  {isSyncingSleep ? "Syncing…" : hasSyncedSleep ? "Sync again" : "Sync now"}
+                </button>
+              </div>
+            ) : (
+              <label className="quick-field sleep-manual-field">
+                <span>Hours slept</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="14"
+                  step="0.25"
+                  inputMode="decimal"
+                  value={manualSleep}
+                  placeholder="0"
+                  onChange={(event) => setManualSleep(event.target.value)}
+                />
+                <small>Fallback for a night your watch did not capture. This remains filed under {nightName}.</small>
+              </label>
+            )}
           </div>
 
           <div className="sheet-footer-actions">
@@ -7851,8 +8121,11 @@ export {
   buildFocusAnalysis,
   coachIntent,
   createCoachWorkoutProposal,
+  mergeWatchSleepIntoEntries,
+  normalizeWatchData,
   normalizeWorkoutState,
   sanitizeGeminiProposal,
+  watchSleepRecordForDate,
 };
 
 export default function App() {
@@ -8257,13 +8530,14 @@ export default function App() {
     const isNative = typeof Capacitor.isNativePlatform === "function" && Capacitor.isNativePlatform();
 
     if (!isNative) {
+      const message = "Watch-data import runs inside the Android app.";
       updateConnectedHealth({
         status: "webPreview",
-        statusMessage: "Watch-data import runs inside the Android app.",
+        statusMessage: message,
         platform: "web",
         lastCheckedAt: checkedAt,
       });
-      return;
+      return { ok: false, status: "webPreview", message };
     }
 
     try {
@@ -8271,10 +8545,11 @@ export default function App() {
       const permissionsGranted = Boolean(result?.allGranted ?? result?.permissionsGranted);
 
       if (result?.needsPermissions || !permissionsGranted) {
+        const message = String(result?.message ?? "Archive needs Health Connect permissions before syncing watch data.").trim();
         updateConnectedHealth({
           enabled: true,
           status: "permissionsNeeded",
-          statusMessage: String(result?.message ?? "Archive needs Health Connect permissions before syncing watch data.").trim(),
+          statusMessage: message,
           platform: String(result?.platform ?? Capacitor.getPlatform?.() ?? "android"),
           lastCheckedAt: checkedAt,
           permissionsGranted,
@@ -8285,7 +8560,7 @@ export default function App() {
           packageInstalled: Boolean(result?.packageInstalled),
           settingsResolvable: Boolean(result?.settingsResolvable),
         });
-        return;
+        return { ok: false, status: "permissionsNeeded", message };
       }
 
       setTrackerState((current) => {
@@ -8315,13 +8590,20 @@ export default function App() {
           watchData: mergeWatchData(current.watchData, result),
         };
       });
+      return {
+        ok: true,
+        status: result?.synced ? "synced" : "available",
+        message: String(result?.message ?? "Health Connect data synced.").trim(),
+      };
     } catch (error) {
+      const message = error?.message ? `Health Connect sync failed: ${error.message}` : "Archive could not sync Health Connect data.";
       updateConnectedHealth({
         status: "error",
-        statusMessage: error?.message ? `Health Connect sync failed: ${error.message}` : "Archive could not sync Health Connect data.",
+        statusMessage: message,
         platform: String(Capacitor.getPlatform?.() ?? "android"),
         lastCheckedAt: checkedAt,
       });
+      return { ok: false, status: "error", message };
     }
   };
 
@@ -8556,12 +8838,15 @@ export default function App() {
           trackedHabits={trackedHabitNames}
           entries={state.entries}
           goals={goals}
+          watchData={watchData}
+          connectedHealth={connectedHealth}
           initialDate={recordDate}
           title={state.entries.some((entry) => entry.date === recordDate) ? "Edit record" : "Add record"}
           onClose={() => setSheetOpen(false)}
           onSave={saveEntry}
           onDelete={deleteEntry}
           onAddHabit={addHabit}
+          onSyncSleep={syncConnectedHealth}
         />
       )}
       {modulePickerOpen && (

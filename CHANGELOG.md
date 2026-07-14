@@ -4,6 +4,26 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-07-14
+
+### Added
+
+- Added an explicit Sync or Manual sleep choice to the daily-recording sheet, with watch sync selected by default and a blank manual fallback for nights the watch misses.
+- Added sleep-source provenance to daily records so later Health Connect imports can refresh synced values without overwriting intentional manual entries.
+- Added a focused sleep-policy check covering overnight attribution, migration of previously imported records, and preservation of manual fallbacks.
+
+### Changed
+
+- Health Connect sleep sessions are now assigned to the local calendar date on which sleep began; for example, Monday night through Tuesday morning is filed under Monday.
+- Existing imported sleep values that exactly match the former wake-date mapping are migrated to their start date while habits, water, and explicit manual sleep remain intact.
+- Removed the fabricated 7.25-hour default from new daily records and added clear sync status, duration, timing, and date-attribution guidance.
+
+### Known issues and unfinished work
+
+- Health Connect import is still user-initiated rather than a scheduled background sync.
+- Watch sleep availability depends on Samsung Health sharing the session with Health Connect; Manual remains the fallback when a session is absent.
+- Health Connect remains Android-only; Apple Health integration and iOS packaging are future work.
+
 ## [0.4.1] - 2026-07-14
 
 ### Changed
