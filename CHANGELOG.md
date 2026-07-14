@@ -4,6 +4,22 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-07-14
+
+### Changed
+
+- Sleep sessions now belong to the calendar day immediately before their wake-up date, regardless of whether sleep began before or after midnight.
+- Health Connect sleep is authoritative whenever a synced and manual value conflict; the synced duration replaces the manual fallback.
+- Manual sleep remains available only when Archive has no watch record for the selected day, and the daily sheet now explains this precedence directly.
+- Existing watch sessions and daily records are migrated from both the former wake-date and start-date policies into the corrected previous-day policy.
+- Expanded the focused sleep-policy checks with a 2:00 a.m. start, a normal cross-midnight sleep, superseded-record cleanup, manual fallback retention, and synced-value precedence.
+
+### Known issues and unfinished work
+
+- Health Connect import is still user-initiated rather than a scheduled background sync.
+- Watch sleep availability depends on Samsung Health sharing the session with Health Connect.
+- Health Connect remains Android-only; Apple Health integration and iOS packaging are future work.
+
 ## [0.4.2] - 2026-07-14
 
 ### Added

@@ -4,6 +4,7 @@ Release APKs are immutable. If a packaged build changes, Archive receives a new 
 
 | Version | Release date | APK | Summary | Source reference |
 | --- | --- | --- | --- | --- |
+| 0.4.3 | 2026-07-14 | `Archive-v0.4.3.apk` | Previous-day sleep attribution with authoritative watch-sync precedence. | `main`, tag `v0.4.3` |
 | 0.4.2 | 2026-07-14 | `Archive-v0.4.2.apk` | Watch-first sleep entry with manual fallback and start-night attribution. | `main`, tag `v0.4.2` |
 | 0.4.1 | 2026-07-14 | `Archive-v0.4.1.apk` | Roomier liquid-glass dock with stronger optics, larger controls, and preserved scroll compaction. | `main`, tag `v0.4.1` |
 | 0.4.0 | 2026-07-14 | `Archive-v0.4.0.apk` | Archive Canvas with integrated metric stories, reduced card chrome, and scroll-reactive continuity. | `main`, tag `v0.4.0` |
@@ -12,6 +13,19 @@ Release APKs are immutable. If a packaged build changes, Archive receives a new 
 | 0.2.1 | 2026-07-13 | `Archive-v0.2.1.apk` | Restores Archive's signature gradient on compact charts while preserving solid dense-data views. | `main`, tag `v0.2.1` |
 | 0.2.0 | 2026-07-13 | `Archive-v0.2.0.apk` | Archive Design System 2.0 with premium Home, Sleep, Settings, chart, surface, and navigation refinements. | `main`, tag `v0.2.0` |
 | 0.1.0 | 2026-07-13 | `Archive-v0.1.0.apk` | Formal baseline of the current productivity, health, workout, AI coach, and Health Connect experience. | `main`, tag `v0.1.0` |
+
+## 0.4.3 - Corrected sleep-day policy
+
+- APK filename: `Archive-v0.4.3.apk`
+- Local archive: `releases/v0.4.3/Archive-v0.4.3.apk`
+- Google Drive archive: `Archive Productivity Tracker/Releases/v0.4.3/Archive-v0.4.3.apk`
+- GitHub reference: `main`, tag `v0.4.3`
+- SHA-256: `4ab7cbc0122ec6b84e0bd82e8873ffd66a054a3c2eff199c0d8e534c3985d70e`
+- Summary: Assigns every watch sleep session to the day before wake-up and makes synced watch sleep authoritative over manual fallback data.
+- Main UI changes: clearer previous-day wording and a disabled Manual option whenever a watch-backed value already exists.
+- Structural changes: canonical sleep normalization now derives the record date from the local wake-up date minus one calendar day.
+- Functional changes: after-midnight sleep is attributed correctly, superseded start-date and wake-date imports migrate safely, and watch values replace manual conflicts.
+- Known issues: synchronization remains user-initiated, Android Health Connect is the only live watch bridge, and iOS health integration remains future work.
 
 ## 0.4.2 - Watch-first sleep records
 

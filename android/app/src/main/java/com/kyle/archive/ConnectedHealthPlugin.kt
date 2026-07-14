@@ -278,7 +278,7 @@ class ConnectedHealthPlugin : Plugin() {
             val startedAt = record.startTime
             val endedAt = record.endTime
             val minutes = durationMinutes(startedAt, endedAt)
-            val date = startedAt.atZone(zone).toLocalDate().toString()
+            val date = endedAt.atZone(zone).toLocalDate().minusDays(1).toString()
             sleepMinutesByDate[date] = (sleepMinutesByDate[date] ?: 0L) + minutes
 
             sleepSessions.put(

@@ -2761,6 +2761,11 @@ button:disabled {
     inset 0 0 0 1px rgba(201, 160, 220, 0.2);
 }
 
+.sleep-source-toggle button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
 .sleep-sync-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
