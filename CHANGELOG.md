@@ -4,6 +4,21 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-07-14
+
+### Changed
+
+- Enlarged the resting liquid-glass navigation dock to give its refraction, specular highlight, active lens, and lower caustic more visible depth.
+- Increased the Home control, navigation glyphs, and internal vertical spacing without making the iconography visually heavy.
+- Rebalanced expanded-dock widths and control spacing at 400, 380, and 360-pixel breakpoints so every destination remains fully accessible.
+- Preserved the smaller compact-on-scroll state, allowing the dock to feel spacious at rest and discreet while reading content.
+
+### Known issues and unfinished work
+
+- The Capacitor WebView treatment approximates optical refraction through composited material layers rather than true background-pixel displacement.
+- Workout, Workout History, Coach, and Settings retain their previous page compositions.
+- Background Health Connect synchronization and iOS packaging remain future work.
+
 ## [0.4.0] - 2026-07-14
 
 ### Added
@@ -137,7 +152,8 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 - The visual system is functional and consistent but has not yet received the planned premium design-system refinement.
 - iOS packaging and Apple Health integration are future work.
 
-[Unreleased]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.2.1...v0.3.0

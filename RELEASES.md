@@ -4,12 +4,26 @@ Release APKs are immutable. If a packaged build changes, Archive receives a new 
 
 | Version | Release date | APK | Summary | Source reference |
 | --- | --- | --- | --- | --- |
+| 0.4.1 | 2026-07-14 | `Archive-v0.4.1.apk` | Roomier liquid-glass dock with stronger optics, larger controls, and preserved scroll compaction. | `main`, tag `v0.4.1` |
 | 0.4.0 | 2026-07-14 | `Archive-v0.4.0.apk` | Archive Canvas with integrated metric stories, reduced card chrome, and scroll-reactive continuity. | `main`, tag `v0.4.0` |
 | 0.3.1 | 2026-07-14 | `Archive-v0.3.1.apk` | Layered liquid-glass bottom navigation with responsive optics and refined interaction. | `main`, tag `v0.3.1` |
 | 0.3.0 | 2026-07-13 | `Archive-v0.3.0.apk` | Curated metric stories, pinned-panel personalization, and a purposeful motion system. | `main`, tag `v0.3.0` |
 | 0.2.1 | 2026-07-13 | `Archive-v0.2.1.apk` | Restores Archive's signature gradient on compact charts while preserving solid dense-data views. | `main`, tag `v0.2.1` |
 | 0.2.0 | 2026-07-13 | `Archive-v0.2.0.apk` | Archive Design System 2.0 with premium Home, Sleep, Settings, chart, surface, and navigation refinements. | `main`, tag `v0.2.0` |
 | 0.1.0 | 2026-07-13 | `Archive-v0.1.0.apk` | Formal baseline of the current productivity, health, workout, AI coach, and Health Connect experience. | `main`, tag `v0.1.0` |
+
+## 0.4.1 — Roomier liquid-glass dock
+
+- APK filename: `Archive-v0.4.1.apk`
+- Local archive: `releases/v0.4.1/Archive-v0.4.1.apk`
+- Google Drive archive: `Archive Productivity Tracker/Releases/v0.4.1/Archive-v0.4.1.apk`
+- GitHub reference: `main`, tag `v0.4.1`
+- SHA-256: `0b75c8d0a7234518a3172704f11e6221b478890330d520e1fce6dcb7ac86dc55`
+- Summary: Gives Archive's persistent navigation the proportions of a compact mobile dock while retaining its expanding two-sided hierarchy.
+- Main UI changes: taller glass vessel, wider resting and expanded states, larger Home control and glyphs, broader specular light, stronger refraction, and a more visible lower caustic.
+- Structural changes: centralizes responsive dock geometry in shared size variables for regular, 400-pixel, 380-pixel, 360-pixel, and compact-scroll states.
+- Functional changes: navigation destinations and hierarchy are unchanged; compact-on-scroll behavior remains active.
+- Known issues: WebView optics do not perform true background-pixel displacement; background Health Connect sync and iOS packaging remain future work.
 
 ## 0.4.0 — Archive Canvas
 
