@@ -7,7 +7,8 @@ Archive is a private-first personal productivity, health, and workout tracker. I
 ## Highlights
 
 - Daily habit, water, and sleep tracking
-- Configurable dashboard modules and time spans
+- Curated Today and metric story pages with optional pinned panels
+- Purposeful chart, progress, page, and interaction motion with reduced-motion support
 - Weekly workout scheduling and editable routines
 - Exercise library with equipment and build-focus profiles
 - Detailed workout logging and monthly workout history

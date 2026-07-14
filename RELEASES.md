@@ -4,9 +4,24 @@ Release APKs are immutable. If a packaged build changes, Archive receives a new 
 
 | Version | Release date | APK | Summary | Source reference |
 | --- | --- | --- | --- | --- |
+| 0.3.0 | 2026-07-13 | `Archive-v0.3.0.apk` | Curated metric stories, pinned-panel personalization, and a purposeful motion system. | `main`, tag `v0.3.0` |
 | 0.2.1 | 2026-07-13 | `Archive-v0.2.1.apk` | Restores Archive's signature gradient on compact charts while preserving solid dense-data views. | `main`, tag `v0.2.1` |
 | 0.2.0 | 2026-07-13 | `Archive-v0.2.0.apk` | Archive Design System 2.0 with premium Home, Sleep, Settings, chart, surface, and navigation refinements. | `main`, tag `v0.2.0` |
 | 0.1.0 | 2026-07-13 | `Archive-v0.1.0.apk` | Formal baseline of the current productivity, health, workout, AI coach, and Health Connect experience. | `main`, tag `v0.1.0` |
+
+## 0.3.0 — Curated stories and motion
+
+- APK filename: `Archive-v0.3.0.apk`
+- Local archive: `releases/v0.3.0/Archive-v0.3.0.apk`
+- Google Drive archive: `Archive Productivity Tracker/Releases/v0.3.0/Archive-v0.3.0.apk`
+- GitHub reference: `main`, tag `v0.3.0`
+- SHA-256: `41dd86d639344f860de04e384e0dcf94ce77ded226a0644ac0dcc947319b8864`
+- Summary: Evolves Archive from a uniform module stack into a curated health and productivity story while preserving the existing module engine as an optional personalization layer.
+- Main UI changes: fixed metric heroes, editorial page sections, Home For You guidance, chart-first metric pages, clearer empty states, Pinned Panels, and updated customization language.
+- Structural changes: introduced reusable page-section, metric-hero, guided-highlight, and pinned-panel presentation components without changing persisted module or record formats.
+- Functional changes: ten-week Stats now derives exclusively from saved records instead of placeholder values; existing add, remove, edit, and reorder behavior remains available.
+- Motion changes: staggered bar growth, left-to-right line drawing with a traveling marker, animated progress and metric values, section reveals, press feedback, and reduced-motion fallbacks.
+- Known issues: Workout, Workout History, Coach, and Settings still use the earlier page structure; manual Health Connect sync and no iOS package remain.
 
 ## 0.2.1 — Compact chart gradients
 

@@ -3528,9 +3528,22 @@ function AreaChart({ days, getValue, gradientId, label, maxValue = 100, targetVa
             {targetLabel && <text className="target-label" x="302" y={targetY - 5}>{targetLabel}</text>}
           </>
         )}
-        {linePath && <path className="line" d={linePath} />}
-        {points.map((point) => (
-          <circle key={`${point.day}-${point.x}`} className="point" cx={point.x} cy={point.y} r="4" />
+        {linePath && <path className="line" d={linePath} pathLength="1" />}
+        {linePath && points.length > 1 && (
+          <circle className="line-runner" r="4.5" aria-hidden="true">
+            <animateMotion path={linePath} begin="80ms" dur="620ms" fill="freeze" />
+            <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.12;0.82;1" begin="80ms" dur="700ms" fill="freeze" />
+          </circle>
+        )}
+        {points.map((point, index) => (
+          <circle
+            key={`${point.day}-${point.x}`}
+            className="point"
+            cx={point.x}
+            cy={point.y}
+            r="4"
+            style={{ "--point-index": index }}
+          />
         ))}
       </svg>
       <div className="axis-labels">
@@ -3557,6 +3570,7 @@ function BarChart({ values, labels, className = "bar-chart", metricType = "neutr
             style={{
               height: `${height}%`,
               "--bar-tone": realScore ? toneForScore(realScore, metricType) : "#f1f1f1",
+              "--bar-index": index,
             }}
           >
             {realScore ?? ""}
@@ -3567,9 +3581,9 @@ function BarChart({ values, labels, className = "bar-chart", metricType = "neutr
   );
 }
 
-function StatCard({ label, value }) {
+function StatCard({ label, value, index = 0 }) {
   return (
-    <div className="stat-card">
+    <div className="stat-card" style={{ "--item-index": index }}>
       <small>{label}</small>
       <strong>{value}</strong>
     </div>
@@ -3582,6 +3596,61 @@ function SectionTitle({ title, meta }) {
       <span>{title}</span>
       <span>{meta}</span>
     </div>
+  );
+}
+
+function PageSection({ eyebrow, title, meta, actionLabel, onAction, className = "", children }) {
+  return (
+    <section className={`page-section ${className}`.trim()}>
+      <div className="page-section-heading">
+        <div>
+          {eyebrow && <span>{eyebrow}</span>}
+          <h2>{title}</h2>
+        </div>
+        <div className="page-section-meta">
+          {meta && <small>{meta}</small>}
+          {actionLabel && onAction && <button type="button" onClick={onAction}>{actionLabel}</button>}
+        </div>
+      </div>
+      <div className="page-section-content">{children}</div>
+    </section>
+  );
+}
+
+function MetricHero({ label, meta, value, unit = "", progress = 0, footLabel, footValue, className = "" }) {
+  const normalizedProgress = clamp(Number(progress) || 0, 0, 100);
+  return (
+    <section className={`panel metric-hero ${className}`.trim()}>
+      <div className="metric-hero-head">
+        <span>{label}</span>
+        <small>{meta}</small>
+      </div>
+      <div className="metric-hero-value">
+        <strong>{value}</strong>
+        {unit && <span>{unit}</span>}
+      </div>
+      <div className="metric-progress" aria-label={`${Math.round(normalizedProgress)} percent progress`}>
+        <i style={{ width: `${normalizedProgress}%` }} />
+      </div>
+      <div className="metric-hero-foot">
+        <span>{footLabel}</span>
+        <b>{footValue}</b>
+      </div>
+    </section>
+  );
+}
+
+function GuidedHighlight({ eyebrow = "For you", title, copy, actionLabel, onAction, status = "active" }) {
+  return (
+    <article className={`guided-highlight ${status}`}>
+      <span className="guided-highlight-mark" aria-hidden="true"><i /></span>
+      <div className="guided-highlight-copy">
+        <small>{eyebrow}</small>
+        <strong>{title}</strong>
+        <p>{copy}</p>
+      </div>
+      {actionLabel && onAction && <button type="button" onClick={onAction}>{actionLabel}<b aria-hidden="true">→</b></button>}
+    </article>
   );
 }
 
@@ -3783,7 +3852,7 @@ function MetricBalance({ weekDays, habitNames, goals }) {
   );
 }
 
-function HomePage({ weekDays, habitNames, goals, onAdd, onBackup, onHistory, modules, moduleContext, onRemoveModule, onEditModule, onReorderModule }) {
+function HomePage({ weekDays, habitNames, goals, onAdd, onCustomize, onBackup, onHistory, modules, moduleContext, onRemoveModule, onEditModule, onReorderModule }) {
   const scores = weekDays.map((day) => entryScore(day.entry, habitNames, goals));
   const recordedScores = scores.filter(Number.isFinite);
   const averageValue = Math.round(average(recordedScores));
@@ -3802,6 +3871,33 @@ function HomePage({ weekDays, habitNames, goals, onAdd, onBackup, onHistory, mod
     : averageValue >= 75
       ? "Your week is trending strongly. Protect the routines that are keeping sleep, hydration, and habits in balance."
       : "A complete record today will make your weekly patterns clearer and help Archive surface more useful signals.";
+  const attention = !todayEntry
+    ? {
+        title: "Today's record is ready",
+        copy: "A complete entry keeps your habits, sleep, hydration, and movement timeline connected.",
+        actionLabel: "Record",
+        status: "active",
+      }
+    : todayEntry.water < goals.waterTarget
+      ? {
+          title: "Hydration is still below target",
+          copy: `${formatWaterVolume(todayEntry.water, goals)} recorded toward ${formatWaterVolume(goals.waterTarget, goals)}.`,
+          actionLabel: "Update",
+          status: "attention",
+        }
+      : todayEntry.sleep < goals.sleepTarget
+        ? {
+            title: "Sleep is below your target",
+            copy: `${formatSleepHours(todayEntry.sleep)} recorded against a ${formatSleepHours(goals.sleepTarget)} target.`,
+            actionLabel: "Review",
+            status: "attention",
+          }
+        : {
+            title: "Today is fully recorded",
+            copy: "Archive has enough information to keep this week's summary and comparisons current.",
+            actionLabel: "Review",
+            status: "complete",
+          };
 
   return (
     <div className="screen">
@@ -3827,82 +3923,166 @@ function HomePage({ weekDays, habitNames, goals, onAdd, onBackup, onHistory, mod
         </button>
       </section>
 
-      <div className="panel insight">
-        <span className="insight-mark" aria-hidden="true">✦</span>
-        <div>
-          <SectionTitle title="Archive insight" meta="this week" />
-          <p>{insightCopy}</p>
-        </div>
-      </div>
-
-      <div className="stat-grid">
-        <StatCard label="Avg value" value={averageValue || "--"} />
-        <StatCard label="Best day" value={bestDay || "--"} />
-        <StatCard label="Vs previous" value={`${delta >= 0 ? "\u2191" : "\u2193"} ${Math.abs(delta)}`} />
-      </div>
-
-      <div className="panel">
-        <SectionTitle title="Daily value" meta="score" />
-        <BarChart values={scores} labels={DAY_LABELS} metricType="home" />
-        <p className="chart-note">Darker bars indicate higher daily value from habits, sleep, water, and movement.</p>
-      </div>
-
-      <MetricBalance weekDays={weekDays} habitNames={habitNames} goals={goals} />
-
-      <div className="panel correlation-list">
-        <SectionTitle title="Correlations" meta="signals" />
-        <div className="correlation-row">
+      <PageSection eyebrow="Today" title="For you" meta={hasTodayScore ? "Up to date" : "1 item"} className="for-you-section">
+        <GuidedHighlight
+          eyebrow={hasTodayScore ? "Daily guidance" : "Needs attention"}
+          title={attention.title}
+          copy={attention.copy}
+          actionLabel={attention.actionLabel}
+          onAction={onAdd}
+          status={attention.status}
+        />
+        <div className="panel insight">
+          <span className="insight-mark" aria-hidden="true">✦</span>
           <div>
-            <p>Sleep to habit completion</p>
-            <small>7h+ sleep is linked with better next-day completion.</small>
+            <SectionTitle title="Archive insight" meta="this week" />
+            <p>{insightCopy}</p>
           </div>
-          <span className="correlation-score">+.42</span>
         </div>
-        <div className="correlation-row">
-          <div>
-            <p>Water to energy rating</p>
-            <small>Water target consistency is the most uneven input.</small>
-          </div>
-          <span className="correlation-score mid">+.28</span>
-        </div>
-      </div>
+      </PageSection>
 
-      <AddedModules modules={modules} context={{ ...moduleContext, metricType: "home" }} onRemoveModule={onRemoveModule} onEditModule={onEditModule} onReorderModule={onReorderModule} />
+      <PageSection eyebrow="Overview" title="Pinned summary" meta="Last 7 days" className="summary-section">
+        <div className="stat-grid">
+          <StatCard label="Avg value" value={averageValue || "--"} index={0} />
+          <StatCard label="Best day" value={bestDay || "--"} index={1} />
+          <StatCard label="Vs previous" value={`${delta >= 0 ? "\u2191" : "\u2193"} ${Math.abs(delta)}`} index={2} />
+        </div>
+        <div className="panel chart-feature-panel">
+          <SectionTitle title="Daily value" meta="score" />
+          <BarChart values={scores} labels={DAY_LABELS} metricType="home" />
+          <p className="chart-note">The gradient preserves Archive's visual signature while bar height carries the value.</p>
+        </div>
+      </PageSection>
+
+      <PageSection eyebrow="Analysis" title="Patterns" meta="7-day signals" className="patterns-section">
+        <MetricBalance weekDays={weekDays} habitNames={habitNames} goals={goals} />
+        <div className="panel correlation-list">
+          <SectionTitle title="Correlations" meta="signals" />
+          <div className="correlation-row">
+            <div>
+              <p>Sleep to habit completion</p>
+              <small>7h+ sleep is linked with better next-day completion.</small>
+            </div>
+            <span className="correlation-score">+.42</span>
+          </div>
+          <div className="correlation-row">
+            <div>
+              <p>Water to energy rating</p>
+              <small>Water target consistency is the most uneven input.</small>
+            </div>
+            <span className="correlation-score mid">+.28</span>
+          </div>
+        </div>
+      </PageSection>
+
+      <PinnedModulesSection
+        modules={modules}
+        context={{ ...moduleContext, metricType: "home" }}
+        onCustomize={onCustomize}
+        onRemoveModule={onRemoveModule}
+        onEditModule={onEditModule}
+        onReorderModule={onReorderModule}
+      />
     </div>
   );
 }
 
-function WeeklyMetricPage({ type, title, statCards, sectionTitle, detailRows, getValue, gradientId, weekDays, onAdd, onBackup, onHistory, modules, moduleContext, extraPanels, onRemoveModule, onEditModule, onReorderModule, areaMax = 100, targetValue = null, targetLabel = "" }) {
+function WeeklyMetricPage({
+  type,
+  title,
+  statCards,
+  sectionTitle,
+  detailRows,
+  getValue,
+  gradientId,
+  weekDays,
+  onAdd,
+  onCustomize,
+  onBackup,
+  onHistory,
+  modules,
+  moduleContext,
+  extraPanels,
+  extraSectionTitle = "Preferences",
+  insightTitle,
+  insightCopy,
+  heroLabel,
+  heroMeta,
+  heroValue,
+  heroUnit,
+  heroProgress,
+  heroFootLabel,
+  heroFootValue,
+  onRemoveModule,
+  onEditModule,
+  onReorderModule,
+  areaMax = 100,
+  targetValue = null,
+  targetLabel = "",
+}) {
   const pageModuleContext = { ...moduleContext, metricType: type };
+  const recordedDays = weekDays.filter((day) => day.entry).length;
 
   return (
-    <div className="screen">
+    <div className={`screen metric-story-screen ${type}-screen`}>
       <TopBar title={title} actionLabel={`Add ${type} action`} onAdd={onAdd} onBackup={onBackup} onHistory={onHistory} />
 
-      <div className="stat-grid">
-        {statCards.map((card) => (
-          <StatCard key={card.label} label={card.label} value={card.value} />
-        ))}
-      </div>
+      <MetricHero
+        label={heroLabel}
+        meta={heroMeta}
+        value={heroValue}
+        unit={heroUnit}
+        progress={heroProgress}
+        footLabel={heroFootLabel}
+        footValue={heroFootValue}
+        className={`${type}-hero`}
+      />
 
-      <div className="panel area-panel">
-        <SectionTitle title={sectionTitle} meta="this week" />
-        <AreaChart days={weekDays} getValue={getValue} gradientId={gradientId} label={`${sectionTitle} this week`} maxValue={areaMax} targetValue={targetValue} targetLabel={targetLabel} metricType={type} />
-      </div>
+      <PageSection eyebrow="Weekly pattern" title={sectionTitle} meta="This week" className="primary-chart-section">
+        <div className="panel area-panel chart-feature-panel">
+          <AreaChart days={weekDays} getValue={getValue} gradientId={gradientId} label={`${sectionTitle} this week`} maxValue={areaMax} targetValue={targetValue} targetLabel={targetLabel} metricType={type} />
+        </div>
+      </PageSection>
 
-      {extraPanels}
+      <PageSection eyebrow="Overview" title={`${title} at a glance`} meta={`${recordedDays}/7 recorded`} className="metric-overview-section">
+        <div className="stat-grid">
+          {statCards.map((card, index) => (
+            <StatCard key={card.label} label={card.label} value={card.value} index={index} />
+          ))}
+        </div>
+        {insightCopy && (
+          <GuidedHighlight
+            eyebrow="Archive insight"
+            title={insightTitle ?? `${title} pattern`}
+            copy={insightCopy}
+            status="quiet"
+          />
+        )}
+        <div className="panel summary-list">
+          <SectionTitle title={`${title} detail`} meta="recorded" />
+          {detailRows.map(([label, value]) => (
+            <div className="summary-row" key={label}>
+              <span>{label}</span>
+              <strong>{value}</strong>
+            </div>
+          ))}
+        </div>
+      </PageSection>
 
-      <div className="panel summary-list">
-        <SectionTitle title={`${title} detail`} meta="recorded" />
-        {detailRows.map(([label, value]) => (
-          <div className="summary-row" key={label}>
-            <span>{label}</span>
-            <strong>{value}</strong>
-          </div>
-        ))}
-      </div>
+      {extraPanels && (
+        <PageSection eyebrow="Manage" title={extraSectionTitle} meta="Your setup" className="metric-preferences-section">
+          {extraPanels}
+        </PageSection>
+      )}
 
-      <AddedModules modules={modules} context={pageModuleContext} onRemoveModule={onRemoveModule} onEditModule={onEditModule} onReorderModule={onReorderModule} />
+      <PinnedModulesSection
+        modules={modules}
+        context={pageModuleContext}
+        onCustomize={onCustomize}
+        onRemoveModule={onRemoveModule}
+        onEditModule={onEditModule}
+        onReorderModule={onReorderModule}
+      />
     </div>
   );
 }
@@ -4013,26 +4193,41 @@ function HabitTrackingPanel({ habitNames, trackedHabits, onToggleHabitTracking, 
   );
 }
 
-function HabitPage({ weekDays, habitNames, trackedHabits, goals, onAdd, onBackup, onHistory, modules, moduleContext, onToggleHabitTracking, onRenameHabit, onReorderHabit, onRemoveModule, onEditModule, onReorderModule }) {
+function HabitPage({ weekDays, habitNames, trackedHabits, goals, onAdd, onCustomize, onBackup, onHistory, modules, moduleContext, onToggleHabitTracking, onRenameHabit, onReorderHabit, onRemoveModule, onEditModule, onReorderModule }) {
   const entries = weekDays.map((day) => day.entry).filter(Boolean);
   const values = entries.map((entry) => habitPercent(entry, trackedHabits));
   const habitCounts = trackedHabits.map((habit) => [habit, entries.filter((entry) => entry.habits?.[habit]).length]);
+  const weekAverage = Math.round(average(values));
+  const strongestHabit = [...habitCounts].sort((a, b) => b[1] - a[1])[0];
+  const hasHabitSignal = Boolean(entries.length && strongestHabit?.[1]);
 
   return (
     <WeeklyMetricPage
       type="habit"
       title="Habit"
       statCards={[
-        { label: "Week avg", value: `${Math.round(average(values))}%` },
-        { label: "Best day", value: `${Math.max(...values, 0)}%` },
+        { label: "Week avg", value: entries.length ? `${weekAverage}%` : "--" },
+        { label: "Best day", value: entries.length ? `${Math.max(...values, 0)}%` : "--" },
         { label: "Logged", value: `${entries.length}/7` },
       ]}
       sectionTitle="Habit completion"
+      heroLabel="7-day completion"
+      heroMeta={`${trackedHabits.length} tracked habits`}
+      heroValue={entries.length ? weekAverage : "--"}
+      heroUnit={entries.length ? "%" : ""}
+      heroProgress={weekAverage}
+      heroFootLabel={`${entries.length} of 7 days recorded`}
+      heroFootValue={entries.length ? `${Math.max(...values, 0)}% best` : "No data"}
+      insightTitle={hasHabitSignal ? `${strongestHabit[0]} is leading` : "Your routine starts here"}
+      insightCopy={hasHabitSignal
+        ? `${strongestHabit[0]} was completed on ${strongestHabit[1]} of ${entries.length} recorded days. Consistency matters more than a perfect week.`
+        : "Record a day to begin comparing which habits are becoming automatic and which need attention."}
       detailRows={habitCounts.slice(0, 3).map(([habit, count]) => [habit, `${count} / ${entries.length || 0}`])}
       getValue={(entry) => habitPercent(entry, trackedHabits)}
       gradientId="habitGradient"
       weekDays={weekDays}
       onAdd={onAdd}
+      onCustomize={onCustomize}
       onBackup={onBackup}
       onHistory={onHistory}
       modules={modules}
@@ -4049,33 +4244,48 @@ function HabitPage({ weekDays, habitNames, trackedHabits, goals, onAdd, onBackup
           onReorderHabit={onReorderHabit}
         />
       }
+      extraSectionTitle="Tracking preferences"
     />
   );
 }
 
-function WaterPage({ weekDays, goals, onAdd, onBackup, onHistory, modules, moduleContext, onRemoveModule, onEditModule, onReorderModule }) {
+function WaterPage({ weekDays, goals, onAdd, onCustomize, onBackup, onHistory, modules, moduleContext, onRemoveModule, onEditModule, onReorderModule }) {
   const entries = weekDays.map((day) => day.entry).filter(Boolean);
   const waters = entries.map((entry) => entry.water);
+  const averageWater = average(waters);
+  const targetProgress = goals.waterTarget ? clamp((averageWater / goals.waterTarget) * 100, 0, 100) : 0;
+  const targetDays = entries.filter((entry) => entry.water >= goals.waterTarget).length;
 
   return (
     <WeeklyMetricPage
       type="water"
       title="Water"
       statCards={[
-        { label: "Avg volume", value: formatWaterVolume(average(waters), goals) },
+        { label: "Avg volume", value: entries.length ? formatWaterVolume(averageWater, goals) : "--" },
         { label: "Target", value: formatWaterVolume(goals.waterTarget, goals) },
         { label: "Logged", value: `${entries.length}/7` },
       ]}
       sectionTitle="Water consumption"
+      heroLabel="Daily average"
+      heroMeta={`${entries.length} of 7 days`}
+      heroValue={entries.length ? formatWaterVolume(averageWater, goals) : "--"}
+      heroProgress={targetProgress}
+      heroFootLabel={`Target ${formatWaterVolume(goals.waterTarget, goals)}`}
+      heroFootValue={entries.length ? `${Math.round(targetProgress)}%` : "No data"}
+      insightTitle={targetDays ? `${targetDays} target ${targetDays === 1 ? "day" : "days"}` : "Build a hydration baseline"}
+      insightCopy={entries.length
+        ? `${targetDays} of ${entries.length} recorded days reached your target. Smaller, repeatable gaps are easier to close than one large evening catch-up.`
+        : "Record your water intake to see daily totals, target consistency, and longer-term patterns."}
       detailRows={[
-        ["Best day", formatWaterVolume(Math.max(...waters, 0), goals)],
-        ["Lowest day", formatWaterVolume(Math.min(...waters, 0), goals)],
+        ["Best day", entries.length ? formatWaterVolume(Math.max(...waters), goals) : "--"],
+        ["Lowest day", entries.length ? formatWaterVolume(Math.min(...waters), goals) : "--"],
         ["Target met", `${entries.filter((entry) => entry.water >= goals.waterTarget).length} days`],
       ]}
       getValue={(entry) => waterPercent(entry, goals)}
       gradientId="waterGradient"
       weekDays={weekDays}
       onAdd={onAdd}
+      onCustomize={onCustomize}
       onBackup={onBackup}
       onHistory={onHistory}
       modules={modules}
@@ -4087,7 +4297,7 @@ function WaterPage({ weekDays, goals, onAdd, onBackup, onHistory, modules, modul
   );
 }
 
-function SleepPage({ weekDays, goals, onAdd, onBackup, onHistory, modules, moduleContext, onRemoveModule, onEditModule, onReorderModule }) {
+function SleepPage({ weekDays, goals, onAdd, onCustomize, onBackup, onHistory, modules, moduleContext, onRemoveModule, onEditModule, onReorderModule }) {
   const entries = weekDays.map((day) => day.entry).filter(Boolean);
   const sleeps = entries.map((entry) => entry.sleep);
   const averageSleep = average(sleeps);
@@ -4095,59 +4305,62 @@ function SleepPage({ weekDays, goals, onAdd, onBackup, onHistory, modules, modul
   const short = sleeps.length ? Math.min(...sleeps) : 0;
   const sleepChartMax = Math.max(10, Math.ceil(Math.max(...sleeps, goals.sleepTarget, goals.sleepMax)) || 10);
   const targetProgress = goals.sleepTarget ? clamp((averageSleep / goals.sleepTarget) * 100, 0, 100) : 0;
+  const targetNights = entries.filter((entry) => entry.sleep >= goals.sleepTarget).length;
+  const sleepInsight = !entries.length
+    ? "Record a night to begin building a baseline for duration, consistency, and recovery patterns."
+    : targetNights >= Math.ceil(entries.length * 0.7)
+      ? "Most recorded nights are meeting your target. The next useful signal is how consistent your bedtime and wake time become."
+      : `${targetNights} of ${entries.length} recorded nights reached your target. Look for repeatable changes rather than one perfect night.`;
 
   return (
     <div className="screen sleep-screen">
       <TopBar title="Sleep" actionLabel="Add sleep action" onAdd={onAdd} onBackup={onBackup} onHistory={onHistory} />
 
-      <section className="panel metric-hero sleep-hero">
-        <div className="metric-hero-head">
-          <span>7-day average</span>
-          <small>{entries.length} of 7 nights</small>
-        </div>
-        <div className="metric-hero-value">
-          <strong>{entries.length ? averageSleep.toFixed(1) : "--"}</strong>
-          <span>hours</span>
-        </div>
-        <div className="metric-progress" aria-label={`${Math.round(targetProgress)} percent of sleep target`}>
-          <i style={{ width: `${targetProgress}%` }} />
-        </div>
-        <div className="metric-hero-foot">
-          <span>Target {formatSleepHours(goals.sleepTarget)}</span>
-          <b>{entries.length ? `${Math.round(targetProgress)}%` : "No data"}</b>
-        </div>
-      </section>
+      <MetricHero
+        label="7-day average"
+        meta={`${entries.length} of 7 nights`}
+        value={entries.length ? averageSleep.toFixed(1) : "--"}
+        unit={entries.length ? "hours" : ""}
+        progress={targetProgress}
+        footLabel={`Target ${formatSleepHours(goals.sleepTarget)}`}
+        footValue={entries.length ? `${Math.round(targetProgress)}%` : "No data"}
+        className="sleep-hero"
+      />
 
-      <div className="stat-grid">
-        <StatCard label="Best night" value={entries.length ? `${best.toFixed(1)}h` : "--"} />
-        <StatCard label="Shortest" value={entries.length ? `${short.toFixed(1)}h` : "--"} />
-        <StatCard label="At target" value={`${entries.filter((entry) => entry.sleep >= goals.sleepTarget).length}/7`} />
-      </div>
+      <PageSection eyebrow="Weekly pattern" title="Sleep duration" meta="This week" className="primary-chart-section">
+        <div className="panel area-panel sleep-chart-panel chart-feature-panel">
+          <AreaChart
+            days={weekDays}
+            getValue={(entry) => entry?.sleep ?? null}
+            gradientId="sleepGradient"
+            label="Sleep duration this week"
+            maxValue={sleepChartMax}
+            targetValue={goals.sleepTarget}
+            targetLabel={formatSleepHours(goals.sleepTarget)}
+            metricType="sleep"
+          />
+        </div>
+      </PageSection>
 
-      <div className="panel area-panel sleep-chart-panel">
-        <SectionTitle title="Sleep duration" meta="this week" />
-        <AreaChart
-          days={weekDays}
-          getValue={(entry) => entry?.sleep ?? null}
-          gradientId="sleepGradient"
-          label="Sleep duration this week"
-          maxValue={sleepChartMax}
-          targetValue={goals.sleepTarget}
-          targetLabel={formatSleepHours(goals.sleepTarget)}
-          metricType="sleep"
-        />
-      </div>
+      <PageSection eyebrow="Overview" title="Sleep at a glance" meta={`${entries.length}/7 recorded`} className="metric-overview-section">
+        <div className="stat-grid">
+          <StatCard label="Best night" value={entries.length ? `${best.toFixed(1)}h` : "--"} index={0} />
+          <StatCard label="Shortest" value={entries.length ? `${short.toFixed(1)}h` : "--"} index={1} />
+          <StatCard label="At target" value={`${targetNights}/7`} index={2} />
+        </div>
+        <GuidedHighlight eyebrow="Archive insight" title={targetNights ? "Target consistency" : "Build your baseline"} copy={sleepInsight} status="quiet" />
+        <div className="panel summary-list">
+          <SectionTitle title="Sleep detail" meta="recorded" />
+          <div className="summary-row"><span>Target nights</span><strong>{targetNights}</strong></div>
+          <div className="summary-row"><span>Best night</span><strong>{entries.length ? `${best.toFixed(1)}h` : "--"}</strong></div>
+          <div className="summary-row"><span>Shortest night</span><strong>{entries.length ? `${short.toFixed(1)}h` : "--"}</strong></div>
+        </div>
+      </PageSection>
 
-      <div className="panel summary-list">
-        <SectionTitle title="Sleep detail" meta="recorded" />
-        <div className="summary-row"><span>Target nights</span><strong>{entries.filter((entry) => entry.sleep >= goals.sleepTarget).length}</strong></div>
-        <div className="summary-row"><span>Best night</span><strong>{entries.length ? `${best.toFixed(1)}h` : "--"}</strong></div>
-        <div className="summary-row"><span>Shortest night</span><strong>{entries.length ? `${short.toFixed(1)}h` : "--"}</strong></div>
-      </div>
-
-      <AddedModules
+      <PinnedModulesSection
         modules={modules}
         context={{ ...moduleContext, metricType: "sleep" }}
+        onCustomize={onCustomize}
         onRemoveModule={onRemoveModule}
         onEditModule={onEditModule}
         onReorderModule={onReorderModule}
@@ -4221,49 +4434,85 @@ function ValueGrid({ entries, habitNames, goals, onEditDate }) {
   );
 }
 
-function StatsPage({ entries, habitNames, goals, onAdd, onBackup, onHistory, onEditDate, modules, moduleContext, onRemoveModule, onEditModule, onReorderModule }) {
+function StatsPage({ entries, habitNames, goals, onAdd, onCustomize, onBackup, onHistory, onEditDate, modules, moduleContext, onRemoveModule, onEditModule, onReorderModule }) {
   const weekDays = buildWeek(entries);
-  const currentWeekScore = Math.round(average(weekDays.map((day) => entryScore(day.entry, habitNames, goals))));
-  const weeklyValues = [58, 66, 52, 74, 82, 66, 91, 74, 58, currentWeekScore || 82];
+  const entriesByDate = new Map(entries.map((entry) => [entry.date, entry]));
+  const today = new Date();
+  const currentWeekStart = addDays(today, -((today.getDay() + 6) % 7));
+  const weeklyValues = Array.from({ length: 10 }, (_, index) => {
+    const weekStart = addDays(currentWeekStart, (index - 9) * 7);
+    const scores = Array.from({ length: 7 }, (__, dayIndex) => {
+      const entry = entriesByDate.get(dateKey(addDays(weekStart, dayIndex)));
+      return entryScore(entry, habitNames, goals);
+    }).filter(Number.isFinite);
+    return scores.length ? Math.round(average(scores)) : null;
+  });
+  const recordedWeekScores = weeklyValues.filter(Number.isFinite);
+  const currentWeekScore = weeklyValues.at(-1);
+  const priorWeekScores = weeklyValues.slice(0, -1).filter(Number.isFinite);
+  const previousWeekScore = priorWeekScores.at(-1);
+  const weeklyDelta = Number.isFinite(currentWeekScore) && Number.isFinite(previousWeekScore) ? currentWeekScore - previousWeekScore : 0;
+  const latestRecordedDelta = recordedWeekScores.length > 1 ? recordedWeekScores.at(-1) - recordedWeekScores.at(-2) : 0;
+  const averageWeekScore = recordedWeekScores.length ? Math.round(average(recordedWeekScores)) : 0;
+  const bestWeekScore = recordedWeekScores.length ? Math.max(...recordedWeekScores) : 0;
+  const recordedThisWeek = weekDays.filter((day) => day.entry).length;
 
   return (
-    <div className="screen">
+    <div className="screen stats-screen metric-story-screen">
       <TopBar title="Stats" actionLabel="Add action" onAdd={onAdd} onBackup={onBackup} onHistory={onHistory} />
 
-      <div className="stat-grid">
-        <StatCard label="Avg score" value={Math.round(average(weeklyValues))} />
-        <StatCard label="Best week" value={Math.max(...weeklyValues)} />
-        <StatCard label="Days logged" value={entries.length} />
-      </div>
+      <MetricHero
+        label="Current week"
+        meta={`${recordedThisWeek} of 7 days`}
+        value={Number.isFinite(currentWeekScore) ? currentWeekScore : "--"}
+        progress={currentWeekScore ?? 0}
+        footLabel="Daily value average"
+        footValue={Number.isFinite(currentWeekScore) ? `${weeklyDelta >= 0 ? "↑" : "↓"} ${Math.abs(weeklyDelta)} vs prior` : "No data"}
+        className="stats-hero"
+      />
 
-      <div className="panel year-panel">
-        <SectionTitle title="Value grid" meta="this month" />
-        <ValueGrid entries={entries} habitNames={habitNames} goals={goals} onEditDate={onEditDate} />
-        <div className="legend">
-          <span>No record</span>
-          <span className="legend-scale">
-            <i />
-            <i />
-            <i />
-            <i />
-            <i />
-            <i />
-          </span>
-          <span>Higher</span>
+      <PageSection eyebrow="Calendar" title="Daily value" meta="This month" className="calendar-section">
+        <div className="panel year-panel">
+          <ValueGrid entries={entries} habitNames={habitNames} goals={goals} onEditDate={onEditDate} />
+          <div className="legend">
+            <span>No record</span>
+            <span className="legend-scale"><i /><i /><i /><i /><i /><i /></span>
+            <span>Higher</span>
+          </div>
         </div>
-      </div>
+      </PageSection>
 
-      <div className="panel">
-        <SectionTitle title="Previous 10 weeks" meta="avg score" />
-        <BarChart values={weeklyValues} labels={weeklyValues.map((_, index) => `W${index + 1}`)} className="week-chart" metricType="stats" />
-      </div>
+      <PageSection eyebrow="Long-term" title="Previous 10 weeks" meta={`${recordedWeekScores.length} with data`} className="long-term-section">
+        <div className="panel chart-feature-panel">
+          <SectionTitle title="Average daily value" meta="by week" />
+          <BarChart values={weeklyValues} labels={weeklyValues.map((_, index) => `W${index + 1}`)} className="week-chart" metricType="stats" />
+        </div>
+        <GuidedHighlight
+          eyebrow="Trend note"
+          title={recordedWeekScores.length > 1 ? `${latestRecordedDelta >= 0 ? "Improving" : "Easing"} across recorded weeks` : "Your long-term view starts here"}
+          copy={recordedWeekScores.length > 1
+            ? `Your latest recorded weekly average is ${Math.abs(latestRecordedDelta)} points ${latestRecordedDelta >= 0 ? "above" : "below"} the previous recorded week.`
+            : "Archive will compare real weekly averages as you build a longer record history."}
+          status="quiet"
+        />
+      </PageSection>
 
-      <AddedModules modules={modules} context={{ ...moduleContext, metricType: "stats" }} onRemoveModule={onRemoveModule} onEditModule={onEditModule} onReorderModule={onReorderModule} />
+      <PageSection eyebrow="Overview" title="At a glance" meta="Recorded history" className="metric-overview-section">
+        <div className="stat-grid">
+          <StatCard label="Avg score" value={averageWeekScore || "--"} index={0} />
+          <StatCard label="Best week" value={bestWeekScore || "--"} index={1} />
+          <StatCard label="Days logged" value={entries.length} index={2} />
+        </div>
+      </PageSection>
 
-      <div className="panel insight">
-        <SectionTitle title="Trend note" meta="10 weeks" />
-        <p>Your highest scoring periods still cluster around consistent sleep and higher habit completion.</p>
-      </div>
+      <PinnedModulesSection
+        modules={modules}
+        context={{ ...moduleContext, metricType: "stats" }}
+        onCustomize={onCustomize}
+        onRemoveModule={onRemoveModule}
+        onEditModule={onEditModule}
+        onReorderModule={onReorderModule}
+      />
     </div>
   );
 }
@@ -6429,6 +6678,7 @@ function ModuleBars({ values, labels, metricType = "neutral" }) {
             style={{
               height: `${clamp(score, 18, 96)}%`,
               "--tone": toneForScore(score, metricType),
+              "--bar-index": index,
             }}
           >
             {score || ""}
@@ -6473,9 +6723,15 @@ function VariableAreaChart({ values, labels, gradientId, label, maxValue = 100, 
             {targetLabel && <text className="target-label" x="302" y={targetY - 5}>{targetLabel}</text>}
           </>
         )}
-        {linePath && <path className="line" d={linePath} />}
+        {linePath && <path className="line" d={linePath} pathLength="1" />}
+        {linePath && points.length > 1 && (
+          <circle className="line-runner" r="4.5" aria-hidden="true">
+            <animateMotion path={linePath} begin="80ms" dur="620ms" fill="freeze" />
+            <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.12;0.82;1" begin="80ms" dur="700ms" fill="freeze" />
+          </circle>
+        )}
         {points.map((point, index) => (
-          <circle className="point" cx={point.x} cy={point.y} r="4" key={`${point.x}-${index}`} />
+          <circle className="point" cx={point.x} cy={point.y} r="4" key={`${point.x}-${index}`} style={{ "--point-index": index }} />
         ))}
       </svg>
       <div className="module-axis-labels" style={{ gridTemplateColumns: `repeat(${labels.length}, 1fr)` }}>
@@ -6797,7 +7053,7 @@ function ModulePanel({ module, context, mode = "page", onAdd, onRemove, onEdit, 
         </div>
         {mode === "picker" && (
           <button className="module-add-btn" disabled={added} onClick={() => onAdd(module.id)}>
-            {added ? "Added" : "Add"}
+            {added ? "Pinned" : "Pin"}
           </button>
         )}
       </div>
@@ -6807,8 +7063,8 @@ function ModulePanel({ module, context, mode = "page", onAdd, onRemove, onEdit, 
       {mode === "picker" && <p>{module.caption}</p>}
       {menuOpen && (
         <div className="module-menu" role="menu" onPointerDown={(event) => event.stopPropagation()}>
-          <button role="menuitem" onClick={editModule}>Edit module</button>
-          {mode === "page" && <button role="menuitem" onClick={removeModule}>Remove module</button>}
+          <button role="menuitem" onClick={editModule}>Edit panel</button>
+          {mode === "page" && <button role="menuitem" onClick={removeModule}>Remove from page</button>}
           {mode === "page" && <button role="menuitem" onClick={() => setMenuOpen(false)}>Cancel</button>}
         </div>
       )}
@@ -6933,6 +7189,38 @@ function AddedModules({ modules = [], context, onRemoveModule, onEditModule, onR
   );
 }
 
+function PinnedModulesSection({ modules = [], context, onCustomize, onRemoveModule, onEditModule, onReorderModule }) {
+  return (
+    <PageSection
+      eyebrow="Personalize"
+      title="Pinned panels"
+      meta={modules.length ? `${modules.length} pinned` : "Optional"}
+      actionLabel={modules.length ? "Customize" : undefined}
+      onAction={onCustomize}
+      className="pinned-panels-section"
+    >
+      {modules.length ? (
+        <AddedModules
+          modules={modules}
+          context={context}
+          onRemoveModule={onRemoveModule}
+          onEditModule={onEditModule}
+          onReorderModule={onReorderModule}
+        />
+      ) : (
+        <button type="button" className="customize-page-card" onClick={onCustomize}>
+          <span aria-hidden="true">+</span>
+          <div>
+            <strong>Shape this page around you</strong>
+            <small>Pin an optional chart, comparison, grid, or timeline.</small>
+          </div>
+          <b aria-hidden="true">→</b>
+        </button>
+      )}
+    </PageSection>
+  );
+}
+
 function AddChoiceSheet({ onRecord, onModules, onClose }) {
   return (
     <div className="sheet-backdrop" role="presentation">
@@ -6940,19 +7228,19 @@ function AddChoiceSheet({ onRecord, onModules, onClose }) {
         <span className="sheet-handle" />
         <div className="choice-head">
           <div>
-            <h2>Add</h2>
-            <p>Choose what you want to add to this page.</p>
+            <h2>Add or customize</h2>
+            <p>Record new data or personalize the page you are viewing.</p>
           </div>
           <button className="ghost-btn" onClick={onClose}>Close</button>
         </div>
         <div className="choice-actions">
           <button onClick={onRecord}>
-            <strong>Record day</strong>
-            <span>Open the daily report form.</span>
+            <strong>Record data</strong>
+            <span>Open the daily report for any date.</span>
           </button>
           <button onClick={onModules}>
-            <strong>Add module</strong>
-            <span>Choose from infographic panels.</span>
+            <strong>Customize page</strong>
+            <span>Pin, configure, and arrange optional panels.</span>
           </button>
         </div>
       </section>
@@ -7103,7 +7391,7 @@ function ModuleEditSheet({ module, settings, onSave, onClose }) {
         <span className="sheet-handle" />
         <div className="choice-head">
           <div>
-            <h2>Edit module</h2>
+            <h2>Edit panel</h2>
             <p>{module.title}</p>
           </div>
           <button className="ghost-btn" onClick={onClose}>Close</button>
@@ -7132,12 +7420,12 @@ function ModuleEditSheet({ module, settings, onSave, onClose }) {
         ) : (
           <div className="setting-panel setting-empty">
             <span>No editable settings yet.</span>
-            <p>This module keeps its current layout for now.</p>
+            <p>This panel keeps its current layout for now.</p>
           </div>
         )}
 
         <button className="save-report" onClick={saveSettings}>
-          Save module
+          Save panel
         </button>
       </section>
     </div>
@@ -7150,11 +7438,11 @@ function ModulePicker({ pageId, pageName, context, addedModuleIds = [], moduleTe
   ));
 
   return (
-    <section className={`module-picker metric-${pageId}`} aria-label="Add module">
+    <section className={`module-picker metric-${pageId}`} aria-label={`Customize ${pageName}`}>
       <div className="module-picker-topbar">
         <div>
-          <h2>Add module</h2>
-          <p>Adding to {pageName}</p>
+          <h2>Customize {pageName}</h2>
+          <p>Pin optional panels without changing the page's core story.</p>
         </div>
         <button className="ghost-btn" onClick={onClose}>Close</button>
       </div>
@@ -7996,11 +8284,11 @@ export default function App() {
   const pages = {
     workout: <WorkoutPage workout={state.workout} onWorkoutChange={updateWorkoutData} onAdd={openModulePicker} onBackup={openBackupChoice} modules={pageModules.workout} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
     workoutHistory: <WorkoutHistoryPage workout={state.workout} onWorkoutChange={updateWorkoutData} />,
-    home: <HomePage weekDays={weekDays} habitNames={trackedHabitNames} goals={goals} onAdd={openAddChoice} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.home} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
-    habit: <HabitPage weekDays={weekDays} habitNames={state.habitNames} trackedHabits={trackedHabitNames} goals={goals} onAdd={openAddChoice} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.habit} moduleContext={moduleContext} onToggleHabitTracking={toggleHabitTracking} onRenameHabit={setEditingHabit} onReorderHabit={reorderHabit} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
-    water: <WaterPage weekDays={weekDays} goals={goals} onAdd={openAddChoice} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.water} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
-    sleep: <SleepPage weekDays={weekDays} goals={goals} onAdd={openAddChoice} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.sleep} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
-    stats: <StatsPage entries={state.entries} habitNames={trackedHabitNames} goals={goals} onAdd={openAddChoice} onBackup={openBackupChoice} onHistory={openHistory} onEditDate={openRecordForDate} modules={pageModules.stats} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
+    home: <HomePage weekDays={weekDays} habitNames={trackedHabitNames} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.home} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
+    habit: <HabitPage weekDays={weekDays} habitNames={state.habitNames} trackedHabits={trackedHabitNames} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.habit} moduleContext={moduleContext} onToggleHabitTracking={toggleHabitTracking} onRenameHabit={setEditingHabit} onReorderHabit={reorderHabit} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
+    water: <WaterPage weekDays={weekDays} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.water} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
+    sleep: <SleepPage weekDays={weekDays} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.sleep} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
+    stats: <StatsPage entries={state.entries} habitNames={trackedHabitNames} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onBackup={openBackupChoice} onHistory={openHistory} onEditDate={openRecordForDate} modules={pageModules.stats} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
     coach: <CoachPage analytics={coachAnalytics} workout={state.workout} aiSettings={aiSettings} geminiApiKey={geminiApiKey} coachMessages={state.coachMessages} onSaveMessages={saveCoachMessages} onApplyProposal={applyCoachProposal} />,
     settings: <SettingsPage goals={goals} onUpdateGoals={updateGoals} aiSettings={aiSettings} geminiApiKey={geminiApiKey} connectedHealth={connectedHealth} watchData={watchData} onUpdateConnectedHealth={updateConnectedHealth} onCheckConnectedHealth={checkConnectedHealth} onOpenConnectedHealthSettings={openConnectedHealthSettings} onRequestConnectedHealthPermissions={requestConnectedHealthPermissions} onSyncConnectedHealth={syncConnectedHealth} onUpdateAISettings={updateAISettings} onUpdateGeminiApiKey={updateGeminiApiKey} />,
   };

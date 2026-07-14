@@ -4,6 +4,30 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-13
+
+### Added
+
+- Added a curated story hierarchy to Home, Habit, Water, Sleep, and Stats using fixed heroes, editorial sections, weekly patterns, highlights, details, and personalization areas.
+- Added dynamic For You guidance on Home and metric-specific Archive insights on the core health pages.
+- Added a shared motion system for staggered bar growth, left-to-right line drawing, a traveling chart marker, progress growth, metric reveals, section transitions, and tactile press feedback.
+- Added explicit reduced-motion behavior that preserves every value and state without relying on movement.
+
+### Changed
+
+- Kept the existing module engine and persistence model while presenting optional modules as Pinned Panels within a deliberate page structure.
+- Reframed the Add flow as Add or Customize, and updated the gallery language around pinning, configuring, and arranging panels.
+- Reorganized Home into For You, Pinned Summary, Patterns, and Pinned Panels instead of a uniform stack of equal-weight cards.
+- Reorganized Habit, Water, Sleep, and Stats around a shared chart-first information architecture.
+- Improved empty-state language so pages distinguish missing data from genuine zero values.
+- Replaced placeholder ten-week Stats values with weekly averages calculated only from real saved records.
+
+### Known issues and unfinished work
+
+- Workout, Workout History, Coach, and Settings retain their existing page structures and can adopt the curated hierarchy in a later release.
+- Health Connect synchronization remains manual and still uses the recent access window.
+- Background synchronization, iOS packaging, and Apple Health integration remain future work.
+
 ## [0.2.1] - 2026-07-13
 
 ### Changed
@@ -71,7 +95,8 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 - The visual system is functional and consistent but has not yet received the planned premium design-system refinement.
 - iOS packaging and Apple Health integration are future work.
 
-[Unreleased]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/yeuki/archive-productivity-tracker/releases/tag/v0.1.0
