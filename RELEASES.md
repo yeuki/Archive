@@ -4,10 +4,24 @@ Release APKs are immutable. If a packaged build changes, Archive receives a new 
 
 | Version | Release date | APK | Summary | Source reference |
 | --- | --- | --- | --- | --- |
+| 0.3.1 | 2026-07-14 | `Archive-v0.3.1.apk` | Layered liquid-glass bottom navigation with responsive optics and refined interaction. | `main`, tag `v0.3.1` |
 | 0.3.0 | 2026-07-13 | `Archive-v0.3.0.apk` | Curated metric stories, pinned-panel personalization, and a purposeful motion system. | `main`, tag `v0.3.0` |
 | 0.2.1 | 2026-07-13 | `Archive-v0.2.1.apk` | Restores Archive's signature gradient on compact charts while preserving solid dense-data views. | `main`, tag `v0.2.1` |
 | 0.2.0 | 2026-07-13 | `Archive-v0.2.0.apk` | Archive Design System 2.0 with premium Home, Sleep, Settings, chart, surface, and navigation refinements. | `main`, tag `v0.2.0` |
 | 0.1.0 | 2026-07-13 | `Archive-v0.1.0.apk` | Formal baseline of the current productivity, health, workout, AI coach, and Health Connect experience. | `main`, tag `v0.1.0` |
+
+## 0.3.1 — Liquid-glass navigation
+
+- APK filename: `Archive-v0.3.1.apk`
+- Local archive: `releases/v0.3.1/Archive-v0.3.1.apk`
+- Google Drive archive: `Archive Productivity Tracker/Releases/v0.3.1/Archive-v0.3.1.apk`
+- GitHub reference: `main`, tag `v0.3.1`
+- SHA-256: `54fa6b05b4a672283fc716f76c3baf1190e31cf7355f5fb7f6b73616af6f501e`
+- Summary: Focuses Archive's liquid-glass visual language on the persistent navigation layer, preserving the restrained content surfaces above it.
+- Main UI changes: layered refractive rim, dynamic specular highlight, internal caustic, gliding active lens, cleaner icon contrast, deeper separation, and more fluid expansion.
+- Structural changes: the navigation exposes dedicated optical and selection layers while keeping the existing page hierarchy and state model intact.
+- Functional changes: touch position subtly influences lighting; navigation destinations and interaction semantics are unchanged.
+- Known issues: WebView optics do not perform true background-pixel displacement; manual Health Connect sync and no iOS package remain.
 
 ## 0.3.0 — Curated stories and motion
 

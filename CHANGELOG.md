@@ -4,6 +4,25 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-07-14
+
+### Added
+
+- Added a multi-layer optical treatment to the expanding bottom navigation with a refractive rim, moving specular light, a soft internal caustic, and live touch-position response.
+- Added an active-page lens that glides between destinations and gives the selected control a clearer spatial relationship to the glass shell.
+
+### Changed
+
+- Refined the collapsed and expanded navigation proportions, contrast, edge lighting, shadows, icon rendering, and spring timing for a more convincing liquid-glass appearance.
+- Kept all four destinations visible on either expanded side at narrow phone widths while increasing touch clarity.
+- Added opaque, reduced-motion, and unsupported-backdrop fallbacks without changing navigation behavior.
+
+### Known issues and unfinished work
+
+- The WebView treatment approximates optical lensing with composited backdrop layers; true pixel displacement remains a future native Android or GPU-rendered experiment.
+- Workout, Workout History, Coach, and Settings retain their existing page structures.
+- Health Connect synchronization remains manual, and iOS packaging remains future work.
+
 ## [0.3.0] - 2026-07-13
 
 ### Added
@@ -95,7 +114,8 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 - The visual system is functional and consistent but has not yet received the planned premium design-system refinement.
 - iOS packaging and Apple Health integration are future work.
 
-[Unreleased]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.1.0...v0.2.0

@@ -3741,6 +3741,7 @@ function BottomNav({ activePage, onPageChange }) {
     return null;
   };
   const [expandedGroup, setExpandedGroup] = useState(() => pageGroup(activePage));
+  const navRef = useRef(null);
   const groups = {
     productivity: [
       { page: "workout", label: "Workout", icon: "workout" },
@@ -3756,6 +3757,59 @@ function BottomNav({ activePage, onPageChange }) {
     ],
   };
   const activeGroup = pageGroup(activePage);
+  useEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return undefined;
+
+    let frameId = 0;
+    const positionSelectionLens = () => {
+      const selected =
+        nav.querySelector(".nav-page.active") ||
+        nav.querySelector(".home-logo.active") ||
+        nav.querySelector(".nav-category.active");
+      if (!selected) return;
+
+      const navBounds = nav.getBoundingClientRect();
+      const selectedBounds = selected.getBoundingClientRect();
+      nav.style.setProperty("--selection-x", `${selectedBounds.left - navBounds.left + selectedBounds.width / 2}px`);
+      nav.style.setProperty("--selection-y", `${selectedBounds.top - navBounds.top + selectedBounds.height / 2}px`);
+      nav.style.setProperty("--selection-size", `${Math.max(selectedBounds.width, 32)}px`);
+    };
+    const scheduleSelectionLens = () => {
+      cancelAnimationFrame(frameId);
+      frameId = requestAnimationFrame(positionSelectionLens);
+    };
+
+    scheduleSelectionLens();
+    const settleTimer = window.setTimeout(positionSelectionLens, 440);
+    window.addEventListener("resize", scheduleSelectionLens);
+    return () => {
+      cancelAnimationFrame(frameId);
+      window.clearTimeout(settleTimer);
+      window.removeEventListener("resize", scheduleSelectionLens);
+    };
+  }, [activePage, expandedGroup]);
+
+  const updateGlassLight = (event) => {
+    const nav = navRef.current;
+    if (!nav) return;
+    const bounds = nav.querySelector(".nav-shell")?.getBoundingClientRect() || nav.getBoundingClientRect();
+    const x = Math.max(0, Math.min(100, ((event.clientX - bounds.left) / bounds.width) * 100));
+    const y = Math.max(0, Math.min(100, ((event.clientY - bounds.top) / bounds.height) * 100));
+    nav.style.setProperty("--glass-light-x", `${x}%`);
+    nav.style.setProperty("--glass-light-y", `${y}%`);
+  };
+  const settleGlassLight = () => {
+    const nav = navRef.current;
+    if (!nav) return;
+    nav.classList.remove("is-touching");
+    nav.style.removeProperty("--glass-light-x");
+    nav.style.removeProperty("--glass-light-y");
+  };
+  const pressGlass = (event) => {
+    updateGlassLight(event);
+    navRef.current?.classList.add("is-touching");
+  };
   const selectPage = (page) => {
     setExpandedGroup(pageGroup(page));
     onPageChange(page);
@@ -3768,6 +3822,7 @@ function BottomNav({ activePage, onPageChange }) {
       key={page}
       className={`nav-icon nav-page ${activePage === page ? "active" : ""}`}
       aria-label={label}
+      aria-current={activePage === page ? "page" : undefined}
       onClick={() => selectPage(page)}
     >
       <NavIcon type={icon} />
@@ -3775,8 +3830,22 @@ function BottomNav({ activePage, onPageChange }) {
   );
 
   return (
-    <nav className={`bottom-nav metric-${activePage} ${expandedGroup ? `expanded ${expandedGroup}` : "collapsed"}`} aria-label="Primary">
-      <span className="nav-shell" aria-hidden="true" />
+    <nav
+      ref={navRef}
+      className={`bottom-nav metric-${activePage} ${expandedGroup ? `expanded ${expandedGroup}` : "collapsed"}`}
+      aria-label="Primary"
+      onPointerMove={updateGlassLight}
+      onPointerDown={pressGlass}
+      onPointerUp={settleGlassLight}
+      onPointerCancel={settleGlassLight}
+      onPointerLeave={settleGlassLight}
+    >
+      <span className="nav-shell" aria-hidden="true">
+        <span className="nav-refraction" />
+        <span className="nav-specular" />
+        <span className="nav-caustic" />
+      </span>
+      <span className="nav-selection-lens" aria-hidden="true" />
       <div className={`nav-group productivity ${expandedGroup === "productivity" ? "open" : ""}`}>
         {expandedGroup === "productivity" && groups.productivity.map(renderPageButton)}
         <button
@@ -3791,6 +3860,7 @@ function BottomNav({ activePage, onPageChange }) {
       <button
         className={`home-logo ${activePage === "home" ? "active" : ""}`}
         aria-label="Home"
+        aria-current={activePage === "home" ? "page" : undefined}
         onClick={() => selectPage("home")}
       />
       <div className={`nav-group health ${expandedGroup === "health" ? "open" : ""}`}>
