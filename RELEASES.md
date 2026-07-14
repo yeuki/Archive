@@ -4,8 +4,22 @@ Release APKs are immutable. If a packaged build changes, Archive receives a new 
 
 | Version | Release date | APK | Summary | Source reference |
 | --- | --- | --- | --- | --- |
+| 0.2.1 | 2026-07-13 | `Archive-v0.2.1.apk` | Restores Archive's signature gradient on compact charts while preserving solid dense-data views. | `main`, tag `v0.2.1` |
 | 0.2.0 | 2026-07-13 | `Archive-v0.2.0.apk` | Archive Design System 2.0 with premium Home, Sleep, Settings, chart, surface, and navigation refinements. | `main`, tag `v0.2.0` |
 | 0.1.0 | 2026-07-13 | `Archive-v0.1.0.apk` | Formal baseline of the current productivity, health, workout, AI coach, and Health Connect experience. | `main`, tag `v0.1.0` |
+
+## 0.2.1 — Compact chart gradients
+
+- APK filename: `Archive-v0.2.1.apk`
+- Local archive: `releases/v0.2.1/Archive-v0.2.1.apk`
+- Google Drive archive: `Archive Productivity Tracker/Releases/v0.2.1/Archive-v0.2.1.apk`
+- GitHub reference: `main`, tag `v0.2.1`
+- SHA-256: `922554719e01c80b343d41cca015900d93fc432672f43bc1aaa92f493621b559`
+- Summary: Restores the soft white-to-tone gradient as a distinctive Archive detail on compact charts without weakening dense-data readability.
+- Main UI changes: Daily Value and Previous 10 Weeks bars once again transition from a soft white-tinted base into their semantic metric tone; configurable compact module bars retain the same visual language.
+- Structural changes: none.
+- Functional changes: none.
+- Known issues: manual Health Connect sync, no iOS package, and further screen-specific refinement remains planned.
 
 ## 0.2.0 — Archive Design System 2.0
 

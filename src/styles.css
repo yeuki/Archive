@@ -4679,7 +4679,11 @@ body {
 
 .bar {
   border-radius: 8px 8px 3px 3px;
-  background: var(--bar-tone, #8f8f8f);
+  background: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--bar-tone, #8f8f8f) 14%, #ffffff),
+    var(--bar-tone, #8f8f8f)
+  );
   color: rgba(0, 0, 0, 0.72);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.36);
 }

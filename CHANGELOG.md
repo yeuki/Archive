@@ -4,6 +4,18 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-07-13
+
+### Changed
+
+- Restored Archive's signature white-to-tone gradient on compact bar charts with ten or fewer columns, including Daily Value and Previous 10 Weeks.
+- Kept month value grids, streak grids, workout calendars, and other dense data views solid for clearer scanning and tapping.
+
+### Known issues and unfinished work
+
+- Health Connect synchronization remains manual and still uses the recent access window.
+- iOS packaging and Apple Health integration remain future work.
+
 ## [0.2.0] - 2026-07-13
 
 ### Added
@@ -59,6 +71,7 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 - The visual system is functional and consistent but has not yet received the planned premium design-system refinement.
 - iOS packaging and Apple Health integration are future work.
 
-[Unreleased]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/yeuki/archive-productivity-tracker/releases/tag/v0.1.0
