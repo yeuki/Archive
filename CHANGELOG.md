@@ -4,6 +4,29 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-14
+
+### Added
+
+- Added Archive Canvas, a content-first visual architecture for Home, Habit, Water, Sleep, and Stats with integrated metric heroes, atmospheric page color, and edge-to-edge primary visualizations.
+- Added scroll-reactive page chrome that compacts the top bar and minimizes the bottom navigation while scrolling down, then restores both when scrolling upward.
+- Added shared visual continuity between page summaries, charts, and details through coordinated page, value, chart, and sheet-origin motion.
+- Added canvas-specific accessibility behavior for reduced motion, reduced transparency, and increased contrast preferences.
+
+### Changed
+
+- Replaced the uniform stack of elevated white cards on core metric pages with typography, spacing, hairlines, grouped canvas surfaces, and selectively elevated actions.
+- Integrated weekly charts into each metric hero so the current value and its recent pattern read as one story.
+- Reworked Home into an atmospheric daily canvas with guidance, weekly value, metric balance, and patterns presented with fewer nested containers.
+- Preserved optional modules as Pinned Panels while visually separating customization from the primary page narrative.
+- Refined corner concentricity, section rhythm, chart scale, action grouping, and compact-screen behavior across the core health and productivity experience.
+
+### Known issues and unfinished work
+
+- Workout, Workout History, Coach, and Settings retain their previous page compositions, although they inherit the shared scroll-reactive chrome.
+- Background Health Connect synchronization and iOS packaging remain future work.
+- True cross-page native shared-element transitions remain limited by the current Capacitor WebView architecture.
+
 ## [0.3.1] - 2026-07-14
 
 ### Added
@@ -114,7 +137,8 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 - The visual system is functional and consistent but has not yet received the planned premium design-system refinement.
 - iOS packaging and Apple Health integration are future work.
 
-[Unreleased]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.2.0...v0.2.1

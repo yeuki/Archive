@@ -3500,17 +3500,54 @@ function chartPoints(days, getValue, maxValue = 100) {
     .filter(Boolean);
 }
 
-function AreaChart({ days, getValue, gradientId, label, maxValue = 100, targetValue = null, targetLabel = "", metricType = "neutral" }) {
+function AreaChart({ days, getValue, gradientId, label, maxValue = 100, targetValue = null, targetLabel = "", metricType = "neutral", valueSuffix = "" }) {
   const points = chartPoints(days, getValue, maxValue);
+  const [activePointIndex, setActivePointIndex] = useState(null);
   const linePath = buildSmoothPath(points);
   const areaPath = points.length
     ? `${linePath} L${points[points.length - 1].x} 170 L${points[0].x} 170 Z`
     : "";
   const targetY = Number.isFinite(targetValue) ? chartY(targetValue, maxValue, 22, 170) : null;
+  const activePoint = Number.isInteger(activePointIndex) ? points[activePointIndex] : null;
+  const selectNearestPoint = (event) => {
+    if (!points.length) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const pointerX = ((event.clientX - bounds.left) / Math.max(bounds.width, 1)) * 320;
+    const nearestIndex = points.reduce((bestIndex, point, index) => (
+      Math.abs(point.x - pointerX) < Math.abs(points[bestIndex].x - pointerX) ? index : bestIndex
+    ), 0);
+    setActivePointIndex(nearestIndex);
+  };
+  const moveActivePoint = (direction) => {
+    if (!points.length) return;
+    setActivePointIndex((current) => clamp((Number.isInteger(current) ? current : points.length - 1) + direction, 0, points.length - 1));
+  };
 
   return (
     <>
-      <svg className="area-chart" viewBox="0 0 320 190" role="img" aria-label={label}>
+      <svg
+        className={`area-chart ${activePoint ? "is-scrubbing" : ""}`}
+        viewBox="0 0 320 190"
+        role="img"
+        aria-label={label}
+        tabIndex={points.length ? 0 : undefined}
+        onPointerDown={selectNearestPoint}
+        onPointerMove={selectNearestPoint}
+        onPointerLeave={() => setActivePointIndex(null)}
+        onPointerCancel={() => setActivePointIndex(null)}
+        onFocus={() => points.length && setActivePointIndex(points.length - 1)}
+        onBlur={() => setActivePointIndex(null)}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowLeft") {
+            event.preventDefault();
+            moveActivePoint(-1);
+          }
+          if (event.key === "ArrowRight") {
+            event.preventDefault();
+            moveActivePoint(1);
+          }
+        }}
+      >
         <defs>
           <linearGradient id={gradientId} x1="0" y1="170" x2="0" y2="22" gradientUnits="userSpaceOnUse">
             <stop offset="0" stopColor="#ffffff" />
@@ -3545,6 +3582,17 @@ function AreaChart({ days, getValue, gradientId, label, maxValue = 100, targetVa
             style={{ "--point-index": index }}
           />
         ))}
+        {activePoint && (
+          <g className="chart-scrubber" aria-hidden="true">
+            <line x1={activePoint.x} y1="18" x2={activePoint.x} y2="172" />
+            <circle cx={activePoint.x} cy={activePoint.y} r="6" />
+            <g transform={`translate(${clamp(activePoint.x - 39, 6, 236)} ${Math.max(4, activePoint.y - 48)})`}>
+              <rect width="78" height="34" rx="11" />
+              <text x="9" y="13">{activePoint.day}</text>
+              <text className="chart-tooltip-value" x="69" y="25" textAnchor="end">{trimNumber(activePoint.value, 1)}{valueSuffix}</text>
+            </g>
+          </g>
+        )}
       </svg>
       <div className="axis-labels">
         {DAY_LABELS.map((labelText, index) => (
@@ -3635,6 +3683,52 @@ function MetricHero({ label, meta, value, unit = "", progress = 0, footLabel, fo
       <div className="metric-hero-foot">
         <span>{footLabel}</span>
         <b>{footValue}</b>
+      </div>
+    </section>
+  );
+}
+
+function CanvasHero({
+  label,
+  meta,
+  value,
+  unit = "",
+  progress = 0,
+  progressLabel = "progress",
+  footLabel,
+  footValue,
+  actionLabel,
+  onAction,
+  className = "",
+  children,
+}) {
+  const normalizedProgress = clamp(Number(progress) || 0, 0, 100);
+  return (
+    <section className={`canvas-hero ${className}`.trim()} aria-label={`${label} summary`}>
+      <span className="canvas-hero-atmosphere" aria-hidden="true" />
+      <div className="canvas-hero-head">
+        <span>{label}</span>
+        <small>{meta}</small>
+      </div>
+      <div className="canvas-hero-main">
+        <div className="canvas-hero-value">
+          <strong>{value}</strong>
+          {unit && <span>{unit}</span>}
+        </div>
+        <div className="canvas-hero-progress" aria-label={`${Math.round(normalizedProgress)} percent ${progressLabel}`}>
+          <i style={{ "--progress": `${normalizedProgress * 3.6}deg` }}><b>{Math.round(normalizedProgress)}%</b></i>
+          <small>{progressLabel}</small>
+        </div>
+      </div>
+      {children && <div className="canvas-hero-chart">{children}</div>}
+      <div className="canvas-hero-foot">
+        <span>{footLabel}</span>
+        <b>{footValue}</b>
+        {actionLabel && onAction && (
+          <button type="button" onClick={onAction}>
+            {actionLabel}<i aria-hidden="true">→</i>
+          </button>
+        )}
       </div>
     </section>
   );
@@ -3970,28 +4064,23 @@ function HomePage({ weekDays, habitNames, goals, onAdd, onCustomize, onBackup, o
           };
 
   return (
-    <div className="screen">
+    <div className="screen canvas-screen home-canvas-screen">
       <TopBar title="Archive" actionLabel="Add action" onAdd={onAdd} onBackup={onBackup} onHistory={onHistory} />
 
-      <section className="panel summary-hero" aria-label="Today's Archive summary">
-        <div className="summary-hero-head">
-          <span>Daily value</span>
-          <time dateTime={todayKey}>{dateLabel}</time>
-        </div>
-        <div className="summary-hero-body">
-          <div className="summary-hero-value">
-            <strong>{hasTodayScore ? heroScore : "--"}</strong>
-            <span>{hasTodayScore ? "recorded today" : "not recorded yet"}</span>
-          </div>
-          <div className={`summary-gauge ${hasTodayScore ? "recorded" : "empty"}`} style={{ "--progress": `${heroScore * 3.6}deg` }} aria-hidden="true">
-            <i />
-          </div>
-        </div>
-        <button type="button" className="hero-action" onClick={onAdd}>
-          <span>{hasTodayScore ? "Review today's record" : "Record today"}</span>
-          <b aria-hidden="true">+</b>
-        </button>
-      </section>
+      <CanvasHero
+        label="Daily value"
+        meta={dateLabel}
+        value={hasTodayScore ? heroScore : "--"}
+        progress={heroScore}
+        progressLabel={hasTodayScore ? "today" : "unlogged"}
+        footLabel={recordedScores.length ? `Weekly average ${averageValue}` : "Your baseline begins with one record"}
+        footValue={recordedScores.length ? `Best ${bestDay}` : "No data yet"}
+        actionLabel={hasTodayScore ? "Review today" : "Record today"}
+        onAction={onAdd}
+        className="home-canvas-hero"
+      >
+        <BarChart values={scores} labels={DAY_LABELS} metricType="home" />
+      </CanvasHero>
 
       <PageSection eyebrow="Today" title="For you" meta={hasTodayScore ? "Up to date" : "1 item"} className="for-you-section">
         <GuidedHighlight
@@ -4002,7 +4091,7 @@ function HomePage({ weekDays, habitNames, goals, onAdd, onCustomize, onBackup, o
           onAction={onAdd}
           status={attention.status}
         />
-        <div className="panel insight">
+        <div className="panel insight canvas-insight">
           <span className="insight-mark" aria-hidden="true">✦</span>
           <div>
             <SectionTitle title="Archive insight" meta="this week" />
@@ -4011,16 +4100,11 @@ function HomePage({ weekDays, habitNames, goals, onAdd, onCustomize, onBackup, o
         </div>
       </PageSection>
 
-      <PageSection eyebrow="Overview" title="Pinned summary" meta="Last 7 days" className="summary-section">
+      <PageSection eyebrow="Overview" title="This week" meta="Last 7 days" className="summary-section">
         <div className="stat-grid">
           <StatCard label="Avg value" value={averageValue || "--"} index={0} />
           <StatCard label="Best day" value={bestDay || "--"} index={1} />
           <StatCard label="Vs previous" value={`${delta >= 0 ? "\u2191" : "\u2193"} ${Math.abs(delta)}`} index={2} />
-        </div>
-        <div className="panel chart-feature-panel">
-          <SectionTitle title="Daily value" meta="score" />
-          <BarChart values={scores} labels={DAY_LABELS} metricType="home" />
-          <p className="chart-note">The gradient preserves Archive's visual signature while bar height carries the value.</p>
         </div>
       </PageSection>
 
@@ -4092,27 +4176,35 @@ function WeeklyMetricPage({
 }) {
   const pageModuleContext = { ...moduleContext, metricType: type };
   const recordedDays = weekDays.filter((day) => day.entry).length;
+  const chartValueSuffix = type === "habit" || type === "water" ? "%" : "";
 
   return (
-    <div className={`screen metric-story-screen ${type}-screen`}>
+    <div className={`screen canvas-screen metric-story-screen ${type}-screen`}>
       <TopBar title={title} actionLabel={`Add ${type} action`} onAdd={onAdd} onBackup={onBackup} onHistory={onHistory} />
 
-      <MetricHero
+      <CanvasHero
         label={heroLabel}
         meta={heroMeta}
         value={heroValue}
         unit={heroUnit}
         progress={heroProgress}
+        progressLabel={type === "water" ? "of target" : "rhythm"}
         footLabel={heroFootLabel}
         footValue={heroFootValue}
-        className={`${type}-hero`}
-      />
-
-      <PageSection eyebrow="Weekly pattern" title={sectionTitle} meta="This week" className="primary-chart-section">
-        <div className="panel area-panel chart-feature-panel">
-          <AreaChart days={weekDays} getValue={getValue} gradientId={gradientId} label={`${sectionTitle} this week`} maxValue={areaMax} targetValue={targetValue} targetLabel={targetLabel} metricType={type} />
-        </div>
-      </PageSection>
+        className={`${type}-canvas-hero`}
+      >
+        <AreaChart
+          days={weekDays}
+          getValue={getValue}
+          gradientId={gradientId}
+          label={`${sectionTitle} this week`}
+          maxValue={areaMax}
+          targetValue={targetValue}
+          targetLabel={targetLabel}
+          metricType={type}
+          valueSuffix={chartValueSuffix}
+        />
+      </CanvasHero>
 
       <PageSection eyebrow="Overview" title={`${title} at a glance`} meta={`${recordedDays}/7 recorded`} className="metric-overview-section">
         <div className="stat-grid">
@@ -4383,34 +4475,32 @@ function SleepPage({ weekDays, goals, onAdd, onCustomize, onBackup, onHistory, m
       : `${targetNights} of ${entries.length} recorded nights reached your target. Look for repeatable changes rather than one perfect night.`;
 
   return (
-    <div className="screen sleep-screen">
+    <div className="screen canvas-screen sleep-screen metric-story-screen">
       <TopBar title="Sleep" actionLabel="Add sleep action" onAdd={onAdd} onBackup={onBackup} onHistory={onHistory} />
 
-      <MetricHero
+      <CanvasHero
         label="7-day average"
         meta={`${entries.length} of 7 nights`}
         value={entries.length ? averageSleep.toFixed(1) : "--"}
         unit={entries.length ? "hours" : ""}
         progress={targetProgress}
+        progressLabel="of target"
         footLabel={`Target ${formatSleepHours(goals.sleepTarget)}`}
         footValue={entries.length ? `${Math.round(targetProgress)}%` : "No data"}
-        className="sleep-hero"
-      />
-
-      <PageSection eyebrow="Weekly pattern" title="Sleep duration" meta="This week" className="primary-chart-section">
-        <div className="panel area-panel sleep-chart-panel chart-feature-panel">
-          <AreaChart
-            days={weekDays}
-            getValue={(entry) => entry?.sleep ?? null}
-            gradientId="sleepGradient"
-            label="Sleep duration this week"
-            maxValue={sleepChartMax}
-            targetValue={goals.sleepTarget}
-            targetLabel={formatSleepHours(goals.sleepTarget)}
-            metricType="sleep"
-          />
-        </div>
-      </PageSection>
+        className="sleep-canvas-hero"
+      >
+        <AreaChart
+          days={weekDays}
+          getValue={(entry) => entry?.sleep ?? null}
+          gradientId="sleepGradient"
+          label="Sleep duration this week"
+          maxValue={sleepChartMax}
+          targetValue={goals.sleepTarget}
+          targetLabel={formatSleepHours(goals.sleepTarget)}
+          metricType="sleep"
+          valueSuffix="h"
+        />
+      </CanvasHero>
 
       <PageSection eyebrow="Overview" title="Sleep at a glance" meta={`${entries.length}/7 recorded`} className="metric-overview-section">
         <div className="stat-grid">
@@ -4528,18 +4618,28 @@ function StatsPage({ entries, habitNames, goals, onAdd, onCustomize, onBackup, o
   const recordedThisWeek = weekDays.filter((day) => day.entry).length;
 
   return (
-    <div className="screen stats-screen metric-story-screen">
+    <div className="screen canvas-screen stats-screen metric-story-screen">
       <TopBar title="Stats" actionLabel="Add action" onAdd={onAdd} onBackup={onBackup} onHistory={onHistory} />
 
-      <MetricHero
+      <CanvasHero
         label="Current week"
         meta={`${recordedThisWeek} of 7 days`}
         value={Number.isFinite(currentWeekScore) ? currentWeekScore : "--"}
         progress={currentWeekScore ?? 0}
+        progressLabel="average"
         footLabel="Daily value average"
         footValue={Number.isFinite(currentWeekScore) ? `${weeklyDelta >= 0 ? "↑" : "↓"} ${Math.abs(weeklyDelta)} vs prior` : "No data"}
-        className="stats-hero"
-      />
+        className="stats-canvas-hero"
+      >
+        <AreaChart
+          days={weekDays}
+          getValue={(entry) => entryScore(entry, habitNames, goals)}
+          gradientId="statsCanvasGradient"
+          label="Daily value this week"
+          maxValue={100}
+          metricType="stats"
+        />
+      </CanvasHero>
 
       <PageSection eyebrow="Calendar" title="Daily value" meta="This month" className="calendar-section">
         <div className="panel year-panel">
@@ -7759,6 +7859,7 @@ export default function App() {
   const [state, setTrackerState] = useTrackerState();
   const [activePage, setActivePage] = useState("home");
   const [pageMotion, setPageMotion] = useState("center");
+  const [chromeCompact, setChromeCompact] = useState(false);
   const [choiceOpen, setChoiceOpen] = useState(false);
   const [backupOpen, setBackupOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -7771,6 +7872,7 @@ export default function App() {
   const [geminiApiKey, setGeminiApiKey] = useState(loadGeminiApiKey);
   const backupNoticeTimer = useRef(null);
   const importInputRef = useRef(null);
+  const lastScrollPosition = useRef(0);
   const weekDays = useMemo(() => buildWeek(state.entries), [state.entries]);
   const trackedHabitNames = (state.trackedHabits ?? state.habitNames).filter((habit) => state.habitNames.includes(habit));
   const goals = normalizeGoals(state.goals);
@@ -7796,18 +7898,64 @@ export default function App() {
     watchData,
   }), [state.entries, state.habitNames, trackedHabitNames, goals, weekDays, state.workout, connectedHealth, watchData]);
 
-  const changeActivePage = (nextPage) => {
-    setActivePage((currentPage) => {
-      if (currentPage === nextPage) {
-        setPageMotion("center");
-        return currentPage;
+  useEffect(() => {
+    let frameId = 0;
+
+    const updateChrome = () => {
+      frameId = 0;
+      const currentPosition = Math.max(0, window.scrollY || document.documentElement.scrollTop || 0);
+      const movement = currentPosition - lastScrollPosition.current;
+
+      if (currentPosition < 44) {
+        setChromeCompact(false);
+      } else if (movement > 8) {
+        setChromeCompact(true);
+      } else if (movement < -8) {
+        setChromeCompact(false);
       }
 
-      const currentOrder = PAGE_MOTION_ORDER[currentPage] ?? 0;
+      lastScrollPosition.current = currentPosition;
+    };
+
+    const handleScroll = () => {
+      if (!frameId) frameId = window.requestAnimationFrame(updateChrome);
+    };
+
+    lastScrollPosition.current = Math.max(0, window.scrollY || 0);
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      if (frameId) window.cancelAnimationFrame(frameId);
+    };
+  }, []);
+
+  useEffect(() => {
+    setChromeCompact(false);
+    lastScrollPosition.current = 0;
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }, [activePage]);
+
+  const changeActivePage = (nextPage) => {
+    const updatePage = () => {
+      if (activePage === nextPage) {
+        setPageMotion("center");
+        setChromeCompact(false);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        return;
+      }
+
+      const currentOrder = PAGE_MOTION_ORDER[activePage] ?? 0;
       const nextOrder = PAGE_MOTION_ORDER[nextPage] ?? 0;
       setPageMotion(nextOrder < currentOrder ? "from-left" : "from-right");
-      return nextPage;
-    });
+      setActivePage(nextPage);
+    };
+    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+
+    if (!reduceMotion && typeof document.startViewTransition === "function") {
+      document.startViewTransition(updatePage);
+    } else {
+      updatePage();
+    }
   };
 
   const openAddChoice = () => {
@@ -8364,7 +8512,7 @@ export default function App() {
   };
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell ${chromeCompact ? "chrome-compact" : ""}`}>
       <div className={`page-stage page-${pageMotion} metric-${activePage}`} key={activePage}>
         {pages[activePage]}
       </div>

@@ -4,11 +4,25 @@ Release APKs are immutable. If a packaged build changes, Archive receives a new 
 
 | Version | Release date | APK | Summary | Source reference |
 | --- | --- | --- | --- | --- |
+| 0.4.0 | 2026-07-14 | `Archive-v0.4.0.apk` | Archive Canvas with integrated metric stories, reduced card chrome, and scroll-reactive continuity. | `main`, tag `v0.4.0` |
 | 0.3.1 | 2026-07-14 | `Archive-v0.3.1.apk` | Layered liquid-glass bottom navigation with responsive optics and refined interaction. | `main`, tag `v0.3.1` |
 | 0.3.0 | 2026-07-13 | `Archive-v0.3.0.apk` | Curated metric stories, pinned-panel personalization, and a purposeful motion system. | `main`, tag `v0.3.0` |
 | 0.2.1 | 2026-07-13 | `Archive-v0.2.1.apk` | Restores Archive's signature gradient on compact charts while preserving solid dense-data views. | `main`, tag `v0.2.1` |
 | 0.2.0 | 2026-07-13 | `Archive-v0.2.0.apk` | Archive Design System 2.0 with premium Home, Sleep, Settings, chart, surface, and navigation refinements. | `main`, tag `v0.2.0` |
 | 0.1.0 | 2026-07-13 | `Archive-v0.1.0.apk` | Formal baseline of the current productivity, health, workout, AI coach, and Health Connect experience. | `main`, tag `v0.1.0` |
+
+## 0.4.0 — Archive Canvas
+
+- APK filename: `Archive-v0.4.0.apk`
+- Local archive: `releases/v0.4.0/Archive-v0.4.0.apk`
+- Google Drive archive: `Archive Productivity Tracker/Releases/v0.4.0/Archive-v0.4.0.apk`
+- GitHub reference: `main`, tag `v0.4.0`
+- SHA-256: `297f9b3140d31cbed4f30723be97224563664ee50efe6e068d7c36a9c60fa7e1`
+- Summary: Rebuilds the core Archive experience around continuous, atmospheric metric canvases while retaining the existing local-first data and module systems.
+- Main UI changes: integrated hero charts, metric-tinted page atmospheres, fewer white containers, scroll-reactive top and bottom chrome, concentric geometry, stronger typography, and continuity-focused motion.
+- Structural changes: introduces shared canvas hero, canvas section, scroll-state, and presentation primitives for Home, Habit, Water, Sleep, and Stats.
+- Functional changes: no stored-data migration; all record, module, habit, chart, history, and editing workflows remain available.
+- Known issues: Workout, Workout History, Coach, and Settings retain the prior page composition; no native cross-page transition engine, background Health Connect sync, or iOS package yet.
 
 ## 0.3.1 — Liquid-glass navigation
 
