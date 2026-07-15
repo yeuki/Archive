@@ -4,6 +4,7 @@ Release APKs are immutable. If a packaged build changes, Archive receives a new 
 
 | Version | Release date | APK | Summary | Source reference |
 | --- | --- | --- | --- | --- |
+| 0.5.0 | 2026-07-14 | `Archive-v0.5.0.apk` | Canonical health archive with provenance, authoritative reconciliation, integrity diagnostics, and stable watch-first sleep. | `main`, tag `v0.5.0` |
 | 0.4.3 | 2026-07-14 | `Archive-v0.4.3.apk` | Previous-day sleep attribution with authoritative watch-sync precedence. | `main`, tag `v0.4.3` |
 | 0.4.2 | 2026-07-14 | `Archive-v0.4.2.apk` | Watch-first sleep entry with manual fallback and start-night attribution. | `main`, tag `v0.4.2` |
 | 0.4.1 | 2026-07-14 | `Archive-v0.4.1.apk` | Roomier liquid-glass dock with stronger optics, larger controls, and preserved scroll compaction. | `main`, tag `v0.4.1` |
@@ -13,6 +14,19 @@ Release APKs are immutable. If a packaged build changes, Archive receives a new 
 | 0.2.1 | 2026-07-13 | `Archive-v0.2.1.apk` | Restores Archive's signature gradient on compact charts while preserving solid dense-data views. | `main`, tag `v0.2.1` |
 | 0.2.0 | 2026-07-13 | `Archive-v0.2.0.apk` | Archive Design System 2.0 with premium Home, Sleep, Settings, chart, surface, and navigation refinements. | `main`, tag `v0.2.0` |
 | 0.1.0 | 2026-07-13 | `Archive-v0.1.0.apk` | Formal baseline of the current productivity, health, workout, AI coach, and Health Connect experience. | `main`, tag `v0.1.0` |
+
+## 0.5.0 - Definitive health foundation
+
+- APK filename: `Archive-v0.5.0.apk`
+- Local archive: `releases/v0.5.0/Archive-v0.5.0.apk`
+- Google Drive archive: `Archive Productivity Tracker/Releases/v0.5.0/Archive-v0.5.0.apk`
+- GitHub reference: `main`, tag `v0.5.0`
+- SHA-256: `397ee06bc8ae67633c66e6e4a394e2c6c6b48cacc59d6b3091fe0fd2d356adff`
+- Summary: Establishes one canonical, inspectable health archive between Health Connect and Archive's daily records.
+- Main UI changes: a dedicated Health Data Integrity section reports freshness, sleep ownership, watch-first source priority, reconciliation coverage, canonical-layer completeness, provenance, and cleanup counts.
+- Structural changes: versioned health schema, timezone-stable canonical records, source metadata, explicit sync windows, layer-completeness contracts, bounded vital-sample retention, and backup schema version 2.
+- Functional changes: 30-day snapshots reconcile corrections and deletions, stable identities remove duplicates, paginated native reads protect sleep and workout completeness, stale synced sleep is cleared, manual fallback sleep is preserved, and real watch sleep remains authoritative.
+- Known issues: sync remains user-initiated, standard history remains limited to Health Connect's recent window, HR and HRV are bounded rolling samples, and iOS/Apple Health support remains future work.
 
 ## 0.4.3 - Corrected sleep-day policy
 

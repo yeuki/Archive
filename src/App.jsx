@@ -72,7 +72,7 @@ const DEFAULT_GOALS = {
 };
 const STORAGE_KEY = "archive-productivity-tracker";
 const GEMINI_KEY_STORAGE_KEY = "archive-productivity-tracker-gemini-key";
-const BACKUP_VERSION = 1;
+const BACKUP_VERSION = 2;
 const ConnectedHealthNative = registerPlugin("ConnectedHealth");
 const DEFAULT_AI_SETTINGS = {
   useGemini: false,
@@ -91,6 +91,54 @@ const WATCH_METRIC_DEFINITIONS = [
   { id: "heartRateVariability", label: "HRV", unit: "ms", cadence: "samples", category: "Recovery", defaultEnabled: true },
   { id: "floors", label: "Floors climbed", unit: "floors", cadence: "daily", category: "Movement", defaultEnabled: false },
 ];
+const HEALTH_DATA_SCHEMA_VERSION = 1;
+const HEALTH_POLICY_VERSION = "archive-health-1";
+const HEALTH_SLEEP_DATE_POLICY = "previous-day-from-wake";
+const DEFAULT_HEALTH_SYSTEM = {
+  schemaVersion: HEALTH_DATA_SCHEMA_VERSION,
+  policyVersion: HEALTH_POLICY_VERSION,
+  provider: "healthConnect",
+  timezone: "",
+  sleepDatePolicy: HEALTH_SLEEP_DATE_POLICY,
+  sourcePriority: {
+    sleep: ["healthConnect", "manual"],
+    activity: ["healthConnect"],
+    vitals: ["healthConnect"],
+  },
+  syncWindow: {
+    start: "",
+    end: "",
+    startDate: "",
+    endDate: "",
+    sleepDateStart: "",
+    sleepDateEnd: "",
+    days: 0,
+    complete: false,
+  },
+  snapshotCompleteness: {
+    dailySummaries: false,
+    sleepSessions: false,
+    workouts: false,
+    heartRate: false,
+    heartRateVariability: false,
+  },
+  sampleRetention: {
+    mode: "rolling",
+    limitPerMetric: 500,
+  },
+  lastReconciledAt: "",
+  integrity: {
+    status: "notChecked",
+    duplicateRecordsRemoved: 0,
+    invalidRecordsDropped: 0,
+    conflictsResolved: 0,
+    staleRecordsRemoved: 0,
+    recordsReconciled: 0,
+    recordsStored: 0,
+    lastCheckedAt: "",
+    message: "Sync once to verify the health-data archive.",
+  },
+};
 const DEFAULT_CONNECTED_HEALTH = {
   enabled: false,
   provider: "healthConnect",
@@ -110,6 +158,7 @@ const DEFAULT_CONNECTED_HEALTH = {
   metrics: Object.fromEntries(WATCH_METRIC_DEFINITIONS.map((metric) => [metric.id, metric.defaultEnabled])),
 };
 const DEFAULT_WATCH_DATA = {
+  healthSystem: DEFAULT_HEALTH_SYSTEM,
   dailySummaries: [],
   sleepSessions: [],
   workouts: [],
@@ -839,25 +888,155 @@ function normalizeTimestamp(value) {
   return Number.isFinite(parsed) ? new Date(parsed).toISOString() : value.trim().slice(0, 60);
 }
 
-function localDateKeyFromTimestamp(value) {
-  if (typeof value !== "string" || !value.trim()) return "";
-  const parsed = new Date(value);
-  return Number.isFinite(parsed.getTime()) ? dateKey(parsed) : "";
+function normalizeTimeZone(value) {
+  const candidate = typeof value === "string" ? value.trim().slice(0, 80) : "";
+  if (!candidate) return "";
+  try {
+    new Intl.DateTimeFormat("en-CA", { timeZone: candidate }).format(new Date());
+    return candidate;
+  } catch {
+    return "";
+  }
 }
 
-function previousLocalDateKeyFromTimestamp(value) {
-  if (typeof value !== "string" || !value.trim()) return "";
-  const parsed = new Date(value);
-  return Number.isFinite(parsed.getTime()) ? dateKey(addDays(parsed, -1)) : "";
+function shiftDateKey(value, days) {
+  if (!validDateKey(value)) return "";
+  const [year, month, day] = value.split("-").map(Number);
+  const shifted = new Date(Date.UTC(year, month - 1, day + days));
+  return shifted.toISOString().slice(0, 10);
 }
 
-function normalizeWatchDailySummary(summary = {}) {
+function localDateKeyFromTimestamp(value, timeZone = "") {
+  if (typeof value !== "string" || !value.trim()) return "";
+  const parsed = new Date(value);
+  if (!Number.isFinite(parsed.getTime())) return "";
+  const normalizedTimeZone = normalizeTimeZone(timeZone);
+  if (!normalizedTimeZone) return dateKey(parsed);
+
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: normalizedTimeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(parsed);
+  const part = (type) => parts.find((item) => item.type === type)?.value ?? "";
+  const zonedDate = `${part("year")}-${part("month")}-${part("day")}`;
+  return validDateKey(zonedDate) ? zonedDate : dateKey(parsed);
+}
+
+function previousLocalDateKeyFromTimestamp(value, timeZone = "") {
+  return shiftDateKey(localDateKeyFromTimestamp(value, timeZone), -1);
+}
+
+function normalizeHealthSystem(data = {}) {
+  const source = data && typeof data === "object" ? data : {};
+  const healthSource = source.healthSystem && typeof source.healthSystem === "object"
+    ? source.healthSystem
+    : source;
+  const windowSource = healthSource.syncWindow && typeof healthSource.syncWindow === "object"
+    ? healthSource.syncWindow
+    : {};
+  const completenessSource = healthSource.snapshotCompleteness && typeof healthSource.snapshotCompleteness === "object"
+    ? healthSource.snapshotCompleteness
+    : (source.snapshotCompleteness && typeof source.snapshotCompleteness === "object" ? source.snapshotCompleteness : {});
+  const integritySource = healthSource.integrity && typeof healthSource.integrity === "object"
+    ? healthSource.integrity
+    : {};
+  const timezone = normalizeTimeZone(healthSource.timezone ?? healthSource.timeZone ?? source.timezone ?? source.timeZone);
+  const start = normalizeTimestamp(windowSource.start ?? healthSource.syncWindowStart ?? source.syncWindowStart);
+  const end = normalizeTimestamp(windowSource.end ?? healthSource.syncWindowEnd ?? source.syncWindowEnd);
+  const startDateCandidate = windowSource.startDate ?? healthSource.syncWindowStartDate ?? source.syncWindowStartDate;
+  const endDateCandidate = windowSource.endDate ?? healthSource.syncWindowEndDate ?? source.syncWindowEndDate;
+  const startDate = validDateKey(startDateCandidate)
+    ? startDateCandidate
+    : localDateKeyFromTimestamp(start, timezone);
+  const endDate = validDateKey(endDateCandidate)
+    ? endDateCandidate
+    : localDateKeyFromTimestamp(end, timezone);
+  const sleepDateStartCandidate = windowSource.sleepDateStart ?? healthSource.sleepDateStart ?? source.sleepDateStart;
+  const sleepDateEndCandidate = windowSource.sleepDateEnd ?? healthSource.sleepDateEnd ?? source.sleepDateEnd;
+  const complete = Boolean(windowSource.complete ?? healthSource.completeSnapshot ?? source.completeSnapshot);
+  const fallbackComplete = (key) => completenessSource[key] === undefined
+    ? complete
+    : Boolean(completenessSource[key]);
+  const integrityStatus = ["notChecked", "healthy", "review"].includes(integritySource.status)
+    ? integritySource.status
+    : DEFAULT_HEALTH_SYSTEM.integrity.status;
+
+  return {
+    schemaVersion: Math.max(HEALTH_DATA_SCHEMA_VERSION, Math.round(positiveNumber(
+      healthSource.schemaVersion ?? healthSource.healthSchemaVersion ?? source.healthSchemaVersion,
+      HEALTH_DATA_SCHEMA_VERSION,
+      1,
+      100,
+    ))),
+    policyVersion: String(healthSource.policyVersion ?? source.policyVersion ?? HEALTH_POLICY_VERSION).trim().slice(0, 60) || HEALTH_POLICY_VERSION,
+    provider: healthSource.provider === "healthConnect" || source.provider === "healthConnect"
+      ? "healthConnect"
+      : DEFAULT_HEALTH_SYSTEM.provider,
+    timezone,
+    sleepDatePolicy: HEALTH_SLEEP_DATE_POLICY,
+    sourcePriority: {
+      sleep: [...DEFAULT_HEALTH_SYSTEM.sourcePriority.sleep],
+      activity: [...DEFAULT_HEALTH_SYSTEM.sourcePriority.activity],
+      vitals: [...DEFAULT_HEALTH_SYSTEM.sourcePriority.vitals],
+    },
+    syncWindow: {
+      start,
+      end,
+      startDate,
+      endDate,
+      sleepDateStart: validDateKey(sleepDateStartCandidate) ? sleepDateStartCandidate : shiftDateKey(startDate, -1),
+      sleepDateEnd: validDateKey(sleepDateEndCandidate) ? sleepDateEndCandidate : shiftDateKey(endDate, -1),
+      days: Math.round(positiveNumber(windowSource.days ?? healthSource.days ?? source.days, 0, 0, 3660)),
+      complete,
+    },
+    snapshotCompleteness: {
+      dailySummaries: fallbackComplete("dailySummaries"),
+      sleepSessions: fallbackComplete("sleepSessions"),
+      workouts: fallbackComplete("workouts"),
+      heartRate: fallbackComplete("heartRate"),
+      heartRateVariability: fallbackComplete("heartRateVariability"),
+    },
+    sampleRetention: {
+      mode: "rolling",
+      limitPerMetric: Math.round(positiveNumber(
+        healthSource.sampleRetention?.limitPerMetric ?? source.sampleRetention?.limitPerMetric,
+        DEFAULT_HEALTH_SYSTEM.sampleRetention.limitPerMetric,
+        1,
+        10000,
+      )),
+    },
+    lastReconciledAt: normalizeTimestamp(
+      healthSource.lastReconciledAt ?? healthSource.syncedAt ?? source.lastReconciledAt ?? source.syncedAt ?? source.lastSyncAt,
+    ),
+    integrity: {
+      status: integrityStatus,
+      duplicateRecordsRemoved: Math.round(positiveNumber(integritySource.duplicateRecordsRemoved, 0, 0, 1000000)),
+      invalidRecordsDropped: Math.round(positiveNumber(integritySource.invalidRecordsDropped, 0, 0, 1000000)),
+      conflictsResolved: Math.round(positiveNumber(integritySource.conflictsResolved, 0, 0, 1000000)),
+      staleRecordsRemoved: Math.round(positiveNumber(integritySource.staleRecordsRemoved, 0, 0, 1000000)),
+      recordsReconciled: Math.round(positiveNumber(integritySource.recordsReconciled, 0, 0, 1000000)),
+      recordsStored: Math.round(positiveNumber(integritySource.recordsStored, 0, 0, 1000000)),
+      lastCheckedAt: normalizeTimestamp(integritySource.lastCheckedAt),
+      message: String(integritySource.message ?? DEFAULT_HEALTH_SYSTEM.integrity.message).trim().slice(0, 240)
+        || DEFAULT_HEALTH_SYSTEM.integrity.message,
+    },
+  };
+}
+
+function normalizeWatchDailySummary(summary = {}, context = DEFAULT_HEALTH_SYSTEM) {
   const source = summary && typeof summary === "object" ? summary : {};
   if (!validDateKey(source.date)) return null;
+  const provider = source.provider === "healthConnect" ? "healthConnect" : context.provider;
+  const timezone = normalizeTimeZone(source.timezone ?? source.timeZone ?? context.timezone);
+  const updatedAt = normalizeTimestamp(source.updatedAt ?? source.importedAt ?? context.lastReconciledAt);
 
   return {
     date: source.date,
+    provider,
     source: String(source.source ?? source.sourceName ?? DEFAULT_CONNECTED_HEALTH.sourceName).trim().slice(0, 60) || DEFAULT_CONNECTED_HEALTH.sourceName,
+    sourceId: String(source.sourceId ?? "").trim().slice(0, 120),
     steps: Math.round(positiveNumber(source.steps, 0, 0, 300000)),
     distanceMeters: positiveNumber(source.distanceMeters ?? source.distance, 0, 0, 1000000),
     activeCalories: positiveNumber(source.activeCalories, 0, 0, 20000),
@@ -867,23 +1046,30 @@ function normalizeWatchDailySummary(summary = {}) {
     restingHeartRate: positiveNumber(source.restingHeartRate, 0, 0, 250),
     averageHeartRate: positiveNumber(source.averageHeartRate, 0, 0, 250),
     hrvMs: positiveNumber(source.hrvMs ?? source.heartRateVariability, 0, 0, 500),
-    updatedAt: normalizeTimestamp(source.updatedAt),
+    timezone,
+    importedAt: normalizeTimestamp(source.importedAt ?? context.lastReconciledAt ?? updatedAt),
+    updatedAt,
   };
 }
 
-function normalizeWatchSession(session = {}, index = 0, type = "session") {
+function normalizeWatchSession(session = {}, index = 0, type = "session", context = DEFAULT_HEALTH_SYSTEM) {
   const source = session && typeof session === "object" ? session : {};
   const startedAt = normalizeTimestamp(source.startedAt ?? source.startTime);
   const endedAt = normalizeTimestamp(source.endedAt ?? source.endTime);
   const fallbackId = `${type}-${startedAt || source.date || index}`;
-  const startedDate = localDateKeyFromTimestamp(startedAt);
-  const previousWakeDate = previousLocalDateKeyFromTimestamp(endedAt);
+  const provider = source.provider === "healthConnect" ? "healthConnect" : context.provider;
+  const timezone = normalizeTimeZone(source.timezone ?? source.timeZone ?? context.timezone);
+  const startedDate = localDateKeyFromTimestamp(startedAt, timezone);
+  const previousWakeDate = previousLocalDateKeyFromTimestamp(endedAt, timezone);
   const providedDate = validDateKey(source.date) ? source.date : "";
+  const id = String(source.id ?? source.sourceId ?? fallbackId).trim().slice(0, 120) || fallbackId;
 
   return {
-    id: String(source.id ?? fallbackId).trim().slice(0, 100) || fallbackId,
+    id,
+    provider,
     source: String(source.source ?? source.sourceName ?? DEFAULT_CONNECTED_HEALTH.sourceName).trim().slice(0, 60) || DEFAULT_CONNECTED_HEALTH.sourceName,
-    date: type === "sleep" ? (previousWakeDate || startedDate || providedDate) : (providedDate || startedDate),
+    sourceId: String(source.sourceId ?? source.id ?? id).trim().slice(0, 120) || id,
+    date: type === "sleep" ? (previousWakeDate || providedDate || startedDate) : (providedDate || startedDate),
     startedAt,
     endedAt,
     durationMinutes: Math.round(positiveNumber(source.durationMinutes ?? source.duration, 0, 0, 1440)),
@@ -892,32 +1078,100 @@ function normalizeWatchSession(session = {}, index = 0, type = "session") {
     activeCalories: positiveNumber(source.activeCalories, 0, 0, 20000),
     averageHeartRate: positiveNumber(source.averageHeartRate, 0, 0, 250),
     notes: String(source.notes ?? "").trim().slice(0, 500),
+    timezone,
+    importedAt: normalizeTimestamp(source.importedAt ?? context.lastReconciledAt),
   };
 }
 
-function normalizeWatchSample(sample = {}, index = 0, type = "sample") {
+function normalizeWatchSample(sample = {}, index = 0, type = "sample", context = DEFAULT_HEALTH_SYSTEM) {
   const source = sample && typeof sample === "object" ? sample : {};
   const timestamp = normalizeTimestamp(source.timestamp ?? source.time);
   const fallbackId = `${type}-${timestamp || index}`;
+  const id = String(source.id ?? source.sourceId ?? fallbackId).trim().slice(0, 120) || fallbackId;
 
   return {
-    id: String(source.id ?? fallbackId).trim().slice(0, 100) || fallbackId,
+    id,
+    provider: source.provider === "healthConnect" ? "healthConnect" : context.provider,
+    sourceId: String(source.sourceId ?? source.id ?? id).trim().slice(0, 120) || id,
     timestamp,
     value: positiveNumber(source.value, 0, 0, 10000),
     source: String(source.source ?? source.sourceName ?? DEFAULT_CONNECTED_HEALTH.sourceName).trim().slice(0, 60) || DEFAULT_CONNECTED_HEALTH.sourceName,
+    timezone: normalizeTimeZone(source.timezone ?? source.timeZone ?? context.timezone),
+    importedAt: normalizeTimestamp(source.importedAt ?? context.lastReconciledAt),
   };
 }
 
-function normalizeWatchData(data = {}) {
+function dedupeWatchItems(items = [], identity) {
+  const byIdentity = new Map();
+  let duplicateRecordsRemoved = 0;
+  items.forEach((item, index) => {
+    const key = identity(item) || `record-${index}`;
+    if (byIdentity.has(key)) duplicateRecordsRemoved += 1;
+    byIdentity.set(key, item);
+  });
+  return { items: [...byIdentity.values()], duplicateRecordsRemoved };
+}
+
+function dailySummaryIdentity(summary) {
+  return summary?.date || "";
+}
+
+function sessionIdentity(session) {
+  if (session?.startedAt || session?.endedAt) {
+    return [session.provider, session.source, session.type, session.startedAt, session.endedAt].join("|");
+  }
+  return [session?.provider, session?.source, session?.sourceId ?? session?.id].join("|");
+}
+
+function sampleIdentity(sample) {
+  return [sample?.provider, sample?.source, sample?.timestamp, sample?.value].join("|");
+}
+
+function watchRecordContentSignature(record = {}) {
+  const {
+    id,
+    sourceId,
+    importedAt,
+    updatedAt,
+    ...content
+  } = record;
+  return JSON.stringify(content);
+}
+
+function normalizeWatchDataDetailed(data = {}) {
   const source = data && typeof data === "object" ? data : {};
   const samples = source.samples ?? {};
-  const sleepSessions = (source.sleepSessions ?? [])
-    .map((session, index) => normalizeWatchSession(session, index, "sleep"))
-    .filter((session) => session.date || session.startedAt)
+  const healthSystem = normalizeHealthSystem(source);
+  const rawDailySummaries = Array.isArray(source.dailySummaries) ? source.dailySummaries : [];
+  const rawSleepSessions = Array.isArray(source.sleepSessions) ? source.sleepSessions : [];
+  const rawWorkouts = Array.isArray(source.workouts ?? source.exerciseSessions) ? (source.workouts ?? source.exerciseSessions) : [];
+  const rawHeartRate = Array.isArray(samples.heartRate) ? samples.heartRate : [];
+  const rawHeartRateVariability = Array.isArray(samples.heartRateVariability ?? samples.hrv)
+    ? (samples.heartRateVariability ?? samples.hrv)
+    : [];
+
+  const normalizedDaily = rawDailySummaries.map((summary) => normalizeWatchDailySummary(summary, healthSystem)).filter(Boolean);
+  const normalizedSleep = rawSleepSessions
+    .map((session, index) => normalizeWatchSession(session, index, "sleep", healthSystem))
+    .filter((session) => session.date || session.startedAt);
+  const normalizedWorkouts = rawWorkouts
+    .map((session, index) => normalizeWatchSession(session, index, "exercise", healthSystem))
+    .filter((session) => session.date || session.startedAt);
+  const normalizedHeartRate = rawHeartRate
+    .map((sample, index) => normalizeWatchSample(sample, index, "heart-rate", healthSystem))
+    .filter((sample) => sample.timestamp);
+  const normalizedHeartRateVariability = rawHeartRateVariability
+    .map((sample, index) => normalizeWatchSample(sample, index, "hrv", healthSystem))
+    .filter((sample) => sample.timestamp);
+
+  const dedupedDaily = dedupeWatchItems(normalizedDaily, dailySummaryIdentity);
+  const dedupedSleep = dedupeWatchItems(normalizedSleep, sessionIdentity);
+  const dedupedWorkouts = dedupeWatchItems(normalizedWorkouts, sessionIdentity);
+  const dedupedHeartRate = dedupeWatchItems(normalizedHeartRate, sampleIdentity);
+  const dedupedHeartRateVariability = dedupeWatchItems(normalizedHeartRateVariability, sampleIdentity);
+  const sleepSessions = dedupedSleep.items
     .sort((a, b) => (a.startedAt || a.date).localeCompare(b.startedAt || b.date));
-  const dailySummaries = (source.dailySummaries ?? [])
-    .map((summary) => normalizeWatchDailySummary(summary))
-    .filter(Boolean);
+  const dailySummaries = dedupedDaily.items;
   const summariesByDate = new Map(dailySummaries.map((summary) => [summary.date, summary]));
 
   if (sleepSessions.length) {
@@ -945,60 +1199,259 @@ function normalizeWatchData(data = {}) {
       const session = sessionContextByDate.get(date);
       summariesByDate.set(date, normalizeWatchDailySummary({
         date,
+        provider: session?.provider ?? healthSystem.provider,
         source: session?.source ?? DEFAULT_CONNECTED_HEALTH.sourceName,
         sleepMinutes,
+        timezone: session?.timezone ?? healthSystem.timezone,
+        importedAt: session?.importedAt ?? healthSystem.lastReconciledAt,
         updatedAt: session?.endedAt ?? session?.startedAt ?? "",
-      }));
+      }, healthSystem));
+    });
+  }
+
+  const invalidRecordsDropped = (rawDailySummaries.length - normalizedDaily.length)
+    + (rawSleepSessions.length - normalizedSleep.length)
+    + (rawWorkouts.length - normalizedWorkouts.length)
+    + (rawHeartRate.length - normalizedHeartRate.length)
+    + (rawHeartRateVariability.length - normalizedHeartRateVariability.length);
+  const duplicateRecordsRemoved = dedupedDaily.duplicateRecordsRemoved
+    + dedupedSleep.duplicateRecordsRemoved
+    + dedupedWorkouts.duplicateRecordsRemoved
+    + dedupedHeartRate.duplicateRecordsRemoved
+    + dedupedHeartRateVariability.duplicateRecordsRemoved;
+  const normalizedData = {
+    healthSystem,
+    dailySummaries: [...summariesByDate.values()]
+      .sort((a, b) => a.date.localeCompare(b.date)),
+    sleepSessions,
+    workouts: dedupedWorkouts.items
+      .sort((a, b) => (a.startedAt || a.date).localeCompare(b.startedAt || b.date)),
+    samples: {
+      heartRate: dedupedHeartRate.items
+        .sort((a, b) => a.timestamp.localeCompare(b.timestamp))
+        .slice(-1000),
+      heartRateVariability: dedupedHeartRateVariability.items
+        .sort((a, b) => a.timestamp.localeCompare(b.timestamp))
+        .slice(-1000),
+    },
+  };
+
+  if (normalizedData.healthSystem.integrity.status === "notChecked" && (duplicateRecordsRemoved || invalidRecordsDropped)) {
+    normalizedData.healthSystem = normalizeHealthSystem({
+      healthSystem: {
+        ...normalizedData.healthSystem,
+        integrity: {
+          ...normalizedData.healthSystem.integrity,
+          status: invalidRecordsDropped ? "review" : "healthy",
+          duplicateRecordsRemoved,
+          invalidRecordsDropped,
+          recordsStored: normalizedData.dailySummaries.length
+            + normalizedData.sleepSessions.length
+            + normalizedData.workouts.length
+            + normalizedData.samples.heartRate.length
+            + normalizedData.samples.heartRateVariability.length,
+          message: invalidRecordsDropped
+            ? "Archive migrated the health archive and excluded invalid records."
+            : "Archive migrated the health archive and removed duplicate records.",
+        },
+      },
     });
   }
 
   return {
-    dailySummaries: [...summariesByDate.values()]
-      .sort((a, b) => a.date.localeCompare(b.date)),
-    sleepSessions,
-    workouts: (source.workouts ?? source.exerciseSessions ?? [])
-      .map((session, index) => normalizeWatchSession(session, index, "exercise"))
-      .filter((session) => session.date || session.startedAt)
-      .sort((a, b) => (a.startedAt || a.date).localeCompare(b.startedAt || b.date)),
-    samples: {
-      heartRate: (samples.heartRate ?? [])
-        .map((sample, index) => normalizeWatchSample(sample, index, "heart-rate"))
-        .filter((sample) => sample.timestamp),
-      heartRateVariability: (samples.heartRateVariability ?? samples.hrv ?? [])
-        .map((sample, index) => normalizeWatchSample(sample, index, "hrv"))
-        .filter((sample) => sample.timestamp),
-    },
+    data: normalizedData,
+    diagnostics: { duplicateRecordsRemoved, invalidRecordsDropped },
   };
 }
 
+function normalizeWatchData(data = {}) {
+  return normalizeWatchDataDetailed(data).data;
+}
+
+function dateFallsWithin(date, startDate, endDate) {
+  return validDateKey(date)
+    && validDateKey(startDate)
+    && validDateKey(endDate)
+    && date >= startDate
+    && date <= endDate;
+}
+
+function sessionFallsWithinWindow(session, healthSystem, type) {
+  const { syncWindow } = healthSystem;
+  const startMs = Date.parse(syncWindow.start);
+  const endMs = Date.parse(syncWindow.end);
+  const startedMs = Date.parse(session.startedAt);
+  const endedMs = Date.parse(session.endedAt);
+  if (Number.isFinite(startMs) && Number.isFinite(endMs) && (Number.isFinite(startedMs) || Number.isFinite(endedMs))) {
+    const recordStart = Number.isFinite(startedMs) ? startedMs : endedMs;
+    const recordEnd = Number.isFinite(endedMs) ? endedMs : startedMs;
+    return recordStart <= endMs && recordEnd >= startMs;
+  }
+
+  const dateStart = type === "sleep" ? syncWindow.sleepDateStart : syncWindow.startDate;
+  const dateEnd = type === "sleep" ? syncWindow.sleepDateEnd : syncWindow.endDate;
+  return dateFallsWithin(session.date, dateStart, dateEnd);
+}
+
+function sampleFallsWithinWindow(sample, healthSystem) {
+  const sampleMs = Date.parse(sample.timestamp);
+  const startMs = Date.parse(healthSystem.syncWindow.start);
+  const endMs = Date.parse(healthSystem.syncWindow.end);
+  return Number.isFinite(sampleMs) && Number.isFinite(startMs) && Number.isFinite(endMs)
+    ? sampleMs >= startMs && sampleMs <= endMs
+    : dateFallsWithin(
+      localDateKeyFromTimestamp(sample.timestamp, healthSystem.timezone),
+      healthSystem.syncWindow.startDate,
+      healthSystem.syncWindow.endDate,
+    );
+}
+
+function countChangedRecords(existing = [], incoming = [], identity) {
+  const existingByIdentity = new Map(existing.map((item) => [identity(item), item]));
+  return incoming.reduce((count, item) => {
+    const previous = existingByIdentity.get(identity(item));
+    return count + (previous && watchRecordContentSignature(previous) !== watchRecordContentSignature(item) ? 1 : 0);
+  }, 0);
+}
+
+function countMissingRecords(existing = [], incoming = [], identity) {
+  const incomingIdentities = new Set(incoming.map(identity));
+  return existing.filter((item) => !incomingIdentities.has(identity(item))).length;
+}
+
+function mergeIncompleteLayer(existing = [], incoming = [], identity) {
+  return dedupeWatchItems([...existing, ...incoming], identity).items;
+}
+
 function mergeWatchData(currentData = {}, incomingData = {}) {
-  const current = normalizeWatchData(currentData);
-  const incoming = normalizeWatchData(incomingData);
-  const dailyByDate = new Map(current.dailySummaries.map((summary) => [summary.date, summary]));
-  const mergeById = (existing = [], incomingItems = []) => {
-    const byId = new Map(existing.map((item) => [item.id, item]));
-    incomingItems.forEach((item) => byId.set(item.id, item));
-    return [...byId.values()];
-  };
-  const mergeSamples = (existing = [], incomingSamples = []) => {
-    const byId = new Map(existing.map((sample) => [sample.id, sample]));
-    incomingSamples.forEach((sample) => byId.set(sample.id, sample));
-    return [...byId.values()]
-      .sort((a, b) => a.timestamp.localeCompare(b.timestamp))
-      .slice(-1000);
-  };
+  const currentDetailed = normalizeWatchDataDetailed(currentData);
+  const incomingDetailed = normalizeWatchDataDetailed(incomingData);
+  const current = currentDetailed.data;
+  const incoming = incomingDetailed.data;
+  const system = incoming.healthSystem;
+  const hasReconciliationWindow = system.syncWindow.complete
+    && validDateKey(system.syncWindow.startDate)
+    && validDateKey(system.syncWindow.endDate);
+  const complete = hasReconciliationWindow ? system.snapshotCompleteness : DEFAULT_HEALTH_SYSTEM.snapshotCompleteness;
 
-  incoming.dailySummaries.forEach((summary) => dailyByDate.set(summary.date, summary));
+  const currentDailyInWindow = complete.dailySummaries
+    ? current.dailySummaries.filter((item) => dateFallsWithin(item.date, system.syncWindow.startDate, system.syncWindow.endDate))
+    : [];
+  const currentSleepInWindow = complete.sleepSessions
+    ? current.sleepSessions.filter((item) => sessionFallsWithinWindow(item, system, "sleep"))
+    : [];
+  const currentWorkoutsInWindow = complete.workouts
+    ? current.workouts.filter((item) => sessionFallsWithinWindow(item, system, "exercise"))
+    : [];
+  const currentHeartRateInWindow = complete.heartRate
+    ? current.samples.heartRate.filter((item) => sampleFallsWithinWindow(item, system))
+    : [];
+  const currentHrvInWindow = complete.heartRateVariability
+    ? current.samples.heartRateVariability.filter((item) => sampleFallsWithinWindow(item, system))
+    : [];
 
-  return normalizeWatchData({
-    dailySummaries: [...dailyByDate.values()],
-    sleepSessions: mergeById(current.sleepSessions, incoming.sleepSessions),
-    workouts: mergeById(current.workouts, incoming.workouts),
+  const dailySummaries = complete.dailySummaries
+    ? [
+      ...current.dailySummaries.filter((item) => !dateFallsWithin(item.date, system.syncWindow.startDate, system.syncWindow.endDate)),
+      ...incoming.dailySummaries,
+    ]
+    : mergeIncompleteLayer(current.dailySummaries, incoming.dailySummaries, dailySummaryIdentity);
+  const sleepSessions = complete.sleepSessions
+    ? [
+      ...current.sleepSessions.filter((item) => !sessionFallsWithinWindow(item, system, "sleep")),
+      ...incoming.sleepSessions,
+    ]
+    : mergeIncompleteLayer(current.sleepSessions, incoming.sleepSessions, sessionIdentity);
+  const workouts = complete.workouts
+    ? [
+      ...current.workouts.filter((item) => !sessionFallsWithinWindow(item, system, "exercise")),
+      ...incoming.workouts,
+    ]
+    : mergeIncompleteLayer(current.workouts, incoming.workouts, sessionIdentity);
+  const heartRate = complete.heartRate
+    ? [
+      ...current.samples.heartRate.filter((item) => !sampleFallsWithinWindow(item, system)),
+      ...incoming.samples.heartRate,
+    ]
+    : mergeIncompleteLayer(current.samples.heartRate, incoming.samples.heartRate, sampleIdentity);
+  const heartRateVariability = complete.heartRateVariability
+    ? [
+      ...current.samples.heartRateVariability.filter((item) => !sampleFallsWithinWindow(item, system)),
+      ...incoming.samples.heartRateVariability,
+    ]
+    : mergeIncompleteLayer(current.samples.heartRateVariability, incoming.samples.heartRateVariability, sampleIdentity);
+
+  const conflictsResolved = countChangedRecords(current.dailySummaries, incoming.dailySummaries, dailySummaryIdentity)
+    + countChangedRecords(current.sleepSessions, incoming.sleepSessions, sessionIdentity)
+    + countChangedRecords(current.workouts, incoming.workouts, sessionIdentity)
+    + countChangedRecords(current.samples.heartRate, incoming.samples.heartRate, sampleIdentity)
+    + countChangedRecords(current.samples.heartRateVariability, incoming.samples.heartRateVariability, sampleIdentity);
+  const staleRecordsRemoved = countMissingRecords(currentDailyInWindow, incoming.dailySummaries, dailySummaryIdentity)
+    + countMissingRecords(currentSleepInWindow, incoming.sleepSessions, sessionIdentity)
+    + countMissingRecords(currentWorkoutsInWindow, incoming.workouts, sessionIdentity)
+    + countMissingRecords(currentHeartRateInWindow, incoming.samples.heartRate, sampleIdentity)
+    + countMissingRecords(currentHrvInWindow, incoming.samples.heartRateVariability, sampleIdentity);
+  const recordsReconciled = incoming.dailySummaries.length
+    + incoming.sleepSessions.length
+    + incoming.workouts.length
+    + incoming.samples.heartRate.length
+    + incoming.samples.heartRateVariability.length;
+  const criticalLayersComplete = complete.dailySummaries && complete.sleepSessions && complete.workouts;
+  const reconciliationRan = Boolean(system.lastReconciledAt || system.syncWindow.end);
+  const integrityStatus = !reconciliationRan
+    ? current.healthSystem.integrity.status
+    : (incomingDetailed.diagnostics.invalidRecordsDropped || !criticalLayersComplete ? "review" : "healthy");
+  const integrityMessage = !reconciliationRan
+    ? current.healthSystem.integrity.message
+    : incomingDetailed.diagnostics.invalidRecordsDropped
+      ? "Sync finished, but Archive excluded one or more invalid health records."
+      : !criticalLayersComplete
+        ? "Sync finished, but a canonical Health Connect layer was incomplete."
+        : staleRecordsRemoved
+          ? `Health archive reconciled; ${staleRecordsRemoved} stale ${staleRecordsRemoved === 1 ? "record was" : "records were"} removed.`
+          : "Health archive reconciled with Health Connect. No stale records remain in the sync window.";
+
+  let merged = normalizeWatchData({
+    healthSystem: {
+      ...(reconciliationRan ? system : current.healthSystem),
+      integrity: {
+        status: integrityStatus,
+        duplicateRecordsRemoved: incomingDetailed.diagnostics.duplicateRecordsRemoved,
+        invalidRecordsDropped: incomingDetailed.diagnostics.invalidRecordsDropped,
+        conflictsResolved,
+        staleRecordsRemoved,
+        recordsReconciled,
+        recordsStored: 0,
+        lastCheckedAt: system.lastReconciledAt || system.syncWindow.end || current.healthSystem.integrity.lastCheckedAt,
+        message: integrityMessage,
+      },
+    },
+    dailySummaries,
+    sleepSessions,
+    workouts,
     samples: {
-      heartRate: mergeSamples(current.samples.heartRate, incoming.samples.heartRate),
-      heartRateVariability: mergeSamples(current.samples.heartRateVariability, incoming.samples.heartRateVariability),
+      heartRate,
+      heartRateVariability,
     },
   });
+  const recordsStored = merged.dailySummaries.length
+    + merged.sleepSessions.length
+    + merged.workouts.length
+    + merged.samples.heartRate.length
+    + merged.samples.heartRateVariability.length;
+  merged = {
+    ...merged,
+    healthSystem: normalizeHealthSystem({
+      healthSystem: {
+        ...merged.healthSystem,
+        integrity: {
+          ...merged.healthSystem.integrity,
+          recordsStored,
+        },
+      },
+    }),
+  };
+  return merged;
 }
 
 function sleepValuesMatch(first, second) {
@@ -1020,23 +1473,30 @@ function watchSleepRecordForDate(watchData = {}, date = "") {
     available: durationMinutes > 0,
     durationMinutes,
     hours: Number((durationMinutes / 60).toFixed(2)),
+    provider: firstSession?.provider ?? summary?.provider ?? normalized.healthSystem.provider,
     source: firstSession?.source ?? summary?.source ?? DEFAULT_CONNECTED_HEALTH.sourceName,
+    timezone: firstSession?.timezone ?? summary?.timezone ?? normalized.healthSystem.timezone,
     startedAt: firstSession?.startedAt ?? "",
     endedAt: lastSession?.endedAt ?? "",
-    updatedAt: summary?.updatedAt ?? lastSession?.endedAt ?? "",
-    sessionIds: sessions.map((session) => session.id),
+    updatedAt: summary?.updatedAt ?? lastSession?.importedAt ?? lastSession?.endedAt ?? normalized.healthSystem.lastReconciledAt,
+    sessionIds: uniqueStrings(sessions.map((session) => session.id)),
   };
 }
 
 function mergeWatchSleepIntoEntries(entries = [], incomingData = {}, habitNames = DEFAULT_HABITS) {
   const incoming = normalizeWatchData(incomingData);
+  const healthSystem = incoming.healthSystem;
+  const authoritativeSleepWindow = healthSystem.syncWindow.complete
+    && healthSystem.snapshotCompleteness.sleepSessions
+    && validDateKey(healthSystem.syncWindow.sleepDateStart)
+    && validDateKey(healthSystem.syncWindow.sleepDateEnd);
   const sleepByDate = new Map(
     incoming.dailySummaries
       .filter((summary) => summary.sleepMinutes > 0)
       .map((summary) => [summary.date, Number((summary.sleepMinutes / 60).toFixed(2))]),
   );
 
-  if (!sleepByDate.size) return normalizeEntries(entries, habitNames);
+  if (!sleepByDate.size && !authoritativeSleepWindow) return normalizeEntries(entries, habitNames);
 
   const summariesByDate = new Map(incoming.dailySummaries.map((summary) => [summary.date, summary]));
   const sessionIdsByDate = new Map();
@@ -1047,8 +1507,8 @@ function mergeWatchSleepIntoEntries(entries = [], incomingData = {}, habitNames 
       sessionIdsByDate.set(session.date, [...(sessionIdsByDate.get(session.date) ?? []), session.id]);
     }
 
-    const startDate = localDateKeyFromTimestamp(session.startedAt);
-    const endDate = localDateKeyFromTimestamp(session.endedAt);
+    const startDate = localDateKeyFromTimestamp(session.startedAt, session.timezone || healthSystem.timezone);
+    const endDate = localDateKeyFromTimestamp(session.endedAt, session.timezone || healthSystem.timezone);
     if (!session.date || session.durationMinutes <= 0) return;
 
     new Set([startDate, endDate]).forEach((supersededDate) => {
@@ -1061,6 +1521,25 @@ function mergeWatchSleepIntoEntries(entries = [], incomingData = {}, habitNames 
   });
 
   const byDate = new Map(entries.map((entry) => [entry.date, entry]));
+
+  // A complete sync window is authoritative for synced sleep. If a session was
+  // deleted or corrected in Health Connect, clear only the stale synced value;
+  // manual-only fallbacks remain untouched until a real watch session appears.
+  if (authoritativeSleepWindow) {
+    byDate.forEach((existing, date) => {
+      if (!dateFallsWithin(date, healthSystem.syncWindow.sleepDateStart, healthSystem.syncWindow.sleepDateEnd)) return;
+      if (sleepByDate.has(date) || existing.sleepSource !== "sync") return;
+      byDate.set(date, {
+        ...existing,
+        sleep: 0,
+        sleepSource: "sync",
+        sleepSyncedAt: healthSystem.lastReconciledAt,
+        sleepSessionIds: [],
+        sleepProvider: "healthConnect",
+        sleepOrigin: DEFAULT_CONNECTED_HEALTH.sourceName,
+      });
+    });
+  }
 
   // Earlier versions used either the wake-up date or the session start date.
   // Remove those superseded synced values before applying the authoritative
@@ -1084,10 +1563,13 @@ function mergeWatchSleepIntoEntries(entries = [], incomingData = {}, habitNames 
   sleepByDate.forEach((sleepHours, date) => {
     const existing = byDate.get(date);
     const summary = summariesByDate.get(date);
+    const firstSession = incoming.sleepSessions.find((session) => session.date === date);
     const syncMetadata = {
       sleepSource: "sync",
-      sleepSyncedAt: summary?.updatedAt ?? "",
+      sleepSyncedAt: summary?.updatedAt || healthSystem.lastReconciledAt || "",
       sleepSessionIds: sessionIdsByDate.get(date) ?? [],
+      sleepProvider: firstSession?.provider ?? summary?.provider ?? "healthConnect",
+      sleepOrigin: firstSession?.source ?? summary?.source ?? DEFAULT_CONNECTED_HEALTH.sourceName,
     };
 
     if (existing) {
@@ -1150,6 +1632,8 @@ function normalizeEntries(entries = [], habitNames = DEFAULT_HABITS, waterScale 
         : "";
       const sleepSyncedAt = normalizeTimestamp(entry.sleepSyncedAt);
       const sleepSessionIds = uniqueStrings(entry.sleepSessionIds).slice(0, 20);
+      const sleepProvider = entry.sleepProvider === "healthConnect" ? "healthConnect" : "";
+      const sleepOrigin = String(entry.sleepOrigin ?? "").trim().slice(0, 80);
 
       return {
         date: entry.date,
@@ -1159,6 +1643,8 @@ function normalizeEntries(entries = [], habitNames = DEFAULT_HABITS, waterScale 
         ...(sleepSource ? { sleepSource } : {}),
         ...(sleepSyncedAt ? { sleepSyncedAt } : {}),
         ...(sleepSessionIds.length ? { sleepSessionIds } : {}),
+        ...(sleepProvider ? { sleepProvider } : {}),
+        ...(sleepOrigin ? { sleepOrigin } : {}),
       };
     })
     .sort((a, b) => a.date.localeCompare(b.date));
@@ -6208,6 +6694,37 @@ function formatSettingsTimestamp(value) {
   });
 }
 
+function formatHealthDateRange(startDate, endDate) {
+  if (!validDateKey(startDate) || !validDateKey(endDate)) return "Established after the next sync";
+  return `${formatShortDate(startDate)} – ${formatShortDate(endDate)}`;
+}
+
+function healthDataFreshness(value) {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return { label: "Not synced", tone: "waiting", detail: "Run a sync to establish data freshness." };
+  }
+  const ageHours = Math.max(0, (Date.now() - timestamp) / 3600000);
+  if (ageHours < 6) {
+    return { label: "Current", tone: "healthy", detail: "Health Connect was reconciled within the last 6 hours." };
+  }
+  if (ageHours < 24) {
+    return { label: "Today", tone: "healthy", detail: "Health Connect was reconciled within the last day." };
+  }
+  if (ageHours < 72) {
+    return { label: "Aging", tone: "review", detail: "Sync again when convenient to refresh watch changes." };
+  }
+  return { label: "Stale", tone: "review", detail: "Archive has not reconciled Health Connect in more than 3 days." };
+}
+
+function healthOriginLabel(value) {
+  const source = String(value ?? "").trim();
+  if (!source) return "Health Connect";
+  if (source === "com.sec.android.app.shealth" || source.toLowerCase().includes("samsung")) return "Samsung Health";
+  if (source.toLowerCase().includes("garmin")) return "Garmin Connect";
+  return source === "Health Connect" ? source : source.replace(/^com\./, "");
+}
+
 function SettingsPage({
   goals,
   onUpdateGoals,
@@ -6271,6 +6788,29 @@ function ConnectedHealthPanel({ connectedHealth, watchData, onUpdateConnectedHea
   const grantedPermissionCount = settings.permissionsGranted
     ? requestedPermissionCount
     : Math.min(settings.grantedPermissions.length, requestedPermissionCount);
+  const healthSystem = data.healthSystem;
+  const integrity = healthSystem.integrity;
+  const freshness = healthDataFreshness(healthSystem.lastReconciledAt || settings.lastSyncAt);
+  const integrityLabel = integrity.status === "healthy"
+    ? "Verified"
+    : integrity.status === "review"
+      ? "Review"
+      : "Awaiting sync";
+  const authoritativeLayerCount = [
+    healthSystem.snapshotCompleteness.dailySummaries,
+    healthSystem.snapshotCompleteness.sleepSessions,
+    healthSystem.snapshotCompleteness.workouts,
+  ].filter(Boolean).length;
+  const storedRecordCount = data.dailySummaries.length
+    + data.sleepSessions.length
+    + data.workouts.length
+    + data.samples.heartRate.length
+    + data.samples.heartRateVariability.length;
+  const latestOrigin = healthOriginLabel(
+    data.sleepSessions.at(-1)?.source
+      ?? data.workouts.at(-1)?.source
+      ?? data.dailySummaries.at(-1)?.source,
+  );
 
   const runAction = async (actionName, action) => {
     if (!action) return;
@@ -6325,7 +6865,7 @@ function ConnectedHealthPanel({ connectedHealth, watchData, onUpdateConnectedHea
         <SettingsRow
           label="Last sync"
           value={formatSettingsTimestamp(settings.lastSyncAt)}
-          detail="Imports the last 30 days Health Connect allows without history permission."
+          detail="Reconciles corrections and deletions across the recent 30-day access window."
         />
         <div className="settings-option-list">
           <button
@@ -6379,6 +6919,52 @@ function ConnectedHealthPanel({ connectedHealth, watchData, onUpdateConnectedHea
         </div>
       </SettingsSection>
 
+      <SettingsSection title="Health Data Integrity" meta={integrityLabel}>
+        <div className={`health-integrity-hero ${integrity.status === "healthy" ? "healthy" : integrity.status === "review" ? "review" : "waiting"}`}>
+          <span className="health-integrity-mark" aria-hidden="true" />
+          <span>
+            <strong>{integrityLabel}</strong>
+            <small>{integrity.message}</small>
+          </span>
+          <b>{storedRecordCount}<small>records</small></b>
+        </div>
+        <SettingsRow
+          label="Sleep ownership"
+          value="Day before wake"
+          detail="A session ending Tuesday belongs to Monday, even when the entire sleep occurred after midnight."
+        />
+        <SettingsRow
+          label="Source priority"
+          value="Watch first"
+          detail="Health Connect overrides manual sleep when both exist; manual data remains when the watch has no session."
+        />
+        <SettingsRow
+          label="Reconciliation"
+          value={`${healthSystem.syncWindow.days || 30} days`}
+          detail={`${formatHealthDateRange(healthSystem.syncWindow.startDate, healthSystem.syncWindow.endDate)} · corrections and deletions included`}
+        />
+        <SettingsRow
+          label="Freshness"
+          value={freshness.label}
+          detail={freshness.detail}
+        />
+        <SettingsRow
+          label="Canonical layers"
+          value={`${authoritativeLayerCount}/3`}
+          detail="Daily totals, sleep, and workouts are authoritative snapshots; HR and HRV remain bounded rolling samples."
+        />
+        <SettingsRow
+          label="Provenance"
+          value={latestOrigin}
+          detail={`${healthOriginLabel(settings.sourceName)} bridge · ${healthSystem.timezone || "device timezone"} · policy ${healthSystem.policyVersion}`}
+        />
+        <SettingsRow
+          label="Last cleanup"
+          value={`${integrity.duplicateRecordsRemoved + integrity.staleRecordsRemoved} removed`}
+          detail={`${integrity.duplicateRecordsRemoved} duplicate · ${integrity.staleRecordsRemoved} stale · ${integrity.conflictsResolved} corrected · ${integrity.invalidRecordsDropped} invalid`}
+        />
+      </SettingsSection>
+
       <SettingsSection title="Watch Data Layers" meta={`${enabledMetrics.length}/${WATCH_METRIC_DEFINITIONS.length}`}>
         <SettingsRow
           label="Stored"
@@ -6388,7 +6974,7 @@ function ConnectedHealthPanel({ connectedHealth, watchData, onUpdateConnectedHea
         <SettingsRow
           label="Samples"
           value={`${data.samples.heartRate.length} HR`}
-          detail={`${data.samples.heartRateVariability.length} HRV samples`}
+          detail={`${data.samples.heartRateVariability.length} HRV · rolling ${healthSystem.sampleRetention.limitPerMetric}-sample retention per metric`}
         />
         <div className="settings-option-list">
           {WATCH_METRIC_DEFINITIONS.map((metric) => {
@@ -7870,6 +8456,8 @@ function DailySheet({ habitNames, trackedHabits, entries, goals, watchData, conn
         sleepSessionIds: watchSleep.sessionIds.length
           ? watchSleep.sessionIds
           : (existingEntry?.sleepSessionIds ?? []),
+        sleepProvider: watchSleep.provider || "healthConnect",
+        sleepOrigin: watchSleep.source || DEFAULT_CONNECTED_HEALTH.sourceName,
       } : {
         sleepSource: "manual",
       }),
@@ -8131,7 +8719,9 @@ export {
   buildFocusAnalysis,
   coachIntent,
   createCoachWorkoutProposal,
+  mergeWatchData,
   mergeWatchSleepIntoEntries,
+  normalizeHealthSystem,
   normalizeWatchData,
   normalizeWorkoutState,
   sanitizeGeminiProposal,
@@ -8576,10 +9166,11 @@ export default function App() {
       setTrackerState((current) => {
         const currentConnectedHealth = normalizeConnectedHealth(current.connectedHealth);
         const syncedAt = typeof result?.syncedAt === "string" ? result.syncedAt : checkedAt;
+        const reconciledWatchData = mergeWatchData(current.watchData, result);
 
         return {
           ...current,
-          entries: mergeWatchSleepIntoEntries(current.entries, result, current.habitNames),
+          entries: mergeWatchSleepIntoEntries(current.entries, reconciledWatchData, current.habitNames),
           connectedHealth: normalizeConnectedHealth({
             ...currentConnectedHealth,
             enabled: true,
@@ -8597,7 +9188,7 @@ export default function App() {
             settingsResolvable: Boolean(result?.settingsResolvable),
             metrics: currentConnectedHealth.metrics,
           }),
-          watchData: mergeWatchData(current.watchData, result),
+          watchData: reconciledWatchData,
         };
       });
       return {

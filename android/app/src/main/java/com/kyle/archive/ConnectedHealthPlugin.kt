@@ -37,6 +37,7 @@ import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import kotlin.reflect.KClass
 
 @CapacitorPlugin(name = "ConnectedHealth")
 class ConnectedHealthPlugin : Plugin() {
@@ -265,14 +266,7 @@ class ConnectedHealthPlugin : Plugin() {
 
         val sleepSessions = JSArray()
         val sleepMinutesByDate = mutableMapOf<String, Long>()
-        val sleepResponse = client.readRecords(
-            ReadRecordsRequest(
-                recordType = SleepSessionRecord::class,
-                timeRangeFilter = range,
-                ascendingOrder = true,
-                pageSize = MAX_RECORDS,
-            ),
-        )
+        val sleepResponse = readAllRecords(client, SleepSessionRecord::class, range)
 
         sleepResponse.records.forEachIndexed { index, record ->
             val startedAt = record.startTime
@@ -296,14 +290,7 @@ class ConnectedHealthPlugin : Plugin() {
         }
 
         val workouts = JSArray()
-        val exerciseResponse = client.readRecords(
-            ReadRecordsRequest(
-                recordType = ExerciseSessionRecord::class,
-                timeRangeFilter = range,
-                ascendingOrder = true,
-                pageSize = MAX_RECORDS,
-            ),
-        )
+        val exerciseResponse = readAllRecords(client, ExerciseSessionRecord::class, range)
 
         exerciseResponse.records.forEachIndexed { index, record ->
             val startedAt = record.startTime
@@ -329,11 +316,13 @@ class ConnectedHealthPlugin : Plugin() {
             .mapValues { (_, samples) -> samples.map { it.value }.average() }
 
         val dailySummaries = JSArray()
+        var dailySummariesComplete = true
         for (offset in 0 until days) {
             val date = startDate.plusDays(offset.toLong())
             val dayStart = date.atStartOfDay(zone).toInstant()
             val dayEnd = if (date == today) now else date.plusDays(1).atStartOfDay(zone).toInstant()
             val aggregate = readDailyAggregate(client, dayStart, dayEnd)
+            dailySummariesComplete = dailySummariesComplete && aggregate.complete
 
             dailySummaries.put(
                 JSObject().apply {
@@ -363,6 +352,34 @@ class ConnectedHealthPlugin : Plugin() {
         payload.put("syncedAt", syncedAt)
         payload.put("lastSyncAt", syncedAt)
         payload.put("days", days)
+        payload.put("healthSchemaVersion", HEALTH_SCHEMA_VERSION)
+        payload.put("policyVersion", HEALTH_POLICY_VERSION)
+        payload.put("sleepDatePolicy", SLEEP_DATE_POLICY)
+        payload.put("timeZone", zone.id)
+        payload.put("syncWindowStart", startInstant.toString())
+        payload.put("syncWindowEnd", now.toString())
+        payload.put("syncWindowStartDate", startDate.toString())
+        payload.put("syncWindowEndDate", today.toString())
+        payload.put("sleepDateStart", startDate.minusDays(1).toString())
+        payload.put("sleepDateEnd", today.minusDays(1).toString())
+        payload.put("completeSnapshot", true)
+        payload.put(
+            "snapshotCompleteness",
+            JSObject().apply {
+                put("dailySummaries", dailySummariesComplete)
+                put("sleepSessions", sleepResponse.complete)
+                put("workouts", exerciseResponse.complete)
+                put("heartRate", false)
+                put("heartRateVariability", false)
+            },
+        )
+        payload.put(
+            "sampleRetention",
+            JSObject().apply {
+                put("mode", "rolling")
+                put("limitPerMetric", MAX_SAMPLES)
+            },
+        )
         payload.put("allGranted", true)
         payload.put("permissionsGranted", true)
         payload.put("requestedPermissions", stringArray(readPermissions))
@@ -412,8 +429,35 @@ class ConnectedHealthPlugin : Plugin() {
                 averageHeartRate = response[HeartRateRecord.BPM_AVG] ?: 0L,
             )
         } catch (_: Exception) {
-            DailyAggregate()
+            DailyAggregate(complete = false)
         }
+    }
+
+    private suspend fun <T : Record> readAllRecords(
+        client: HealthConnectClient,
+        recordType: KClass<T>,
+        range: TimeRangeFilter,
+    ): RecordBatch<T> {
+        val records = mutableListOf<T>()
+        var pageToken: String? = null
+        var pagesRead = 0
+
+        do {
+            val response = client.readRecords(
+                ReadRecordsRequest(
+                    recordType = recordType,
+                    timeRangeFilter = range,
+                    ascendingOrder = true,
+                    pageSize = MAX_RECORDS,
+                    pageToken = pageToken,
+                ),
+            )
+            records.addAll(response.records)
+            pageToken = response.pageToken
+            pagesRead += 1
+        } while (!pageToken.isNullOrBlank() && pagesRead < MAX_RECORD_PAGES)
+
+        return RecordBatch(records = records, complete = pageToken.isNullOrBlank())
     }
 
     private suspend fun readHeartRateSamples(
@@ -644,19 +688,29 @@ class ConnectedHealthPlugin : Plugin() {
         val source: String,
     )
 
+    private data class RecordBatch<T : Record>(
+        val records: List<T>,
+        val complete: Boolean,
+    )
+
     private data class DailyAggregate(
         val steps: Long = 0,
         val distanceMeters: Double = 0.0,
         val activeCalories: Double = 0.0,
         val floors: Double = 0.0,
         val averageHeartRate: Long = 0,
+        val complete: Boolean = true,
     )
 
     companion object {
         private const val HEALTH_CONNECT_PACKAGE = "com.google.android.apps.healthdata"
         private const val PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=$HEALTH_CONNECT_PACKAGE"
         private const val MAX_RECORDS = 1000
+        private const val MAX_RECORD_PAGES = 50
         private const val MAX_SAMPLES = 500
+        private const val HEALTH_SCHEMA_VERSION = 1
+        private const val HEALTH_POLICY_VERSION = "archive-health-1"
+        private const val SLEEP_DATE_POLICY = "previous-day-from-wake"
         private val HEALTH_CONNECT_SETTINGS_ACTIONS = arrayOf(
             "android.health.connect.action.HEALTH_CONNECT_SETTINGS",
             "androidx.health.ACTION_HEALTH_CONNECT_SETTINGS",

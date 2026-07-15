@@ -4,6 +4,36 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-14
+
+### Added
+
+- Added Archive's first canonical health-data schema with explicit provider, source record ID, origin, import time, timezone, policy version, and sync-window metadata.
+- Added a Health Data Integrity section in Settings showing freshness, source priority, canonical-layer completeness, provenance, retention policy, and reconciliation diagnostics.
+- Added focused health-system verification for timezone-stable sleep ownership, duplicates, corrections, deletions, stale synced sleep, rolling samples, and manual fallback preservation.
+
+### Changed
+
+- Replaced additive 30-day Health Connect imports with authoritative reconciliation for daily summaries, sleep sessions, and workouts, so the local archive mirrors corrected source data.
+- Health Connect sleep remains watch-first and is consistently filed on the day before wake-up; the policy no longer depends on whether sleep began before or after midnight.
+- Native sleep and workout reads now follow Health Connect pagination and report whether each canonical layer was complete.
+- Heart-rate and HRV storage is now explicitly treated as a bounded rolling sample set instead of being presented as a complete historical archive.
+- Advanced JSON backups now use schema version 2 while continuing to normalize and import older Archive backups.
+
+### Fixed
+
+- Removed stale synced records when they are deleted from Health Connect inside the latest reconciliation window.
+- Deduplicated records using stable source, timestamp, session, and value identities rather than relying only on provider record IDs.
+- Preserved manual sleep when no watch session exists, while allowing a later Health Connect session to replace the fallback authoritatively.
+- Kept sleep dates stable when the device timezone changes by retaining and applying the timezone used during import.
+
+### Known issues and unfinished work
+
+- Health Connect synchronization is still user-initiated; scheduled background refresh is a separate future release.
+- Standard Health Connect access remains limited to the recent 30-day window unless history permission is added.
+- HR and HRV retain the latest 500 samples per metric from each import and are not a complete long-term raw-signal store.
+- Health Connect remains Android-only; Apple Health integration and iOS packaging are future work.
+
 ## [0.4.3] - 2026-07-14
 
 ### Changed
@@ -188,7 +218,10 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 - The visual system is functional and consistent but has not yet received the planned premium design-system refinement.
 - iOS packaging and Apple Health integration are future work.
 
-[Unreleased]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.4.3...v0.5.0
+[0.4.3]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.4.2...v0.4.3
+[0.4.2]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.3.0...v0.3.1
