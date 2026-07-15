@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" role="img" aria-labelledby="title description">
+  <title id="title">Archive app icon</title>
+  <description id="description">A flowing pastel A with a two-wave crossbar and green endpoint on charcoal.</description>
+  <defs>
+    <linearGradient id="archive-gradient" x1="18" y1="54" x2="90" y2="54" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFC5D3"/>
+      <stop offset="0.34" stop-color="#C9A0DC"/>
+      <stop offset="0.68" stop-color="#A2BFFE"/>
+      <stop offset="1" stop-color="#E5F9E4"/>
+    </linearGradient>
+  </defs>
+  <rect width="108" height="108" rx="24" fill="#1D1D1F"/>
+  <rect x="0.75" y="0.75" width="106.5" height="106.5" rx="23.25" fill="none" stroke="#454548" stroke-width="1.5"/>
+  <path d="M22 76 C27 83 32 83 35 74 L49.5 30 C51.1 24.5 56.9 24.5 58.5 30 L73 74 C76 83 81 82 84 76" fill="none" stroke="url(#archive-gradient)" stroke-width="7.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M39.5 60.5 C41.3 56.4 43.8 56.4 46.75 60.5 C48.55 64.6 51.05 64.6 53.75 60.5 C55.55 56.4 58.05 56.4 61 60.5 C62.8 64.6 65.3 64.6 68.5 60.5" fill="none" stroke="url(#archive-gradient)" stroke-width="5.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="85.2" cy="76.5" r="4.4" fill="#E5F9E4"/>
+</svg>

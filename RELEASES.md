@@ -4,6 +4,7 @@ Release APKs are immutable. If a packaged build changes, Archive receives a new 
 
 | Version | Release date | APK | Summary | Source reference |
 | --- | --- | --- | --- | --- |
+| 0.7.0 | 2026-07-15 | `Archive-v0.7.0.apk` | First custom Archive identity with a flowing pastel A across adaptive, round, and legacy Android launchers. | `main`, tag `v0.7.0` |
 | 0.6.0 | 2026-07-14 | `Archive-v0.6.0.apk` | Lifecycle-aware automatic Health Connect refresh with durable hourly background snapshots. | `main`, tag `v0.6.0` |
 | 0.5.0 | 2026-07-14 | `Archive-v0.5.0.apk` | Canonical health archive with provenance, authoritative reconciliation, integrity diagnostics, and stable watch-first sleep. | `main`, tag `v0.5.0` |
 | 0.4.3 | 2026-07-14 | `Archive-v0.4.3.apk` | Previous-day sleep attribution with authoritative watch-sync precedence. | `main`, tag `v0.4.3` |
@@ -15,6 +16,19 @@ Release APKs are immutable. If a packaged build changes, Archive receives a new 
 | 0.2.1 | 2026-07-13 | `Archive-v0.2.1.apk` | Restores Archive's signature gradient on compact charts while preserving solid dense-data views. | `main`, tag `v0.2.1` |
 | 0.2.0 | 2026-07-13 | `Archive-v0.2.0.apk` | Archive Design System 2.0 with premium Home, Sleep, Settings, chart, surface, and navigation refinements. | `main`, tag `v0.2.0` |
 | 0.1.0 | 2026-07-13 | `Archive-v0.1.0.apk` | Formal baseline of the current productivity, health, workout, AI coach, and Health Connect experience. | `main`, tag `v0.1.0` |
+
+## 0.7.0 - Archive identity
+
+- APK filename: `Archive-v0.7.0.apk`
+- Local archive: `releases/v0.7.0/Archive-v0.7.0.apk`
+- Google Drive archive: `Archive Productivity Tracker/Releases/v0.7.0/Archive-v0.7.0.apk`
+- GitHub reference: `main`, tag `v0.7.0`
+- SHA-256: `1cf44d50e77e6f7dab7f302d9e92e74611b9049d4e9c5efe9685eb3ce481dfe9`
+- Summary: Replaces the generated framework launcher artwork with Archive's first intentional visual identity.
+- Main UI changes: a flowing capital A, calm two-wave crossbar, four-stage pastel metric gradient, green endpoint, and charcoal launcher field.
+- Structural changes: editable SVG masters, generated 1024-pixel references, one deterministic PowerShell asset generator, and complete Android legacy, round, and adaptive density sets.
+- Functional changes: Android launchers now present Archive's own mark while preserving the existing application ID, signing identity, local data, and in-place update path.
+- Known issues: launchers can temporarily cache an older shortcut icon; Android monochrome themed-icon artwork and an iOS asset catalog are not yet included.
 
 ## 0.6.0 - Automatic connected health
 

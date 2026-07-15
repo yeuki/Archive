@@ -4,6 +4,24 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-15
+
+### Added
+
+- Added Archive's first custom launcher identity: a flowing capital A with a two-wave crossbar and a final endpoint that represents the latest point in the archive.
+- Added editable SVG brand masters, 1024-pixel reference renders, and a reproducible Android icon generator so every density is derived from one geometry and palette.
+
+### Changed
+
+- Replaced the default Capacitor launcher artwork across Android's legacy, round, and adaptive icon resources.
+- Mapped the mark through Archive's established metric colors in order: habit pink, sleep purple, water blue, and move green.
+- Changed the launcher field to restrained charcoal so the pastel mark remains legible on both light and dark home screens.
+
+### Known issues and unfinished work
+
+- Some Android launchers may briefly cache the previous icon after an in-place update; restarting the launcher or removing and re-adding an existing home-screen shortcut refreshes it.
+- A dedicated Android monochrome themed-icon layer and matching iOS asset catalog remain future packaging work.
+
 ## [0.6.0] - 2026-07-14
 
 ### Added
@@ -249,7 +267,8 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 - The visual system is functional and consistent but has not yet received the planned premium design-system refinement.
 - iOS packaging and Apple Health integration are future work.
 
-[Unreleased]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.4.3...v0.5.0
 [0.4.3]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.4.2...v0.4.3
