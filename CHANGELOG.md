@@ -4,6 +4,34 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-07-15
+
+### Added
+
+- Extended the Archive Canvas visual language to Workout, Workout History, Coach, and Settings with atmospheric metric heroes, editorial section hierarchy, continuous page backgrounds, and shared translucent materials.
+- Added live summary layers for today's training plan, monthly workout activity, coach health signals, and local-first privacy settings.
+- Added purposeful entrance motion for training meters, monthly calendar cells, workout sessions, coach messages, and expanded settings groups, with reduced-motion support throughout.
+- Added compact progressive disclosure for unusually long coach responses so a single saved message cannot dominate the conversation surface.
+
+### Changed
+
+- Rebuilt Workout around a training-plan hero, active-session section, build-focus story, concise training-setup launcher, and the shared pinned-panel section.
+- Reframed Workout History around monthly training totals, a larger tactile calendar, clearer scheduled-miss states, and an editorial session-detail area while retaining past-workout backfill.
+- Reworked Coach into a scroll-safe data-signal canvas with calmer message materials, bounded conversation scrolling, a liquid composer, and compact long-response handling.
+- Reorganized Settings into Personal, Connections, and Intelligence sections with a quick Health Connect status and sync surface; connection details, integrity diagnostics, watch layers, and scoring weights now expand only when requested.
+- Refined Workout Settings and Coach proposal overlays to use the same spacing, corner, depth, and translucent-material rules as the main app.
+
+### Fixed
+
+- Prevented Coach's jump-to-latest behavior from scrolling the redesigned page away from its hero; only the conversation now moves to its newest message.
+- Preserved zero horizontal overflow at both 412-pixel and 360-pixel phone widths across all redesigned pages.
+
+### Known issues and unfinished work
+
+- Existing malformed text from an earlier Gemini response remains preserved in local coach history; Archive now collapses unusually long responses, but does not silently rewrite saved conversation content.
+- Health Connect remains Android-only, and iOS packaging plus Apple Health integration are future work.
+- Browser previews cannot exercise native Health Connect permissions, background work, or watch synchronization.
+
 ## [0.7.1] - 2026-07-15
 
 ### Fixed

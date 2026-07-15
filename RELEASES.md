@@ -4,6 +4,7 @@ Release APKs are immutable. If a packaged build changes, Archive receives a new 
 
 | Version | Release date | APK | Summary | Source reference |
 | --- | --- | --- | --- | --- |
+| 0.8.0 | 2026-07-15 | `Archive-v0.8.0.apk` | Archive Canvas completed across Workout, History, Coach, and Settings with shared hierarchy, material, and motion. | `main`, tag `v0.8.0` |
 | 0.7.1 | 2026-07-15 | `Archive-v0.7.1.apk` | Samsung-safe adaptive icon sizing with a dedicated centered foreground safe zone. | `main`, tag `v0.7.1` |
 | 0.7.0 | 2026-07-15 | `Archive-v0.7.0.apk` | First custom Archive identity with a flowing pastel A across adaptive, round, and legacy Android launchers. | `main`, tag `v0.7.0` |
 | 0.6.0 | 2026-07-14 | `Archive-v0.6.0.apk` | Lifecycle-aware automatic Health Connect refresh with durable hourly background snapshots. | `main`, tag `v0.6.0` |
@@ -17,6 +18,19 @@ Release APKs are immutable. If a packaged build changes, Archive receives a new 
 | 0.2.1 | 2026-07-13 | `Archive-v0.2.1.apk` | Restores Archive's signature gradient on compact charts while preserving solid dense-data views. | `main`, tag `v0.2.1` |
 | 0.2.0 | 2026-07-13 | `Archive-v0.2.0.apk` | Archive Design System 2.0 with premium Home, Sleep, Settings, chart, surface, and navigation refinements. | `main`, tag `v0.2.0` |
 | 0.1.0 | 2026-07-13 | `Archive-v0.1.0.apk` | Formal baseline of the current productivity, health, workout, AI coach, and Health Connect experience. | `main`, tag `v0.1.0` |
+
+## 0.8.0 - Canvas everywhere
+
+- APK filename: `Archive-v0.8.0.apk`
+- Local archive: `releases/v0.8.0/Archive-v0.8.0.apk`
+- Google Drive archive: `Archive Productivity Tracker/Releases/v0.8.0/Archive-v0.8.0.apk`
+- GitHub reference: `main`, tag `v0.8.0`
+- SHA-256: `42ac12272b4ef029b93f043f4922f40b59b32828661193dabe4d5b2c13443305`
+- Summary: Completes the Archive Canvas redesign across every primary destination while preserving the app's established local-first workflows.
+- Main UI changes: atmospheric training, history, coach, and privacy heroes; editorial section hierarchy; tactile monthly calendar; calmer conversation bubbles and composer; quick Health Connect summary; progressive settings disclosure; consistent translucent surfaces, spacing, shadows, and motion.
+- Structural changes: Workout, Workout History, Coach, and Settings now compose the existing shared `CanvasHero`, `PageSection`, `GuidedHighlight`, and `PinnedModulesSection` primitives; advanced `SettingsSection` groups support accessible expansion without introducing a data migration.
+- Functional changes: Coach scroll stays inside the conversation, unusually long saved responses are reviewable in a collapsed state, Health Connect keeps a prominent one-tap sync action, and all existing workout logging, missed-workout backfill, AI proposal approval, health configuration, and backup behavior remains available.
+- Known issues: malformed legacy Gemini text is preserved rather than rewritten, native Health Connect behavior is unavailable in browser previews, and Apple Health/iOS packaging remain future work.
 
 ## 0.7.1 - Adaptive icon safe zone
 

@@ -6976,3 +6976,969 @@ body {
     --dock-group-offset: 23px;
   }
 }
+
+/* Archive 0.8 — Canvas everywhere */
+
+.workout-canvas-screen,
+.workout-history-canvas-screen,
+.coach-canvas-screen,
+.settings-canvas-screen {
+  --canvas-surface: rgba(255, 255, 255, 0.66);
+  --canvas-surface-strong: rgba(255, 255, 255, 0.84);
+  --canvas-hairline: rgba(60, 60, 67, 0.075);
+  --canvas-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.025),
+    0 12px 34px rgba(0, 0, 0, 0.055),
+    inset 0 1px 0 rgba(255, 255, 255, 0.94);
+}
+
+.workout-canvas-screen .canvas-hero,
+.workout-history-canvas-screen .canvas-hero,
+.coach-canvas-screen .canvas-hero,
+.settings-canvas-screen .canvas-hero {
+  animation: canvasHeroSettle 620ms cubic-bezier(0.2, 1, 0.26, 1) both;
+}
+
+.workout-canvas-hero {
+  background:
+    radial-gradient(circle at 89% 16%, rgba(255, 255, 255, 0.98) 0 6%, transparent 32%),
+    radial-gradient(circle at 7% 70%, rgba(229, 249, 228, 0.92), transparent 40%),
+    radial-gradient(circle at 88% 72%, rgba(162, 191, 254, 0.2), transparent 38%),
+    linear-gradient(145deg, #ffffff 0%, #f8fff8 48%, #f7f9ff 100%);
+}
+
+.history-canvas-hero {
+  background:
+    radial-gradient(circle at 90% 15%, rgba(255, 255, 255, 0.98) 0 6%, transparent 31%),
+    radial-gradient(circle at 3% 74%, rgba(229, 249, 228, 0.9), transparent 40%),
+    radial-gradient(circle at 92% 66%, rgba(201, 160, 220, 0.16), transparent 37%),
+    linear-gradient(148deg, #ffffff 0%, #f8fff8 55%, #fbf8ff 100%);
+}
+
+.coach-canvas-hero {
+  background:
+    radial-gradient(circle at 89% 15%, rgba(255, 255, 255, 0.98) 0 6%, transparent 32%),
+    radial-gradient(circle at 4% 69%, rgba(201, 160, 220, 0.28), transparent 39%),
+    radial-gradient(circle at 92% 74%, rgba(144, 196, 189, 0.28), transparent 38%),
+    linear-gradient(145deg, #ffffff 0%, #fbf8ff 48%, #f5fbfa 100%);
+}
+
+.settings-canvas-hero {
+  background:
+    radial-gradient(circle at 90% 15%, rgba(255, 255, 255, 0.98) 0 6%, transparent 31%),
+    radial-gradient(circle at 3% 62%, rgba(255, 197, 211, 0.25), transparent 34%),
+    radial-gradient(circle at 96% 63%, rgba(162, 191, 254, 0.22), transparent 36%),
+    radial-gradient(circle at 52% 107%, rgba(229, 249, 228, 0.84), transparent 42%),
+    linear-gradient(145deg, #ffffff 0%, #fbf8ff 54%, #f7f9ff 100%);
+}
+
+.workout-canvas-hero .canvas-hero-chart,
+.history-canvas-hero .canvas-hero-chart,
+.coach-canvas-hero .canvas-hero-chart,
+.settings-canvas-hero .canvas-hero-chart {
+  margin: 1px 0 9px;
+}
+
+.workout-hero-plan,
+.history-hero-summary,
+.coach-hero-signals {
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.76);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.44);
+  box-shadow:
+    0 9px 26px rgba(0, 0, 0, 0.035),
+    inset 0 1px 0 rgba(255, 255, 255, 0.88),
+    inset 0 0 0 0.5px rgba(60, 60, 67, 0.035);
+  -webkit-backdrop-filter: blur(16px) saturate(1.16);
+  backdrop-filter: blur(16px) saturate(1.16);
+}
+
+.workout-hero-plan {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.workout-hero-plan > div {
+  grid-column: 1 / -1;
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  border-bottom: 1px solid rgba(60, 60, 67, 0.065);
+  padding: 11px 13px 10px;
+}
+
+.workout-hero-plan > div small,
+.workout-hero-plan > span small,
+.history-hero-summary small,
+.coach-hero-signals small {
+  color: var(--muted);
+  font-size: 0.57rem;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.workout-hero-plan > div strong {
+  overflow: hidden;
+  font-size: 0.98rem;
+  font-weight: 670;
+  letter-spacing: -0.025em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workout-hero-plan > span,
+.history-hero-summary > span,
+.coach-hero-signals > span {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  padding: 9px 11px;
+}
+
+.workout-hero-plan > span + span,
+.history-hero-summary > span + span,
+.coach-hero-signals > span + span {
+  border-left: 1px solid rgba(60, 60, 67, 0.065);
+}
+
+.workout-hero-plan > span b,
+.history-hero-summary strong,
+.coach-hero-signals strong {
+  overflow: hidden;
+  font-size: 0.9rem;
+  font-weight: 680;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-hero-summary,
+.coach-hero-signals {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.history-hero-summary > span,
+.coach-hero-signals > span {
+  min-height: 62px;
+  align-content: center;
+}
+
+.history-hero-summary strong,
+.coach-hero-signals strong {
+  font-size: 1.02rem;
+}
+
+/* Workout canvas */
+
+.workout-focus-section .build-focus-panel,
+.active-workout-section .workout-logger,
+.history-calendar-section .workout-month-calendar,
+.history-details-section .workout-day-history,
+.coach-conversation-section .coach-thread-panel,
+.settings-canvas-screen .settings-section,
+.health-connection-summary {
+  border-color: var(--canvas-hairline);
+  border-radius: 27px;
+  background: var(--canvas-surface);
+  box-shadow: var(--canvas-shadow);
+}
+
+.workout-focus-section .build-focus-panel {
+  gap: 0;
+  overflow: hidden;
+  padding: 0;
+}
+
+.workout-focus-section .build-focus-head {
+  min-height: 112px;
+  border: 0;
+  border-bottom: 1px solid var(--canvas-hairline);
+  border-radius: 0;
+  background:
+    radial-gradient(circle at 92% 8%, rgba(255, 255, 255, 0.92), transparent 35%),
+    linear-gradient(145deg, rgba(229, 249, 228, 0.45), rgba(255, 255, 255, 0.36));
+  padding: 17px;
+}
+
+.workout-focus-section .build-focus-head strong {
+  font-size: 1.12rem;
+  font-weight: 660;
+  letter-spacing: -0.035em;
+}
+
+.workout-focus-section .build-focus-head > b {
+  background: rgba(17, 17, 17, 0.92);
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.14);
+}
+
+.workout-focus-section .build-focus-list {
+  gap: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 4px 17px;
+}
+
+.workout-focus-section .build-focus-row {
+  min-height: 52px;
+  grid-template-columns: 98px minmax(0, 1fr);
+  padding-block: 8px;
+}
+
+.workout-focus-section .build-focus-row + .build-focus-row {
+  border-top: 1px solid var(--canvas-hairline);
+}
+
+.workout-focus-section .build-focus-meter {
+  height: 7px;
+  background: rgba(118, 118, 128, 0.1);
+}
+
+.workout-focus-section .build-focus-meter i {
+  transform-origin: left center;
+  background: linear-gradient(90deg, #d9efd8, #111111);
+  animation: workoutMeterGrow 720ms cubic-bezier(0.2, 1, 0.26, 1) both;
+}
+
+.workout-focus-section .build-focus-row.near .build-focus-meter i {
+  background: linear-gradient(90deg, #e5f9e4, #70976e);
+}
+
+.workout-focus-section .build-focus-row.behind .build-focus-meter i {
+  background: linear-gradient(90deg, #f1f6f0, #aabca9);
+}
+
+.workout-focus-section .build-focus-insight {
+  margin: 4px 13px 0;
+  border: 1px solid rgba(60, 60, 67, 0.06);
+  border-radius: 18px;
+  background: rgba(229, 249, 228, 0.28);
+  padding: 13px;
+}
+
+.workout-focus-section .build-suggest-btn {
+  width: calc(100% - 26px);
+  margin: 10px 13px 13px;
+  border-color: rgba(60, 60, 67, 0.085);
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.workout-focus-section .build-suggestions {
+  margin: 0 13px 13px;
+  padding-top: 13px;
+}
+
+.workout-plan-section .guided-highlight {
+  min-height: 116px;
+  background:
+    radial-gradient(circle at 94% 8%, rgba(255, 255, 255, 0.9), transparent 34%),
+    linear-gradient(145deg, rgba(229, 249, 228, 0.45), rgba(255, 255, 255, 0.7));
+}
+
+.active-workout-section {
+  scroll-margin-top: 20px;
+}
+
+.active-workout-section #active-workout {
+  scroll-margin-top: calc(78px + env(safe-area-inset-top));
+}
+
+.active-workout-section .workout-logger {
+  background: var(--canvas-surface-strong);
+}
+
+.workout-settings-view,
+.coach-review {
+  background:
+    radial-gradient(circle at 92% 2%, rgba(229, 249, 228, 0.56), transparent 30%),
+    linear-gradient(180deg, rgba(250, 250, 252, 0.96), rgba(246, 247, 249, 0.985));
+  -webkit-backdrop-filter: blur(28px) saturate(1.18);
+  backdrop-filter: blur(28px) saturate(1.18);
+}
+
+.workout-settings-view .module-picker-topbar,
+.coach-review .module-picker-topbar {
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.58);
+  padding: 13px 14px;
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.055),
+    inset 0 1px 0 rgba(255, 255, 255, 0.96);
+  -webkit-backdrop-filter: blur(20px) saturate(1.22);
+  backdrop-filter: blur(20px) saturate(1.22);
+}
+
+.workout-settings-view .workout-settings-content {
+  gap: 18px;
+  padding-top: 5px;
+}
+
+.workout-settings-view .settings-section,
+.workout-settings-view .routine-builder,
+.workout-settings-view .exercise-library,
+.coach-review .coach-review-panel {
+  border-color: rgba(60, 60, 67, 0.075);
+  border-radius: 27px;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.055),
+    inset 0 1px 0 rgba(255, 255, 255, 0.94);
+}
+
+/* Workout history canvas */
+
+.history-calendar-section .workout-month-calendar {
+  gap: 13px;
+  padding: 17px;
+}
+
+.history-calendar-section .history-month-head {
+  grid-template-columns: 40px minmax(0, 1fr) 40px;
+}
+
+.history-calendar-section .history-month-head strong {
+  font-size: 0.94rem;
+  font-weight: 660;
+  letter-spacing: -0.025em;
+}
+
+.history-calendar-section .history-month-head button {
+  width: 40px;
+  height: 40px;
+  border-color: rgba(60, 60, 67, 0.07);
+  background: rgba(255, 255, 255, 0.72);
+  font-size: 1.18rem;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.94);
+}
+
+.history-calendar-section .history-weekdays {
+  gap: 6px;
+}
+
+.history-calendar-section .history-weekdays span {
+  font-size: 0.58rem;
+  font-weight: 650;
+  letter-spacing: 0.065em;
+  text-transform: uppercase;
+}
+
+.history-calendar-section .workout-month-grid {
+  gap: 6px;
+}
+
+.history-calendar-section .workout-calendar-day {
+  border-color: rgba(60, 60, 67, 0.055);
+  border-radius: 12px;
+  background: rgba(118, 118, 128, 0.065);
+  color: #6c6c70;
+  font-size: 0.7rem;
+  font-weight: 590;
+  animation: calendarCellIn 400ms cubic-bezier(0.2, 1, 0.26, 1) both;
+  animation-delay: calc(70ms + (var(--cell-index, 0) * 9ms));
+}
+
+.history-calendar-section .workout-calendar-day.completed {
+  border-color: #111111;
+  background: #111111;
+  color: #ffffff;
+  box-shadow:
+    0 7px 15px rgba(0, 0, 0, 0.13),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.history-calendar-section .workout-calendar-day.scheduled-missed:not(.completed) {
+  border: 1.5px dashed rgba(17, 17, 17, 0.42);
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.history-calendar-section .workout-calendar-day.selected {
+  box-shadow:
+    0 0 0 3px rgba(129, 197, 126, 0.26),
+    0 8px 18px rgba(0, 0, 0, 0.1);
+  transform: translateY(-1px);
+}
+
+.history-calendar-section .workout-calendar-key {
+  justify-content: flex-start;
+  border-top: 1px solid var(--canvas-hairline);
+  padding-top: 12px;
+  font-size: 0.64rem;
+}
+
+.history-details-section .workout-day-history {
+  gap: 12px;
+  padding: 14px;
+}
+
+.history-details-section .workout-day-history > .guided-highlight {
+  min-height: 112px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.history-details-section .scheduled-workout-backfill {
+  border-color: rgba(60, 60, 67, 0.2);
+  border-radius: 21px;
+  background: rgba(229, 249, 228, 0.3);
+  padding: 14px;
+}
+
+.history-details-section .workout-day-sessions {
+  gap: 13px;
+}
+
+.history-details-section .workout-history-session {
+  gap: 13px;
+  border: 1px solid rgba(60, 60, 67, 0.07);
+  border-radius: 23px;
+  background: rgba(255, 255, 255, 0.66);
+  padding: 15px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92);
+  animation: historySessionIn 460ms cubic-bezier(0.2, 1, 0.26, 1) both;
+  animation-delay: calc(80ms + (var(--session-index, 0) * 55ms));
+}
+
+.history-details-section .workout-history-session + .workout-history-session {
+  border-top: 1px solid rgba(60, 60, 67, 0.07);
+  padding-top: 15px;
+}
+
+.history-details-section .workout-history-session-head strong {
+  font-size: 1.06rem;
+  font-weight: 660;
+  letter-spacing: -0.03em;
+}
+
+.history-details-section .workout-history-session-head > b {
+  min-width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(17, 17, 17, 0.92);
+  color: #ffffff;
+  font-size: 0.68rem;
+}
+
+.history-details-section .workout-history-exercise {
+  border-color: rgba(60, 60, 67, 0.06);
+  border-radius: 18px;
+  background: rgba(248, 248, 250, 0.76);
+  padding: 11px;
+}
+
+/* Coach canvas */
+
+.coach-canvas-screen {
+  height: auto;
+  min-height: 100dvh;
+  align-content: start;
+  grid-template-rows: none;
+  gap: 24px;
+  overflow: visible;
+}
+
+.coach-conversation-section .coach-thread-panel {
+  min-height: 500px;
+  max-height: 68dvh;
+  gap: 11px;
+  overflow: hidden;
+  padding: 12px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.76), rgba(248, 248, 250, 0.66));
+}
+
+.coach-conversation-section .coach-thread {
+  gap: 10px;
+  padding: 4px 3px 10px;
+  scroll-padding-bottom: 18px;
+}
+
+.coach-conversation-section .coach-message {
+  max-width: 91%;
+  gap: 6px;
+  border-color: rgba(60, 60, 67, 0.075);
+  border-radius: 22px 22px 22px 8px;
+  background: rgba(255, 255, 255, 0.78);
+  padding: 11px 13px;
+  box-shadow:
+    0 7px 22px rgba(0, 0, 0, 0.045),
+    inset 0 1px 0 rgba(255, 255, 255, 0.94);
+  animation: coachMessageIn 420ms cubic-bezier(0.2, 1, 0.26, 1) both;
+  animation-delay: calc(min(var(--message-index, 0), 8) * 32ms);
+}
+
+.coach-conversation-section .coach-message.user {
+  border-color: rgba(17, 17, 17, 0.86);
+  border-radius: 22px 22px 8px 22px;
+  background: linear-gradient(145deg, #242426, #111111);
+  box-shadow: 0 9px 22px rgba(0, 0, 0, 0.13);
+}
+
+.coach-conversation-section .coach-message p {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font-size: 0.84rem;
+  line-height: 1.44;
+}
+
+.coach-conversation-section .coach-message p.collapsed {
+  position: relative;
+  max-height: 10.1em;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 68%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 68%, transparent 100%);
+}
+
+.coach-conversation-section .coach-message-expand {
+  width: fit-content;
+  min-height: 30px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(118, 118, 128, 0.09);
+  color: var(--ink);
+  padding: 6px 9px;
+  font-size: 0.64rem;
+  font-weight: 650;
+}
+
+.coach-conversation-section .coach-message.user .coach-message-expand {
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+}
+
+.coach-conversation-section .coach-message > span {
+  font-size: 0.57rem;
+  font-weight: 680;
+  letter-spacing: 0.1em;
+}
+
+.coach-conversation-section .coach-proposal-card {
+  border-color: rgba(60, 60, 67, 0.075);
+  border-radius: 18px;
+  background: rgba(248, 248, 250, 0.92);
+  padding: 10px;
+}
+
+.coach-conversation-section .coach-compose {
+  position: relative;
+  z-index: 2;
+  grid-template-columns: minmax(0, 1fr) 42px;
+  gap: 7px;
+  margin: 0 -2px -2px;
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  border-radius: 25px;
+  background: rgba(255, 255, 255, 0.68);
+  padding: 5px;
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.09),
+    inset 0 1px 0 rgba(255, 255, 255, 0.96);
+  -webkit-backdrop-filter: blur(20px) saturate(1.22);
+  backdrop-filter: blur(20px) saturate(1.22);
+}
+
+.coach-conversation-section .coach-compose input {
+  border: 0;
+  background: transparent;
+  padding: 10px 11px;
+}
+
+.coach-conversation-section .coach-compose button {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  padding: 0;
+  font-size: 1.1rem;
+  font-weight: 520;
+  box-shadow: 0 7px 16px rgba(0, 0, 0, 0.14);
+}
+
+/* Settings canvas */
+
+.settings-canvas-hero .canvas-hero-chart {
+  align-self: end;
+  margin-top: 18px;
+}
+
+.settings-canvas-hero .settings-overview-chips {
+  gap: 7px;
+}
+
+.settings-canvas-hero .settings-overview-chips i {
+  border-color: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.48);
+  padding: 7px 10px;
+  color: #545458;
+  box-shadow:
+    0 7px 18px rgba(0, 0, 0, 0.035),
+    inset 0 1px 0 rgba(255, 255, 255, 0.92);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+
+.settings-canvas-screen .settings-stack {
+  gap: 10px;
+}
+
+.settings-canvas-screen .settings-section {
+  overflow: hidden;
+  padding: 0;
+}
+
+.settings-canvas-screen .settings-section-head {
+  min-height: 52px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  padding: 14px 16px;
+  text-align: left;
+}
+
+.settings-canvas-screen .settings-section-toggle {
+  cursor: pointer;
+}
+
+.settings-canvas-screen .settings-section-toggle:active {
+  background: rgba(118, 118, 128, 0.055);
+}
+
+.settings-section-meta {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-section-chevron {
+  width: 8px;
+  height: 8px;
+  display: block;
+  border-right: 1.5px solid #77777c;
+  border-bottom: 1.5px solid #77777c;
+  transform: rotate(45deg) translate(-1px, -1px);
+  transition: transform 260ms cubic-bezier(0.2, 1, 0.26, 1);
+}
+
+.settings-section.open .settings-section-chevron {
+  transform: rotate(225deg) translate(-1px, -1px);
+}
+
+.settings-canvas-screen .settings-group {
+  border-top: 1px solid var(--canvas-hairline);
+  padding: 0 16px 14px;
+  animation: settingsGroupIn 320ms cubic-bezier(0.2, 1, 0.26, 1) both;
+}
+
+.settings-canvas-screen .settings-row {
+  min-height: 54px;
+  padding-block: 11px;
+}
+
+.settings-canvas-screen .settings-row-label {
+  font-size: 0.83rem;
+  font-weight: 590;
+}
+
+.settings-canvas-screen .settings-row-detail {
+  margin-top: 3px;
+  font-size: 0.66rem;
+  line-height: 1.36;
+}
+
+.settings-canvas-screen .settings-row-value {
+  max-width: 48%;
+  font-size: 0.76rem;
+}
+
+.health-connection-summary {
+  min-height: 92px;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  padding: 14px;
+  background:
+    radial-gradient(circle at 96% 2%, rgba(255, 255, 255, 0.9), transparent 34%),
+    linear-gradient(145deg, rgba(229, 249, 228, 0.44), rgba(255, 255, 255, 0.68));
+}
+
+.health-connection-orb {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(17, 17, 17, 0.92);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.13);
+}
+
+.health-connection-orb i {
+  position: relative;
+  width: 19px;
+  height: 14px;
+  display: block;
+}
+
+.health-connection-orb i::before,
+.health-connection-orb i::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  width: 11px;
+  height: 11px;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+}
+
+.health-connection-orb i::before {
+  left: 0;
+}
+
+.health-connection-orb i::after {
+  right: 0;
+}
+
+.health-connection-summary > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.health-connection-summary small {
+  color: var(--muted);
+  font-size: 0.57rem;
+  font-weight: 670;
+  letter-spacing: 0.095em;
+  text-transform: uppercase;
+}
+
+.health-connection-summary strong {
+  font-size: 0.96rem;
+  font-weight: 670;
+  letter-spacing: -0.025em;
+}
+
+.health-connection-summary > div > span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.66rem;
+  line-height: 1.28;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.health-connection-summary > button {
+  min-height: 36px;
+  border: 0;
+  border-radius: 999px;
+  background: #111111;
+  color: #ffffff;
+  padding: 8px 12px;
+  font-size: 0.68rem;
+  font-weight: 650;
+  box-shadow: 0 7px 16px rgba(0, 0, 0, 0.12);
+}
+
+.health-connection-summary > button:disabled {
+  background: rgba(118, 118, 128, 0.18);
+  color: var(--muted);
+  box-shadow: none;
+  cursor: default;
+}
+
+.settings-canvas-screen .settings-option-list {
+  margin-top: 10px;
+  gap: 8px;
+}
+
+.settings-canvas-screen .settings-option {
+  border-color: rgba(60, 60, 67, 0.075);
+  border-radius: 18px;
+  background: rgba(248, 248, 250, 0.72);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.settings-canvas-screen .ai-disclosure {
+  border-color: rgba(60, 60, 67, 0.065);
+  border-radius: 18px;
+  background: rgba(118, 118, 128, 0.055);
+  padding: 11px 13px;
+}
+
+.settings-canvas-screen .settings-text-input {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@keyframes canvasHeroSettle {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.992);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes workoutMeterGrow {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes calendarCellIn {
+  from {
+    opacity: 0;
+    transform: translateY(7px) scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes historySessionIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes coachMessageIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes settingsGroupIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .workout-hero-plan,
+  .history-hero-summary,
+  .coach-hero-signals,
+  .workout-focus-section .build-focus-panel,
+  .history-calendar-section .workout-month-calendar,
+  .history-details-section .workout-day-history,
+  .coach-conversation-section .coach-thread-panel,
+  .settings-canvas-screen .settings-section,
+  .health-connection-summary,
+  .coach-conversation-section .coach-compose {
+    background-color: #ffffff;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .workout-hero-plan,
+  .history-hero-summary,
+  .coach-hero-signals,
+  .workout-focus-section .build-focus-panel,
+  .history-calendar-section .workout-month-calendar,
+  .history-details-section .workout-day-history,
+  .coach-conversation-section .coach-thread-panel,
+  .settings-canvas-screen .settings-section,
+  .health-connection-summary {
+    border-color: rgba(0, 0, 0, 0.24);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workout-canvas-screen .canvas-hero,
+  .workout-history-canvas-screen .canvas-hero,
+  .coach-canvas-screen .canvas-hero,
+  .settings-canvas-screen .canvas-hero,
+  .workout-focus-section .build-focus-meter i,
+  .history-calendar-section .workout-calendar-day,
+  .history-details-section .workout-history-session,
+  .coach-conversation-section .coach-message,
+  .settings-canvas-screen .settings-group {
+    animation: none;
+  }
+
+  .settings-section-chevron {
+    transition: none;
+  }
+}
+
+@media (max-width: 370px) {
+  .workout-hero-plan > span,
+  .history-hero-summary > span,
+  .coach-hero-signals > span {
+    padding-inline: 8px;
+  }
+
+  .workout-hero-plan > span b,
+  .history-hero-summary strong,
+  .coach-hero-signals strong {
+    font-size: 0.83rem;
+  }
+
+  .history-calendar-section .workout-month-calendar {
+    padding: 14px;
+  }
+
+  .history-calendar-section .workout-month-grid,
+  .history-calendar-section .history-weekdays {
+    gap: 5px;
+  }
+
+  .history-calendar-section .workout-calendar-day {
+    border-radius: 10px;
+  }
+
+  .coach-conversation-section .coach-thread-panel {
+    min-height: 470px;
+    padding: 10px;
+  }
+
+  .settings-canvas-screen .settings-row-value {
+    max-width: 44%;
+  }
+
+  .health-connection-summary {
+    grid-template-columns: 38px minmax(0, 1fr) auto;
+    gap: 9px;
+    padding: 12px;
+  }
+
+  .health-connection-orb {
+    width: 38px;
+    height: 38px;
+  }
+}

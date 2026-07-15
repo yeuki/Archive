@@ -5580,7 +5580,7 @@ function MuscleFocusPanel({ load, title = "Muscle focus", meta = "today" }) {
   );
 }
 
-function BuildFocusPanel({ workout, title = "Muscle focus", meta = "build focus" }) {
+function BuildFocusPanel({ workout, title = "Muscle focus", meta = "build focus", showHeading = true }) {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const analysis = buildFocusAnalysis(workout);
   const suggestionData = buildWorkoutSuggestions(workout);
@@ -5588,7 +5588,7 @@ function BuildFocusPanel({ workout, title = "Muscle focus", meta = "build focus"
 
   return (
     <div className="panel build-focus-panel">
-      <SectionTitle title={title} meta={meta} />
+      {showHeading && <SectionTitle title={title} meta={meta} />}
       <div className="build-focus-head">
         <div>
           <span>Current focus</span>
@@ -6202,6 +6202,18 @@ function WorkoutHistoryPage({ workout, onWorkoutChange }) {
       missedScheduled: Boolean(scheduledRoutine && !scheduledCompleted),
     };
   });
+  const visibleMonthCells = monthCells.filter(Boolean);
+  const monthWorkouts = visibleMonthCells.flatMap((cell) => cell.workouts);
+  const monthCompletedDays = visibleMonthCells.filter((cell) => cell.workouts.length).length;
+  const monthMissedDays = visibleMonthCells.filter((cell) => cell.missedScheduled).length;
+  const monthPlannedDays = visibleMonthCells.filter((cell) => cell.scheduledRoutine).length;
+  const monthAdherence = monthPlannedDays
+    ? ((monthPlannedDays - monthMissedDays) / monthPlannedDays) * 100
+    : clamp((monthCompletedDays / 12) * 100, 0, 100);
+  const monthSetTotal = monthWorkouts.reduce((total, savedWorkout) => total + workoutSetCount(savedWorkout), 0);
+  const monthVolumeTotal = Math.round(monthWorkouts.reduce((total, savedWorkout) => total + workoutVolume(savedWorkout), 0));
+  const monthLabel = viewMonth.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  const latestMonthWorkout = [...monthWorkouts].sort((a, b) => b.date.localeCompare(a.date))[0] ?? null;
   const selectedWorkouts = selectedDate ? workoutsByDate.get(selectedDate) ?? [] : [];
   const selectedScheduledRoutine = selectedDate && selectedDate < today
     ? scheduledRoutineForDate(data, selectedDate)
@@ -6247,15 +6259,39 @@ function WorkoutHistoryPage({ workout, onWorkoutChange }) {
   };
 
   return (
-    <div className="screen workout-history-screen">
+    <div className="screen canvas-screen workout-history-screen workout-history-canvas-screen">
       <div className="topbar">
         <h1>Workout history</h1>
       </div>
 
-      <div className="panel workout-month-calendar">
+      <CanvasHero
+        label="Training archive"
+        meta={monthLabel}
+        value={monthWorkouts.length}
+        unit={monthWorkouts.length === 1 ? "workout" : "workouts"}
+        progress={monthAdherence}
+        progressLabel={monthPlannedDays ? "plan" : "rhythm"}
+        footLabel="Latest session"
+        footValue={latestMonthWorkout ? formatShortDate(latestMonthWorkout.date) : "No sessions yet"}
+        className="history-canvas-hero"
+      >
+        <div className="history-hero-summary">
+          <span><small>Days trained</small><strong>{monthCompletedDays}</strong></span>
+          <span><small>Working sets</small><strong>{monthSetTotal}</strong></span>
+          <span><small>Total volume</small><strong>{monthVolumeTotal.toLocaleString()}</strong></span>
+        </div>
+      </CanvasHero>
+
+      <PageSection
+        eyebrow="Calendar"
+        title="Your month"
+        meta={monthMissedDays ? `${monthMissedDays} to review` : "Up to date"}
+        className="history-calendar-section"
+      >
+        <div className="panel workout-month-calendar">
         <div className="history-month-head">
           <button onClick={() => shiftMonth(-1)} aria-label="Previous workout month">‹</button>
-          <strong>{viewMonth.toLocaleDateString(undefined, { month: "long", year: "numeric" })}</strong>
+          <strong>{monthLabel}</strong>
           <button onClick={() => shiftMonth(1)} aria-label="Next workout month">›</button>
         </div>
         <div className="history-weekdays">
@@ -6276,6 +6312,7 @@ function WorkoutHistoryPage({ workout, onWorkoutChange }) {
                 aria-label={`${formatShortDate(cell.date)}, ${statusParts.join(", ")}`}
                 aria-pressed={selectedDate === cell.date}
                 onClick={() => selectCalendarDate(cell)}
+                style={{ "--cell-index": index }}
                 key={cell.date}
               >
                 {cell.dayNumber}
@@ -6287,30 +6324,33 @@ function WorkoutHistoryPage({ workout, onWorkoutChange }) {
           <span><i className="completed" />Completed</span>
           <span><i className="scheduled" />Scheduled, not logged</span>
         </div>
-      </div>
+        </div>
+      </PageSection>
 
-      {backfillDraft ? (
-        <WorkoutLogger
-          draft={backfillDraft}
-          exercises={data.exercises}
-          workouts={data.workouts}
-          onChange={setBackfillDraft}
-          onSave={saveBackfill}
-          onCancel={() => setBackfillDraft(null)}
-          title="Record past workout"
-          saveLabel="Save completed workout"
-          lockDate
-        />
-      ) : (
-        <div className="panel workout-day-history">
-          <SectionTitle
-            title={selectedDate ? formatShortDate(selectedDate) : "Workout details"}
-            meta={selectedWorkouts.length
-              ? `${selectedWorkouts.length} completed`
-              : selectedMissedRoutine
-                ? "scheduled workout"
-                : "select a marked date"}
+      <PageSection
+        eyebrow="Details"
+        title={selectedDate ? formatShortDate(selectedDate) : "Session details"}
+        meta={selectedWorkouts.length
+          ? `${selectedWorkouts.length} completed`
+          : selectedMissedRoutine
+            ? "Scheduled workout"
+            : "Choose a marked day"}
+        className="history-details-section"
+      >
+        {backfillDraft ? (
+          <WorkoutLogger
+            draft={backfillDraft}
+            exercises={data.exercises}
+            workouts={data.workouts}
+            onChange={setBackfillDraft}
+            onSave={saveBackfill}
+            onCancel={() => setBackfillDraft(null)}
+            title="Record past workout"
+            saveLabel="Save completed workout"
+            lockDate
           />
+        ) : (
+          <div className="panel workout-day-history">
           {selectedMissedRoutine && (
             <div className="scheduled-workout-backfill">
               <div className="scheduled-workout-backfill-head">
@@ -6334,7 +6374,7 @@ function WorkoutHistoryPage({ workout, onWorkoutChange }) {
           {selectedWorkouts.length ? (
             <div className="workout-day-sessions">
               {selectedWorkouts.map((savedWorkout, workoutIndex) => (
-                <article className="workout-history-session" key={savedWorkout.id}>
+                <article className="workout-history-session" style={{ "--session-index": workoutIndex }} key={savedWorkout.id}>
                   <div className="workout-history-session-head">
                     <div>
                       <span>Workout {selectedWorkouts.length > 1 ? workoutIndex + 1 : ""}</span>
@@ -6371,14 +6411,18 @@ function WorkoutHistoryPage({ workout, onWorkoutChange }) {
               ))}
             </div>
           ) : !selectedMissedRoutine && (
-            <div className="history-empty">
-              {data.workouts.length
-                ? "Choose a black or outlined calendar square to review it."
-                : "Finished workouts and missed scheduled days will appear here."}
-            </div>
+            <GuidedHighlight
+              eyebrow="Archive"
+              title={data.workouts.length ? "Choose a marked day" : "Your training story starts here"}
+              copy={data.workouts.length
+                ? "Black squares contain completed sessions. Outlined squares let you record a missed scheduled workout."
+                : "Finished workouts and missed scheduled days will appear here with every set preserved."}
+              status="quiet"
+            />
           )}
-        </div>
-      )}
+          </div>
+        )}
+      </PageSection>
     </div>
   );
 }
@@ -6620,7 +6664,18 @@ function WorkoutPage({ workout, onWorkoutChange, onAdd, onBackup, modules, modul
   const selectedRoutine = data.routines.find((routine) => routine.id === data.selectedRoutineId) ?? data.routines[0];
   const [activeWorkout, setActiveWorkout] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const todayRoutine = scheduledRoutineForDay(data) ?? selectedRoutine;
+  const scheduledRoutine = scheduledRoutineForDay(data);
+  const nextWorkout = nextScheduledWorkout(data);
+  const todayRoutine = scheduledRoutine ?? selectedRoutine;
+  const heroRoutine = scheduledRoutine ?? nextWorkout?.routine ?? selectedRoutine;
+  const heroScore = heroRoutine ? routineScore(heroRoutine, data.exercises) : null;
+  const focusAnalysis = buildFocusAnalysis(data);
+  const equipmentProfile = EQUIPMENT_PROFILES.find((profile) => profile.id === data.equipmentProfileId) ?? EQUIPMENT_PROFILES[0];
+  const heroScheduleLabel = scheduledRoutine
+    ? "Scheduled today"
+    : nextWorkout
+      ? `${DAY_NAMES[nextWorkout.dayIndex]} · in ${nextWorkout.offset} day${nextWorkout.offset === 1 ? "" : "s"}`
+      : "Open training day";
 
   const updateRoutine = (nextRoutine) => {
     onWorkoutChange((current) => ({
@@ -6699,7 +6754,7 @@ function WorkoutPage({ workout, onWorkoutChange, onAdd, onBackup, modules, modul
   };
 
   return (
-    <div className="screen">
+    <div className="screen canvas-screen workout-canvas-screen">
       <div className="topbar">
         <h1>Workout</h1>
         <div className="topbar-actions">
@@ -6708,29 +6763,78 @@ function WorkoutPage({ workout, onWorkoutChange, onAdd, onBackup, modules, modul
         </div>
       </div>
 
-      <button className="workout-settings-btn" onClick={() => setSettingsOpen(true)}>
-        Workout settings
-      </button>
-      <WorkoutTodayPanel workout={data} routine={scheduledRoutineForDay(data)} onStart={startWorkout} />
-      <BuildFocusPanel workout={data} />
+      <CanvasHero
+        label="Training"
+        meta={DAY_NAMES[workoutDayIndex()]}
+        value={heroScore?.score ?? focusAnalysis.readiness ?? "--"}
+        unit={heroScore ? "plan score" : "readiness"}
+        progress={heroScore?.score ?? focusAnalysis.readiness ?? 0}
+        progressLabel={scheduledRoutine ? "today" : "readiness"}
+        footLabel={heroScheduleLabel}
+        footValue={equipmentProfile.shortName}
+        actionLabel={activeWorkout ? "Resume" : heroRoutine ? scheduledRoutine ? "Start workout" : "Start next" : undefined}
+        onAction={activeWorkout
+          ? () => document.getElementById("active-workout")?.scrollIntoView({ behavior: "smooth", block: "start" })
+          : heroRoutine ? () => startWorkout(heroRoutine) : undefined}
+        className="workout-canvas-hero"
+      >
+        <div className="workout-hero-plan">
+          <div>
+            <small>{scheduledRoutine ? "Today's session" : nextWorkout ? "Up next" : "Selected routine"}</small>
+            <strong>{heroRoutine?.name ?? "No routine yet"}</strong>
+          </div>
+          <span><small>Exercises</small><b>{heroRoutine?.exerciseIds.length ?? 0}</b></span>
+          <span><small>Sets</small><b>{heroScore?.totalSets ?? 0}</b></span>
+          <span><small>Minutes</small><b>{heroScore?.estimatedMinutes ?? 0}</b></span>
+        </div>
+      </CanvasHero>
 
       {activeWorkout && (
-        <WorkoutLogger
-          draft={activeWorkout}
-          exercises={data.exercises}
-          workouts={data.workouts}
-          onChange={setActiveWorkout}
-          onSave={saveWorkout}
-          onCancel={() => setActiveWorkout(null)}
-        />
+        <PageSection eyebrow="Live" title="Current session" meta={activeWorkout.routineName} className="active-workout-section">
+          <div id="active-workout">
+            <WorkoutLogger
+              draft={activeWorkout}
+              exercises={data.exercises}
+              workouts={data.workouts}
+              onChange={setActiveWorkout}
+              onSave={saveWorkout}
+              onCancel={() => setActiveWorkout(null)}
+            />
+          </div>
+        </PageSection>
       )}
 
-      <AddedModules
+      <PageSection
+        eyebrow="Balance"
+        title="Build focus"
+        meta={focusAnalysis.aesthetic.shortName}
+        className="workout-focus-section"
+      >
+        <BuildFocusPanel workout={data} showHeading={false} />
+      </PageSection>
+
+      <PageSection
+        eyebrow="Plan"
+        title="Training setup"
+        meta={`${data.routines.length} routine${data.routines.length === 1 ? "" : "s"}`}
+        className="workout-plan-section"
+      >
+        <GuidedHighlight
+          eyebrow="Weekly plan"
+          title="Schedule, routines & exercise library"
+          copy={`${focusAnalysis.aesthetic.name} · ${equipmentProfile.shortName}. Keep the week aligned with your equipment and build focus.`}
+          actionLabel="Open"
+          onAction={() => setSettingsOpen(true)}
+        />
+      </PageSection>
+
+      <PinnedModulesSection
         modules={modules}
         context={{ ...moduleContext, workout: data, workoutActions }}
+        onCustomize={onAdd}
         onRemoveModule={onRemoveModule}
         onEditModule={onEditModule}
-          onReorderModule={onReorderModule}
+        onReorderModule={onReorderModule}
       />
       {settingsOpen && (
         <WorkoutSettingsView
@@ -6853,42 +6957,79 @@ function SettingsPage({
   onUpdateAISettings,
   onUpdateGeminiApiKey,
 }) {
+  const normalizedGoals = normalizeGoals(goals);
+  const normalizedHealth = normalizeConnectedHealth(connectedHealth);
+  const normalizedAI = normalizeAISettings(aiSettings);
+  const healthStatus = connectedHealthStatusLabel(normalizedHealth);
+
   return (
-    <div className="screen">
+    <div className="screen canvas-screen settings-canvas-screen">
       <div className="topbar">
         <div className="topbar-title">
           <span>Archive</span>
           <h1>Settings</h1>
         </div>
       </div>
-      <section className="panel settings-overview">
-        <span>Private by design</span>
-        <h2>Make Archive yours.</h2>
-        <p>Your preferences and records stay on this device unless you choose to connect or export them.</p>
+
+      <CanvasHero
+        label="Archive"
+        meta="Private by design"
+        value="Local"
+        unit="first"
+        progress={100}
+        progressLabel="private"
+        footLabel="Your records stay on this device"
+        footValue="Export by choice"
+        className="settings-canvas-hero"
+      >
         <div className="settings-overview-chips" aria-label="Archive settings highlights">
           <i>Local first</i>
-          <i>Health connected</i>
+          <i>{normalizedHealth.enabled ? "Health connected" : "Health optional"}</i>
           <i>Reviewable AI</i>
         </div>
-      </section>
-      <GoalSettingsPanel goals={goals} onUpdateGoals={onUpdateGoals} />
-      <ConnectedHealthPanel
-        connectedHealth={connectedHealth}
-        watchData={watchData}
-        onUpdateConnectedHealth={onUpdateConnectedHealth}
-        onCheckStatus={onCheckConnectedHealth}
-        onOpenSettings={onOpenConnectedHealthSettings}
-        onRequestPermissions={onRequestConnectedHealthPermissions}
-        onRequestAutomaticPermissions={onRequestAutomaticHealthPermissions}
-        onToggleAutomaticSync={onToggleAutomaticHealthSync}
-        onSync={onSyncConnectedHealth}
-      />
-      <AISettingsPanel
-        aiSettings={aiSettings}
-        geminiApiKey={geminiApiKey}
-        onUpdateAISettings={onUpdateAISettings}
-        onUpdateGeminiApiKey={onUpdateGeminiApiKey}
-      />
+      </CanvasHero>
+
+      <PageSection
+        eyebrow="Personal"
+        title="Daily targets"
+        meta={`${formatWaterVolume(normalizedGoals.waterTarget, normalizedGoals)} · ${trimNumber(normalizedGoals.sleepTarget, 1)}h sleep`}
+        className="settings-goals-section"
+      >
+        <GoalSettingsPanel goals={goals} onUpdateGoals={onUpdateGoals} />
+      </PageSection>
+
+      <PageSection
+        eyebrow="Connections"
+        title="Health data"
+        meta={healthStatus}
+        className="settings-health-section"
+      >
+        <ConnectedHealthPanel
+          connectedHealth={connectedHealth}
+          watchData={watchData}
+          onUpdateConnectedHealth={onUpdateConnectedHealth}
+          onCheckStatus={onCheckConnectedHealth}
+          onOpenSettings={onOpenConnectedHealthSettings}
+          onRequestPermissions={onRequestConnectedHealthPermissions}
+          onRequestAutomaticPermissions={onRequestAutomaticHealthPermissions}
+          onToggleAutomaticSync={onToggleAutomaticHealthSync}
+          onSync={onSyncConnectedHealth}
+        />
+      </PageSection>
+
+      <PageSection
+        eyebrow="Intelligence"
+        title="Coach"
+        meta={normalizedAI.useGemini ? "Gemini" : "On device"}
+        className="settings-ai-section"
+      >
+        <AISettingsPanel
+          aiSettings={aiSettings}
+          geminiApiKey={geminiApiKey}
+          onUpdateAISettings={onUpdateAISettings}
+          onUpdateGeminiApiKey={onUpdateGeminiApiKey}
+        />
+      </PageSection>
     </div>
   );
 }
@@ -6957,7 +7098,23 @@ function ConnectedHealthPanel({
 
   return (
     <div className="settings-stack connected-health-panel">
-      <SettingsSection title="Connected Health" meta={settings.enabled ? statusLabel : "Off"}>
+      <div className={`health-connection-summary ${settings.status}`}>
+        <span className="health-connection-orb" aria-hidden="true"><i /></span>
+        <div>
+          <small>Health Connect</small>
+          <strong>{settings.enabled ? statusLabel : "Import is off"}</strong>
+          <span>{settings.lastSyncAt ? `Last synced ${formatSettingsTimestamp(settings.lastSyncAt)}` : "Ready when your watch data is"}</span>
+        </div>
+        <button
+          type="button"
+          onClick={() => runAction("sync", onSync)}
+          disabled={busyAction === "sync" || !settings.enabled}
+        >
+          {busyAction === "sync" ? "Syncing" : "Sync"}
+        </button>
+      </div>
+
+      <SettingsSection title="Connection & Sync" meta={settings.enabled ? statusLabel : "Off"} collapsible defaultOpen={false}>
         <SettingsRow
           label="Source"
           value="Health Connect"
@@ -7088,7 +7245,7 @@ function ConnectedHealthPanel({
         </div>
       </SettingsSection>
 
-      <SettingsSection title="Health Data Integrity" meta={integrityLabel}>
+      <SettingsSection title="Health Data Integrity" meta={integrityLabel} collapsible defaultOpen={false}>
         <div className={`health-integrity-hero ${integrity.status === "healthy" ? "healthy" : integrity.status === "review" ? "review" : "waiting"}`}>
           <span className="health-integrity-mark" aria-hidden="true" />
           <span>
@@ -7134,7 +7291,7 @@ function ConnectedHealthPanel({
         />
       </SettingsSection>
 
-      <SettingsSection title="Watch Data Layers" meta={`${enabledMetrics.length}/${WATCH_METRIC_DEFINITIONS.length}`}>
+      <SettingsSection title="Watch Data Layers" meta={`${enabledMetrics.length}/${WATCH_METRIC_DEFINITIONS.length}`} collapsible defaultOpen={false}>
         <SettingsRow
           label="Stored"
           value={`${data.dailySummaries.length} days`}
@@ -7173,16 +7330,37 @@ function ConnectedHealthPanel({
   );
 }
 
-function SettingsSection({ title, meta, children }) {
-  return (
-    <section className="panel settings-section">
-      <div className="settings-section-head">
-        <span>{title}</span>
+function SettingsSection({ title, meta, children, collapsible = false, defaultOpen = true }) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
+  const headingContent = (
+    <>
+      <span>{title}</span>
+      <span className="settings-section-meta">
         {meta && <b>{meta}</b>}
-      </div>
-      <div className="settings-group">
-        {children}
-      </div>
+        {collapsible && <i className="settings-section-chevron" aria-hidden="true" />}
+      </span>
+    </>
+  );
+
+  return (
+    <section className={`panel settings-section ${collapsible ? "collapsible" : ""} ${isOpen ? "open" : "collapsed"}`.trim()}>
+      {collapsible ? (
+        <button
+          type="button"
+          className="settings-section-head settings-section-toggle"
+          aria-expanded={isOpen}
+          onClick={() => setIsOpen((current) => !current)}
+        >
+          {headingContent}
+        </button>
+      ) : (
+        <div className="settings-section-head">{headingContent}</div>
+      )}
+      {(!collapsible || isOpen) && (
+        <div className="settings-group">
+          {children}
+        </div>
+      )}
     </section>
   );
 }
@@ -7306,11 +7484,19 @@ function CoachProposalCard({ proposal, onReview }) {
   );
 }
 
-function CoachMessage({ message, onReviewProposal }) {
+function CoachMessage({ message, index = 0, onReviewProposal }) {
+  const [expanded, setExpanded] = useState(false);
+  const isLongMessage = String(message.text ?? "").length > 720;
+
   return (
-    <div className={`coach-message ${message.role}`}>
+    <div className={`coach-message ${message.role}`} style={{ "--message-index": index }}>
       <span>{message.role === "assistant" ? (message.source === "gemini" ? "Gemini" : "Coach") : "You"}</span>
-      <p>{message.text}</p>
+      <p className={isLongMessage && !expanded ? "collapsed" : ""}>{message.text}</p>
+      {isLongMessage && (
+        <button type="button" className="coach-message-expand" onClick={() => setExpanded((current) => !current)}>
+          {expanded ? "Show less" : "Show full response"}
+        </button>
+      )}
       {message.proposal && <CoachProposalCard proposal={message.proposal} onReview={onReviewProposal} />}
     </div>
   );
@@ -7416,11 +7602,17 @@ function CoachPage({ analytics, workout, aiSettings, geminiApiKey, coachMessages
   const [isThinking, setIsThinking] = useState(false);
   const [coachError, setCoachError] = useState("");
   const [retryMessage, setRetryMessage] = useState("");
+  const threadRef = useRef(null);
   const threadEndRef = useRef(null);
   const geminiReady = aiSettings.useGemini && geminiApiKey.trim();
+  const dailySnapshot = analytics.daily ?? {};
+  const buildSnapshot = analytics.workout?.buildAnalysis ?? {};
+  const coachScore = Math.round(Number(dailySnapshot.scoreAverage7) || 0);
+  const coachSignal = analytics.flags[0] ?? "Enough structure is in place for the coach to review your current plan.";
 
   useEffect(() => {
-    threadEndRef.current?.scrollIntoView({ block: "end" });
+    const thread = threadRef.current;
+    if (thread) thread.scrollTop = thread.scrollHeight;
   }, [messages.length, isThinking, coachError]);
 
   const commitMessages = (nextMessages) => {
@@ -7487,44 +7679,68 @@ function CoachPage({ analytics, workout, aiSettings, geminiApiKey, coachMessages
   };
 
   return (
-    <div className="screen coach-screen">
+    <div className="screen canvas-screen coach-screen coach-canvas-screen">
       <div className="topbar">
         <h1>Coach</h1>
       </div>
-      <CoachSnapshotPanel analytics={analytics} />
-      <div className="panel coach-thread-panel">
-        <SectionTitle title="Conversation" meta={geminiReady ? `Gemini / ${aiSettings.geminiModel}` : "local coach"} />
-        {coachError && (
-          <div className="coach-error">
-            <span>{coachError}</span>
-            {geminiReady && retryMessage && (
-              <button type="button" onClick={() => submitMessage(retryMessage)} disabled={isThinking}>
-                Retry Gemini
-              </button>
-            )}
-          </div>
-        )}
-        <div className="coach-thread">
-          {messages.map((message) => (
-            <CoachMessage key={message.id} message={message} onReviewProposal={setReviewProposal} />
-          ))}
-          {isThinking && (
-            <CoachTypingIndicator label={geminiReady ? "Gemini" : "Coach"} />
-          )}
-          <div ref={threadEndRef} />
+
+      <CanvasHero
+        label="Coach signal"
+        meta="Live archive data"
+        value={coachScore || "--"}
+        unit="7-day score"
+        progress={coachScore}
+        progressLabel="balance"
+        footLabel={coachSignal}
+        footValue={geminiReady ? "Gemini" : "On device"}
+        className="coach-canvas-hero"
+      >
+        <div className="coach-hero-signals">
+          <span><small>Sleep</small><strong>{dailySnapshot.sleepAverage7 ? `${trimNumber(dailySnapshot.sleepAverage7, 1)}h` : "--"}</strong></span>
+          <span><small>Water</small><strong>{Math.round(dailySnapshot.waterPercentAverage7 || 0)}%</strong></span>
+          <span><small>Build</small><strong>{buildSnapshot.readiness || "--"}</strong></span>
         </div>
-        <form className="coach-compose" onSubmit={(event) => {
-          event.preventDefault();
-          submitMessage();
-        }}>
-          <input
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            placeholder="Talk to the coach..."
-          />
-          <button type="submit" disabled={isThinking}>{isThinking ? "..." : "Send"}</button>
-        </form>
-      </div>
+      </CanvasHero>
+
+      <PageSection
+        eyebrow="Conversation"
+        title="Archive Coach"
+        meta={geminiReady ? aiSettings.geminiModel : "Local coach"}
+        className="coach-conversation-section"
+      >
+        <div className="panel coach-thread-panel">
+          {coachError && (
+            <div className="coach-error">
+              <span>{coachError}</span>
+              {geminiReady && retryMessage && (
+                <button type="button" onClick={() => submitMessage(retryMessage)} disabled={isThinking}>
+                  Retry Gemini
+                </button>
+              )}
+            </div>
+          )}
+          <div className="coach-thread" ref={threadRef}>
+            {messages.map((message, index) => (
+              <CoachMessage key={message.id} message={message} index={index} onReviewProposal={setReviewProposal} />
+            ))}
+            {isThinking && (
+              <CoachTypingIndicator label={geminiReady ? "Gemini" : "Coach"} />
+            )}
+            <div ref={threadEndRef} />
+          </div>
+          <form className="coach-compose" onSubmit={(event) => {
+            event.preventDefault();
+            submitMessage();
+          }}>
+            <input
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              placeholder="Ask about your health or training..."
+            />
+            <button type="submit" disabled={isThinking} aria-label="Send message">{isThinking ? "..." : "↑"}</button>
+          </form>
+        </div>
+      </PageSection>
       {reviewProposal && (
         <CoachProposalReview
           proposal={reviewProposal}
@@ -7599,7 +7815,7 @@ function GoalSettingsPanel({ goals, onUpdateGoals }) {
           </div>
         </SettingsRow>
       </SettingsSection>
-      <SettingsSection title="Scoring">
+      <SettingsSection title="Scoring" meta="Weights" collapsible defaultOpen={false}>
         <SettingsRow label="Habits">
           <div className="goal-combo">
             <input type="number" min="0" max="100" value={normalizedGoals.weights.habits} onChange={(event) => updateWeight("habits", event.target.value)} />
