@@ -4,6 +4,7 @@ Release APKs are immutable. If a packaged build changes, Archive receives a new 
 
 | Version | Release date | APK | Summary | Source reference |
 | --- | --- | --- | --- | --- |
+| 0.6.0 | 2026-07-14 | `Archive-v0.6.0.apk` | Lifecycle-aware automatic Health Connect refresh with durable hourly background snapshots. | `main`, tag `v0.6.0` |
 | 0.5.0 | 2026-07-14 | `Archive-v0.5.0.apk` | Canonical health archive with provenance, authoritative reconciliation, integrity diagnostics, and stable watch-first sleep. | `main`, tag `v0.5.0` |
 | 0.4.3 | 2026-07-14 | `Archive-v0.4.3.apk` | Previous-day sleep attribution with authoritative watch-sync precedence. | `main`, tag `v0.4.3` |
 | 0.4.2 | 2026-07-14 | `Archive-v0.4.2.apk` | Watch-first sleep entry with manual fallback and start-night attribution. | `main`, tag `v0.4.2` |
@@ -14,6 +15,19 @@ Release APKs are immutable. If a packaged build changes, Archive receives a new 
 | 0.2.1 | 2026-07-13 | `Archive-v0.2.1.apk` | Restores Archive's signature gradient on compact charts while preserving solid dense-data views. | `main`, tag `v0.2.1` |
 | 0.2.0 | 2026-07-13 | `Archive-v0.2.0.apk` | Archive Design System 2.0 with premium Home, Sleep, Settings, chart, surface, and navigation refinements. | `main`, tag `v0.2.0` |
 | 0.1.0 | 2026-07-13 | `Archive-v0.1.0.apk` | Formal baseline of the current productivity, health, workout, AI coach, and Health Connect experience. | `main`, tag `v0.1.0` |
+
+## 0.6.0 - Automatic connected health
+
+- APK filename: `Archive-v0.6.0.apk`
+- Local archive: `releases/v0.6.0/Archive-v0.6.0.apk`
+- Google Drive archive: `Archive Productivity Tracker/Releases/v0.6.0/Archive-v0.6.0.apk`
+- GitHub reference: `main`, tag `v0.6.0`
+- SHA-256: `d82898465e01c21ef8bd7ca6be2d95e89d61cda5103915d34839155ee2df9f01`
+- Summary: Makes Health Connect synchronization automatic when Archive opens, remains active, or is allowed to run periodic background work.
+- Main UI changes: Connected Health Settings now exposes automatic-sync control, background-access state, cadence guidance, last automatic refresh, last background capture, and a dedicated background permission action.
+- Structural changes: shared native canonical reader, WorkManager scheduler, separate background permission, atomic private snapshot cache, persisted scheduler diagnostics, Capacitor lifecycle integration, and an apply-then-ack handoff protocol.
+- Functional changes: launch and resume reconciliation, 15-minute active-app throttling, inexact hourly background snapshots, 3-day frequent windows, six-hour full 30-day cleanup passes, retry-safe idempotence, and foreground-only fallback when background access is unavailable.
+- Known issues: Android may defer background work under Doze or manufacturer battery policies, background access requires separate user approval, upstream watch data must first reach Health Connect, and iOS/Apple Health support remains future work.
 
 ## 0.5.0 - Definitive health foundation
 

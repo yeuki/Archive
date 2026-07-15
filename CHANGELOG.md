@@ -4,6 +4,37 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-14
+
+### Added
+
+- Added automatic Health Connect refresh whenever Archive launches or returns to the foreground, plus throttled refreshes every 15 minutes while the app remains active.
+- Added Android background-read permission support and an inexact hourly WorkManager schedule for devices that expose Health Connect background access.
+- Added a crash-safe native snapshot handoff: background reads are written atomically, reconciled into Archive's canonical health store on resume, and acknowledged only after local persistence.
+- Added Automatic sync, Background access, Last automatic, and background-capture status to Connected Health Settings, with a dedicated permission action.
+- Added focused automatic-sync verification for migration defaults, bounded reconciliation windows, manifest permissions, worker scheduling, and durable snapshot handoff.
+
+### Changed
+
+- Shared one canonical native snapshot reader between foreground and background imports so source identity, previous-day sleep ownership, timezone handling, and completeness metadata cannot drift between paths.
+- Frequent foreground and background refreshes use a recent 3-day window, while Archive performs a full authoritative 30-day correction and deletion pass at least every six hours while active.
+- Existing users with Health Connect import enabled migrate to automatic foreground refresh; an explicit automatic-sync opt-out remains preserved.
+- Added Capacitor's native app lifecycle bridge so Android resume events trigger reconciliation directly, with browser visibility retained as a fallback.
+- Pinned WorkManager to the Kotlin 1.9-compatible 2.9 release line instead of forcing a project-wide Kotlin migration.
+
+### Fixed
+
+- Prevented unapplied background snapshots from being discarded if Archive is interrupted while reconciling local state.
+- Prevented short background windows from suppressing older Health Connect corrections by tracking full-window reconciliation separately.
+- Kept automatic imports idempotent across repeated resumes, duplicate lifecycle events, and retries after process interruption.
+
+### Known issues and unfinished work
+
+- Android schedules background work opportunistically; hourly checks can be delayed by Doze, battery restrictions, manufacturer policies, or Health Connect availability.
+- Background sync requires a separate user-granted Health Connect permission. Without it, launch, resume, and active-app refresh still work automatically.
+- Archive can only import data already shared into Health Connect; Samsung Health and the watch retain control of their own upstream sync timing.
+- Health Connect remains Android-only; Apple Health integration and iOS packaging are future work.
+
 ## [0.5.0] - 2026-07-14
 
 ### Added
@@ -218,7 +249,8 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 - The visual system is functional and consistent but has not yet received the planned premium design-system refinement.
 - iOS packaging and Apple Health integration are future work.
 
-[Unreleased]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.4.3...v0.5.0
 [0.4.3]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.4.1...v0.4.2

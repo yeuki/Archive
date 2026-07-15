@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Capacitor, registerPlugin } from "@capacitor/core";
+import { App as CapacitorApp } from "@capacitor/app";
 import { renderBodyMapSvg } from "./assets/bodymap.js";
 import pencilIcon from "./assets/pencil-icon.png";
 
@@ -93,6 +94,10 @@ const WATCH_METRIC_DEFINITIONS = [
 ];
 const HEALTH_DATA_SCHEMA_VERSION = 1;
 const HEALTH_POLICY_VERSION = "archive-health-1";
+const AUTOMATIC_HEALTH_FOREGROUND_INTERVAL_MS = 15 * 60 * 1000;
+const AUTOMATIC_HEALTH_FULL_RECONCILE_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const AUTOMATIC_HEALTH_BACKGROUND_INTERVAL_MINUTES = 60;
+const AUTOMATIC_HEALTH_BACKGROUND_SNAPSHOT_DAYS = 3;
 const HEALTH_SLEEP_DATE_POLICY = "previous-day-from-wake";
 const DEFAULT_HEALTH_SYSTEM = {
   schemaVersion: HEALTH_DATA_SCHEMA_VERSION,
@@ -155,6 +160,23 @@ const DEFAULT_CONNECTED_HEALTH = {
   systemIntegrated: false,
   packageInstalled: false,
   settingsResolvable: false,
+  automaticSyncEnabled: false,
+  automaticSyncStatus: "off",
+  automaticSyncMessage: "",
+  automaticSyncIntervalMinutes: AUTOMATIC_HEALTH_BACKGROUND_INTERVAL_MINUTES,
+  automaticSyncSnapshotDays: AUTOMATIC_HEALTH_BACKGROUND_SNAPSHOT_DAYS,
+  automaticSyncScheduled: false,
+  backgroundReadAvailable: false,
+  backgroundReadGranted: false,
+  lastAutomaticAttemptAt: "",
+  lastAutomaticSyncAt: "",
+  lastForegroundSyncAt: "",
+  lastBackgroundSyncAt: "",
+  lastAutomaticAppliedAt: "",
+  pendingAutomaticSync: false,
+  pendingAutomaticSnapshotId: "",
+  pendingAutomaticCapturedAt: "",
+  lastAppliedAutomaticSnapshotId: "",
   metrics: Object.fromEntries(WATCH_METRIC_DEFINITIONS.map((metric) => [metric.id, metric.defaultEnabled])),
 };
 const DEFAULT_WATCH_DATA = {
@@ -848,6 +870,7 @@ function normalizeAISettings(settings = {}) {
 function normalizeConnectedHealth(settings = {}) {
   const source = settings && typeof settings === "object" ? settings : {};
   const statusOptions = new Set(["notChecked", "available", "unavailable", "error", "opened", "webPreview", "permissionsNeeded", "synced"]);
+  const automaticStatusOptions = new Set(["off", "scheduled", "running", "captured", "synced", "permissionNeeded", "foregroundOnly", "error"]);
   const rawMetrics = source.metrics ?? {};
   const metrics = Object.fromEntries(WATCH_METRIC_DEFINITIONS.map((metric) => {
     const rawValue = rawMetrics[metric.id];
@@ -874,8 +897,75 @@ function normalizeConnectedHealth(settings = {}) {
     systemIntegrated: Boolean(source.systemIntegrated),
     packageInstalled: Boolean(source.packageInstalled),
     settingsResolvable: Boolean(source.settingsResolvable),
+    automaticSyncEnabled: source.automaticSyncEnabled === undefined
+      ? Boolean(source.enabled)
+      : Boolean(source.automaticSyncEnabled),
+    automaticSyncStatus: automaticStatusOptions.has(source.automaticSyncStatus)
+      ? source.automaticSyncStatus
+      : DEFAULT_CONNECTED_HEALTH.automaticSyncStatus,
+    automaticSyncMessage: String(source.automaticSyncMessage ?? "").trim().slice(0, 300),
+    automaticSyncIntervalMinutes: clamp(
+      Number(source.automaticSyncIntervalMinutes) || DEFAULT_CONNECTED_HEALTH.automaticSyncIntervalMinutes,
+      15,
+      1440,
+    ),
+    automaticSyncSnapshotDays: clamp(
+      Number(source.automaticSyncSnapshotDays) || DEFAULT_CONNECTED_HEALTH.automaticSyncSnapshotDays,
+      1,
+      7,
+    ),
+    automaticSyncScheduled: Boolean(source.automaticSyncScheduled),
+    backgroundReadAvailable: Boolean(source.backgroundReadAvailable),
+    backgroundReadGranted: Boolean(source.backgroundReadGranted),
+    lastAutomaticAttemptAt: normalizeTimestamp(source.lastAutomaticAttemptAt),
+    lastAutomaticSyncAt: normalizeTimestamp(source.lastAutomaticSyncAt),
+    lastForegroundSyncAt: normalizeTimestamp(source.lastForegroundSyncAt),
+    lastBackgroundSyncAt: normalizeTimestamp(source.lastBackgroundSyncAt),
+    lastAutomaticAppliedAt: normalizeTimestamp(source.lastAutomaticAppliedAt),
+    pendingAutomaticSync: Boolean(source.pendingAutomaticSync),
+    pendingAutomaticSnapshotId: String(source.pendingAutomaticSnapshotId ?? "").trim().slice(0, 100),
+    pendingAutomaticCapturedAt: normalizeTimestamp(source.pendingAutomaticCapturedAt),
+    lastAppliedAutomaticSnapshotId: String(source.lastAppliedAutomaticSnapshotId ?? "").trim().slice(0, 100),
     metrics,
   };
+}
+
+function nativeAutomaticHealthPatch(payload = {}) {
+  const source = payload && typeof payload === "object" ? payload : {};
+  const patch = {};
+  const has = (key) => Object.prototype.hasOwnProperty.call(source, key);
+  const booleanKeys = [
+    "automaticSyncScheduled",
+    "backgroundReadAvailable",
+    "backgroundReadGranted",
+    "pendingAutomaticSync",
+  ];
+  const timestampKeys = [
+    "lastAutomaticAttemptAt",
+    "lastAutomaticSyncAt",
+    "lastBackgroundSyncAt",
+    "lastAutomaticAppliedAt",
+    "pendingAutomaticCapturedAt",
+  ];
+
+  booleanKeys.forEach((key) => {
+    if (has(key)) patch[key] = Boolean(source[key]);
+  });
+  timestampKeys.forEach((key) => {
+    if (has(key)) patch[key] = normalizeTimestamp(source[key]);
+  });
+  if (has("automaticSyncStatus")) patch.automaticSyncStatus = String(source.automaticSyncStatus ?? "").trim();
+  if (has("automaticSyncMessage")) patch.automaticSyncMessage = String(source.automaticSyncMessage ?? "").trim().slice(0, 300);
+  if (has("automaticSyncIntervalMinutes")) {
+    patch.automaticSyncIntervalMinutes = clamp(Number(source.automaticSyncIntervalMinutes) || 60, 15, 1440);
+  }
+  if (has("automaticSyncSnapshotDays")) {
+    patch.automaticSyncSnapshotDays = clamp(Number(source.automaticSyncSnapshotDays) || 3, 1, 7);
+  }
+  if (has("pendingAutomaticSnapshotId")) {
+    patch.pendingAutomaticSnapshotId = String(source.pendingAutomaticSnapshotId ?? "").trim().slice(0, 100);
+  }
+  return patch;
 }
 
 function validDateKey(value) {
@@ -6682,6 +6772,27 @@ function connectedHealthStatusDetail(settings) {
   return "Check the connection from your phone before importing watch data.";
 }
 
+function connectedHealthAutomaticLabel(settings) {
+  const normalized = normalizeConnectedHealth(settings);
+  if (!normalized.enabled || !normalized.automaticSyncEnabled) return "Off";
+  if (normalized.backgroundReadGranted && normalized.automaticSyncScheduled) return "Hourly";
+  return "On open";
+}
+
+function connectedHealthAutomaticDetail(settings) {
+  const normalized = normalizeConnectedHealth(settings);
+  if (!normalized.enabled || !normalized.automaticSyncEnabled) {
+    return "Turn this on to refresh when Archive opens and while it remains active.";
+  }
+  if (normalized.backgroundReadGranted && normalized.automaticSyncScheduled) {
+    return "Refreshes on open, every 15 minutes while active, and approximately hourly in the background.";
+  }
+  if (normalized.backgroundReadAvailable) {
+    return "Foreground refresh is active. Allow background access to add approximately hourly checks while Archive is closed.";
+  }
+  return "Refreshes on open and every 15 minutes while active; this device does not offer background Health Connect reads.";
+}
+
 function formatSettingsTimestamp(value) {
   if (!value) return "Never";
   const parsed = new Date(value);
@@ -6736,6 +6847,8 @@ function SettingsPage({
   onCheckConnectedHealth,
   onOpenConnectedHealthSettings,
   onRequestConnectedHealthPermissions,
+  onRequestAutomaticHealthPermissions,
+  onToggleAutomaticHealthSync,
   onSyncConnectedHealth,
   onUpdateAISettings,
   onUpdateGeminiApiKey,
@@ -6766,6 +6879,8 @@ function SettingsPage({
         onCheckStatus={onCheckConnectedHealth}
         onOpenSettings={onOpenConnectedHealthSettings}
         onRequestPermissions={onRequestConnectedHealthPermissions}
+        onRequestAutomaticPermissions={onRequestAutomaticHealthPermissions}
+        onToggleAutomaticSync={onToggleAutomaticHealthSync}
         onSync={onSyncConnectedHealth}
       />
       <AISettingsPanel
@@ -6778,7 +6893,17 @@ function SettingsPage({
   );
 }
 
-function ConnectedHealthPanel({ connectedHealth, watchData, onUpdateConnectedHealth, onCheckStatus, onOpenSettings, onRequestPermissions, onSync }) {
+function ConnectedHealthPanel({
+  connectedHealth,
+  watchData,
+  onUpdateConnectedHealth,
+  onCheckStatus,
+  onOpenSettings,
+  onRequestPermissions,
+  onRequestAutomaticPermissions,
+  onToggleAutomaticSync,
+  onSync,
+}) {
   const [busyAction, setBusyAction] = useState("");
   const settings = normalizeConnectedHealth(connectedHealth);
   const data = normalizeWatchData(watchData);
@@ -6848,6 +6973,27 @@ function ConnectedHealthPanel({ connectedHealth, watchData, onUpdateConnectedHea
           </button>
         </SettingsRow>
         <SettingsRow
+          label="Automatic sync"
+          value={connectedHealthAutomaticLabel(settings)}
+          detail={connectedHealthAutomaticDetail(settings)}
+        >
+          <button
+            type="button"
+            className={`settings-pill-toggle ${settings.enabled && settings.automaticSyncEnabled ? "active" : ""}`}
+            onClick={() => runAction("automatic", () => onToggleAutomaticSync?.(!(settings.enabled && settings.automaticSyncEnabled)))}
+            disabled={busyAction === "automatic"}
+          >
+            {settings.enabled && settings.automaticSyncEnabled ? "On" : "Off"}
+          </button>
+        </SettingsRow>
+        <SettingsRow
+          label="Background access"
+          value={settings.backgroundReadAvailable
+            ? settings.backgroundReadGranted ? "Granted" : "Needed"
+            : "Foreground only"}
+          detail={settings.automaticSyncMessage || "Android controls whether Archive may read Health Connect while closed."}
+        />
+        <SettingsRow
           label="Status"
           value={statusLabel}
           detail={connectedHealthStatusDetail(settings)}
@@ -6865,7 +7011,14 @@ function ConnectedHealthPanel({ connectedHealth, watchData, onUpdateConnectedHea
         <SettingsRow
           label="Last sync"
           value={formatSettingsTimestamp(settings.lastSyncAt)}
-          detail="Reconciles corrections and deletions across the recent 30-day access window."
+          detail="Recent automatic refreshes are paired with a full 30-day correction and deletion pass every six hours."
+        />
+        <SettingsRow
+          label="Last automatic"
+          value={formatSettingsTimestamp(settings.lastAutomaticSyncAt)}
+          detail={settings.lastBackgroundSyncAt
+            ? `Last background capture ${formatSettingsTimestamp(settings.lastBackgroundSyncAt)}.`
+            : "Established after the first successful automatic refresh."}
         />
         <div className="settings-option-list">
           <button
@@ -6892,6 +7045,22 @@ function ConnectedHealthPanel({ connectedHealth, watchData, onUpdateConnectedHea
             </span>
             <b>Review</b>
           </button>
+          {settings.automaticSyncEnabled && settings.backgroundReadAvailable && (
+            <button
+              type="button"
+              className="settings-option"
+              onClick={() => runAction("automaticPermissions", onRequestAutomaticPermissions)}
+              disabled={busyAction === "automaticPermissions"}
+            >
+              <span>
+                <strong>{busyAction === "automaticPermissions"
+                  ? "Requesting..."
+                  : settings.backgroundReadGranted ? "Review background access" : "Allow background sync"}</strong>
+                <small>Let Archive make inexact hourly Health Connect checks when the app is closed.</small>
+              </span>
+              <b>{settings.backgroundReadGranted ? "Review" : "Allow"}</b>
+            </button>
+          )}
           <button
             type="button"
             className="settings-option"
@@ -8721,6 +8890,8 @@ export {
   createCoachWorkoutProposal,
   mergeWatchData,
   mergeWatchSleepIntoEntries,
+  nativeAutomaticHealthPatch,
+  normalizeConnectedHealth,
   normalizeHealthSystem,
   normalizeWatchData,
   normalizeWorkoutState,
@@ -8746,6 +8917,10 @@ export default function App() {
   const backupNoticeTimer = useRef(null);
   const importInputRef = useRef(null);
   const lastScrollPosition = useRef(0);
+  const latestStateRef = useRef(state);
+  const automaticHealthSyncInFlightRef = useRef(false);
+  const lastHealthSyncAtRef = useRef(0);
+  latestStateRef.current = state;
   const weekDays = useMemo(() => buildWeek(state.entries), [state.entries]);
   const trackedHabitNames = (state.trackedHabits ?? state.habitNames).filter((habit) => state.habitNames.includes(habit));
   const goals = normalizeGoals(state.goals);
@@ -9071,6 +9246,7 @@ export default function App() {
         systemIntegrated: Boolean(status?.systemIntegrated),
         packageInstalled: Boolean(status?.packageInstalled),
         settingsResolvable: Boolean(status?.settingsResolvable),
+        ...nativeAutomaticHealthPatch(nativeStatus),
       });
     } catch (error) {
       updateConnectedHealth({
@@ -9114,6 +9290,7 @@ export default function App() {
         systemIntegrated: Boolean(result?.systemIntegrated),
         packageInstalled: Boolean(result?.packageInstalled),
         settingsResolvable: Boolean(result?.settingsResolvable),
+        ...nativeAutomaticHealthPatch(result),
       });
     } catch (error) {
       updateConnectedHealth({
@@ -9125,8 +9302,137 @@ export default function App() {
     }
   };
 
-  const syncConnectedHealth = async () => {
+  const requestAutomaticHealthPermissions = async () => {
+    const requestedAt = new Date().toISOString();
+    const isNative = typeof Capacitor.isNativePlatform === "function" && Capacitor.isNativePlatform();
+
+    if (!isNative) {
+      updateConnectedHealth({
+        enabled: true,
+        automaticSyncEnabled: true,
+        status: "webPreview",
+        statusMessage: "Background Health Connect access is requested from the Android app.",
+        platform: "web",
+        lastCheckedAt: requestedAt,
+      });
+      return;
+    }
+
+    try {
+      const result = await ConnectedHealthNative.requestAutomaticSyncPermissions();
+      const permissionsGranted = Boolean(result?.allGranted ?? result?.permissionsGranted);
+      updateConnectedHealth({
+        enabled: true,
+        automaticSyncEnabled: true,
+        status: permissionsGranted ? "available" : "permissionsNeeded",
+        statusMessage: String(result?.message ?? "Automatic Health Connect permissions updated.").trim(),
+        platform: String(result?.platform ?? Capacitor.getPlatform?.() ?? "android"),
+        lastCheckedAt: requestedAt,
+        permissionsGranted,
+        grantedPermissions: result?.grantedPermissions ?? [],
+        missingPermissions: result?.missingPermissions ?? [],
+        requestedPermissions: result?.requestedPermissions ?? [],
+        systemIntegrated: Boolean(result?.systemIntegrated),
+        packageInstalled: Boolean(result?.packageInstalled),
+        settingsResolvable: Boolean(result?.settingsResolvable),
+        ...nativeAutomaticHealthPatch(result),
+      });
+    } catch (error) {
+      updateConnectedHealth({
+        automaticSyncStatus: "error",
+        automaticSyncMessage: error?.message
+          ? `Could not request background health access: ${error.message}`
+          : "Archive could not request background Health Connect access.",
+        platform: String(Capacitor.getPlatform?.() ?? "android"),
+        lastCheckedAt: requestedAt,
+      });
+    }
+  };
+
+  const toggleAutomaticHealthSync = async (nextEnabled) => {
+    const enabled = Boolean(nextEnabled);
+    const isNative = typeof Capacitor.isNativePlatform === "function" && Capacitor.isNativePlatform();
+    updateConnectedHealth({
+      ...(enabled ? { enabled: true } : {}),
+      automaticSyncEnabled: enabled,
+      automaticSyncStatus: enabled ? "scheduled" : "off",
+      automaticSyncMessage: enabled
+        ? "Automatic foreground refresh is enabled."
+        : "Automatic health sync is off.",
+    });
+
+    if (!isNative) return;
+    try {
+      const result = await ConnectedHealthNative.configureAutomaticSync({
+        enabled,
+        intervalMinutes: AUTOMATIC_HEALTH_BACKGROUND_INTERVAL_MINUTES,
+        snapshotDays: AUTOMATIC_HEALTH_BACKGROUND_SNAPSHOT_DAYS,
+      });
+      updateConnectedHealth(nativeAutomaticHealthPatch(result));
+      if (enabled && result?.backgroundReadAvailable && !result?.backgroundReadGranted) {
+        await requestAutomaticHealthPermissions();
+      }
+    } catch (error) {
+      updateConnectedHealth({
+        automaticSyncStatus: "error",
+        automaticSyncMessage: error?.message
+          ? `Automatic sync could not be configured: ${error.message}`
+          : "Archive could not configure automatic health sync.",
+      });
+    }
+  };
+
+  const reconcileConnectedHealthSnapshot = (result, {
+    checkedAt = new Date().toISOString(),
+    automaticSnapshotId = "",
+    statusMessage = "",
+  } = {}) => {
+    setTrackerState((current) => {
+      const currentConnectedHealth = normalizeConnectedHealth(current.connectedHealth);
+      const syncedAt = typeof result?.syncedAt === "string" ? result.syncedAt : checkedAt;
+      const reconciledWatchData = mergeWatchData(current.watchData, result);
+
+      return {
+        ...current,
+        entries: mergeWatchSleepIntoEntries(current.entries, reconciledWatchData, current.habitNames),
+        connectedHealth: normalizeConnectedHealth({
+          ...currentConnectedHealth,
+          ...nativeAutomaticHealthPatch(result),
+          enabled: true,
+          status: result?.synced ? "synced" : "available",
+          statusMessage: String(statusMessage || result?.message || "Health Connect data synced.").trim(),
+          platform: String(result?.platform ?? Capacitor.getPlatform?.() ?? "android"),
+          lastCheckedAt: checkedAt,
+          lastSyncAt: syncedAt,
+          ...(Number(result?.days) >= 30 ? { lastForegroundSyncAt: syncedAt } : {}),
+          permissionsGranted: true,
+          grantedPermissions: result?.grantedPermissions ?? currentConnectedHealth.grantedPermissions,
+          missingPermissions: result?.missingPermissions ?? [],
+          requestedPermissions: result?.requestedPermissions ?? currentConnectedHealth.requestedPermissions,
+          systemIntegrated: result?.systemIntegrated === undefined
+            ? currentConnectedHealth.systemIntegrated
+            : Boolean(result.systemIntegrated),
+          packageInstalled: result?.packageInstalled === undefined
+            ? currentConnectedHealth.packageInstalled
+            : Boolean(result.packageInstalled),
+          settingsResolvable: result?.settingsResolvable === undefined
+            ? currentConnectedHealth.settingsResolvable
+            : Boolean(result.settingsResolvable),
+          ...(automaticSnapshotId ? {
+            lastAppliedAutomaticSnapshotId: automaticSnapshotId,
+            pendingAutomaticSync: true,
+            pendingAutomaticSnapshotId: automaticSnapshotId,
+          } : {}),
+          metrics: currentConnectedHealth.metrics,
+        }),
+        watchData: reconciledWatchData,
+      };
+    });
+  };
+
+  const syncConnectedHealth = async ({ automatic = false, days = 30 } = {}) => {
     const checkedAt = new Date().toISOString();
+    const syncDays = clamp(Math.round(Number(days) || 30), 1, 30);
     const isNative = typeof Capacitor.isNativePlatform === "function" && Capacitor.isNativePlatform();
 
     if (!isNative) {
@@ -9141,7 +9447,10 @@ export default function App() {
     }
 
     try {
-      const result = await ConnectedHealthNative.syncRecentData({ days: 30 });
+      const result = await ConnectedHealthNative.syncRecentData({
+        days: syncDays,
+        trigger: automatic ? "foregroundAuto" : "manual",
+      });
       const permissionsGranted = Boolean(result?.allGranted ?? result?.permissionsGranted);
 
       if (result?.needsPermissions || !permissionsGranted) {
@@ -9159,38 +9468,19 @@ export default function App() {
           systemIntegrated: Boolean(result?.systemIntegrated),
           packageInstalled: Boolean(result?.packageInstalled),
           settingsResolvable: Boolean(result?.settingsResolvable),
+          ...nativeAutomaticHealthPatch(result),
         });
         return { ok: false, status: "permissionsNeeded", message };
       }
 
-      setTrackerState((current) => {
-        const currentConnectedHealth = normalizeConnectedHealth(current.connectedHealth);
-        const syncedAt = typeof result?.syncedAt === "string" ? result.syncedAt : checkedAt;
-        const reconciledWatchData = mergeWatchData(current.watchData, result);
-
-        return {
-          ...current,
-          entries: mergeWatchSleepIntoEntries(current.entries, reconciledWatchData, current.habitNames),
-          connectedHealth: normalizeConnectedHealth({
-            ...currentConnectedHealth,
-            enabled: true,
-            status: result?.synced ? "synced" : "available",
-            statusMessage: String(result?.message ?? "Health Connect data synced.").trim(),
-            platform: String(result?.platform ?? Capacitor.getPlatform?.() ?? "android"),
-            lastCheckedAt: checkedAt,
-            lastSyncAt: syncedAt,
-            permissionsGranted: true,
-            grantedPermissions: result?.grantedPermissions ?? currentConnectedHealth.grantedPermissions,
-            missingPermissions: result?.missingPermissions ?? [],
-            requestedPermissions: result?.requestedPermissions ?? currentConnectedHealth.requestedPermissions,
-            systemIntegrated: Boolean(result?.systemIntegrated),
-            packageInstalled: Boolean(result?.packageInstalled),
-            settingsResolvable: Boolean(result?.settingsResolvable),
-            metrics: currentConnectedHealth.metrics,
-          }),
-          watchData: reconciledWatchData,
-        };
+      reconcileConnectedHealthSnapshot(result, {
+        checkedAt,
+        statusMessage: automatic
+          ? "Health data refreshed automatically."
+          : String(result?.message ?? "Health Connect data synced.").trim(),
       });
+      const syncedAt = Date.parse(result?.syncedAt ?? checkedAt);
+      lastHealthSyncAtRef.current = Number.isFinite(syncedAt) ? syncedAt : Date.now();
       return {
         ok: true,
         status: result?.synced ? "synced" : "available",
@@ -9242,6 +9532,154 @@ export default function App() {
       });
     }
   };
+
+  const reconcilePendingAutomaticHealth = async () => {
+    const pendingResult = await ConnectedHealthNative.getPendingAutomaticSync();
+    updateConnectedHealth(nativeAutomaticHealthPatch(pendingResult));
+    const payload = pendingResult?.payload;
+    const snapshotId = String(
+      payload?.automaticSnapshotId
+        ?? pendingResult?.pendingAutomaticSnapshotId
+        ?? "",
+    ).trim();
+
+    if (!pendingResult?.pending || !payload || !snapshotId) {
+      return { applied: false, syncedAt: pendingResult?.lastAutomaticSyncAt ?? "" };
+    }
+
+    const currentHealth = normalizeConnectedHealth(latestStateRef.current.connectedHealth);
+    if (currentHealth.lastAppliedAutomaticSnapshotId === snapshotId) {
+      await ConnectedHealthNative.acknowledgeAutomaticSync({ snapshotId });
+      const status = await ConnectedHealthNative.getAutomaticSyncStatus().catch(() => null);
+      if (status) updateConnectedHealth(nativeAutomaticHealthPatch(status));
+      return { applied: false, syncedAt: payload?.syncedAt ?? pendingResult?.lastAutomaticSyncAt ?? "" };
+    }
+
+    reconcileConnectedHealthSnapshot(payload, {
+      checkedAt: new Date().toISOString(),
+      automaticSnapshotId: snapshotId,
+      statusMessage: "Applied a background Health Connect update.",
+    });
+    return { applied: true, syncedAt: payload?.syncedAt ?? pendingResult?.lastAutomaticSyncAt ?? "" };
+  };
+
+  const runAutomaticHealthSync = async ({ force = false } = {}) => {
+    const isNative = typeof Capacitor.isNativePlatform === "function" && Capacitor.isNativePlatform();
+    const currentSettings = normalizeConnectedHealth(latestStateRef.current.connectedHealth);
+    if (!isNative || !currentSettings.enabled || !currentSettings.automaticSyncEnabled) return;
+    if (automaticHealthSyncInFlightRef.current) return;
+
+    automaticHealthSyncInFlightRef.current = true;
+    try {
+      const pending = await reconcilePendingAutomaticHealth();
+      const now = Date.now();
+      const lastFullReconcileAt = Date.parse(currentSettings.lastForegroundSyncAt);
+      const fullReconcileDue = !Number.isFinite(lastFullReconcileAt)
+        || now - lastFullReconcileAt >= AUTOMATIC_HEALTH_FULL_RECONCILE_INTERVAL_MS;
+      if (fullReconcileDue) {
+        await syncConnectedHealth({ automatic: true, days: 30 });
+        return;
+      }
+
+      const timestamps = [
+        lastHealthSyncAtRef.current,
+        Date.parse(currentSettings.lastAutomaticSyncAt),
+        Date.parse(currentSettings.lastSyncAt),
+        Date.parse(pending.syncedAt),
+      ].filter(Number.isFinite);
+      const latestSyncAt = timestamps.length ? Math.max(...timestamps) : 0;
+      if (!force && latestSyncAt && now - latestSyncAt < AUTOMATIC_HEALTH_FOREGROUND_INTERVAL_MS) return;
+
+      await syncConnectedHealth({ automatic: true, days: AUTOMATIC_HEALTH_BACKGROUND_SNAPSHOT_DAYS });
+    } catch (error) {
+      updateConnectedHealth({
+        automaticSyncStatus: "error",
+        automaticSyncMessage: error?.message
+          ? `Automatic Health Connect refresh failed: ${error.message}`
+          : "Automatic Health Connect refresh failed.",
+      });
+    } finally {
+      automaticHealthSyncInFlightRef.current = false;
+    }
+  };
+
+  useEffect(() => {
+    const isNative = typeof Capacitor.isNativePlatform === "function" && Capacitor.isNativePlatform();
+    if (!isNative) return undefined;
+    let cancelled = false;
+
+    ConnectedHealthNative.configureAutomaticSync({
+      enabled: connectedHealth.enabled && connectedHealth.automaticSyncEnabled,
+      intervalMinutes: AUTOMATIC_HEALTH_BACKGROUND_INTERVAL_MINUTES,
+      snapshotDays: AUTOMATIC_HEALTH_BACKGROUND_SNAPSHOT_DAYS,
+    }).then((result) => {
+      if (!cancelled) updateConnectedHealth(nativeAutomaticHealthPatch(result));
+    }).catch((error) => {
+      if (!cancelled) {
+        updateConnectedHealth({
+          automaticSyncStatus: "error",
+          automaticSyncMessage: error?.message || "Archive could not configure automatic Health Connect sync.",
+        });
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [connectedHealth.enabled, connectedHealth.automaticSyncEnabled, connectedHealth.backgroundReadGranted]);
+
+  useEffect(() => {
+    const snapshotId = connectedHealth.lastAppliedAutomaticSnapshotId;
+    const isNative = typeof Capacitor.isNativePlatform === "function" && Capacitor.isNativePlatform();
+    if (!isNative || !snapshotId) return undefined;
+    let cancelled = false;
+
+    ConnectedHealthNative.acknowledgeAutomaticSync({ snapshotId })
+      .then(() => ConnectedHealthNative.getAutomaticSyncStatus())
+      .then((status) => {
+        if (!cancelled) updateConnectedHealth(nativeAutomaticHealthPatch(status));
+      })
+      .catch(() => {
+        // The snapshot remains native-side and will be retried on the next resume.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [connectedHealth.lastAppliedAutomaticSnapshotId]);
+
+  useEffect(() => {
+    const isNative = typeof Capacitor.isNativePlatform === "function" && Capacitor.isNativePlatform();
+    if (!isNative || !connectedHealth.enabled || !connectedHealth.automaticSyncEnabled) return undefined;
+    let cancelled = false;
+    let appStateHandle = null;
+
+    const refreshIfActive = () => {
+      if (!cancelled && document.visibilityState !== "hidden") runAutomaticHealthSync();
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") refreshIfActive();
+    };
+
+    refreshIfActive();
+    const intervalId = window.setInterval(refreshIfActive, AUTOMATIC_HEALTH_FOREGROUND_INTERVAL_MS);
+    document.addEventListener("visibilitychange", handleVisibility);
+    CapacitorApp.addListener("appStateChange", ({ isActive }) => {
+      if (isActive) refreshIfActive();
+    }).then((handle) => {
+      if (cancelled) handle.remove();
+      else appStateHandle = handle;
+    }).catch(() => {
+      // visibilitychange remains as the lifecycle fallback.
+    });
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      appStateHandle?.remove();
+    };
+  }, [connectedHealth.enabled, connectedHealth.automaticSyncEnabled, connectedHealth.permissionsGranted]);
 
   const updateGeminiApiKey = (nextKey) => {
     setGeminiApiKey(nextKey);
@@ -9391,7 +9829,7 @@ export default function App() {
     sleep: <SleepPage weekDays={weekDays} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.sleep} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
     stats: <StatsPage entries={state.entries} habitNames={trackedHabitNames} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onBackup={openBackupChoice} onHistory={openHistory} onEditDate={openRecordForDate} modules={pageModules.stats} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
     coach: <CoachPage analytics={coachAnalytics} workout={state.workout} aiSettings={aiSettings} geminiApiKey={geminiApiKey} coachMessages={state.coachMessages} onSaveMessages={saveCoachMessages} onApplyProposal={applyCoachProposal} />,
-    settings: <SettingsPage goals={goals} onUpdateGoals={updateGoals} aiSettings={aiSettings} geminiApiKey={geminiApiKey} connectedHealth={connectedHealth} watchData={watchData} onUpdateConnectedHealth={updateConnectedHealth} onCheckConnectedHealth={checkConnectedHealth} onOpenConnectedHealthSettings={openConnectedHealthSettings} onRequestConnectedHealthPermissions={requestConnectedHealthPermissions} onSyncConnectedHealth={syncConnectedHealth} onUpdateAISettings={updateAISettings} onUpdateGeminiApiKey={updateGeminiApiKey} />,
+    settings: <SettingsPage goals={goals} onUpdateGoals={updateGoals} aiSettings={aiSettings} geminiApiKey={geminiApiKey} connectedHealth={connectedHealth} watchData={watchData} onUpdateConnectedHealth={updateConnectedHealth} onCheckConnectedHealth={checkConnectedHealth} onOpenConnectedHealthSettings={openConnectedHealthSettings} onRequestConnectedHealthPermissions={requestConnectedHealthPermissions} onRequestAutomaticHealthPermissions={requestAutomaticHealthPermissions} onToggleAutomaticHealthSync={toggleAutomaticHealthSync} onSyncConnectedHealth={syncConnectedHealth} onUpdateAISettings={updateAISettings} onUpdateGeminiApiKey={updateGeminiApiKey} />,
   };
 
   return (

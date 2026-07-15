@@ -3,7 +3,8 @@ import { createServer } from "vite";
 
 const vite = await createServer({
   appType: "custom",
-  server: { middlewareMode: true },
+  optimizeDeps: { noDiscovery: true },
+  server: { middlewareMode: true, hmr: false },
 });
 
 try {

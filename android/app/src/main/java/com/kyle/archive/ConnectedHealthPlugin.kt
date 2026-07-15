@@ -8,20 +8,9 @@ import android.os.Build
 import android.provider.Settings
 import androidx.activity.result.ActivityResultLauncher
 import androidx.health.connect.client.HealthConnectClient
+import androidx.health.connect.client.HealthConnectFeatures
 import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.permission.HealthPermission
-import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
-import androidx.health.connect.client.records.DistanceRecord
-import androidx.health.connect.client.records.ExerciseSessionRecord
-import androidx.health.connect.client.records.FloorsClimbedRecord
-import androidx.health.connect.client.records.HeartRateRecord
-import androidx.health.connect.client.records.HeartRateVariabilityRmssdRecord
-import androidx.health.connect.client.records.Record
-import androidx.health.connect.client.records.SleepSessionRecord
-import androidx.health.connect.client.records.StepsRecord
-import androidx.health.connect.client.request.AggregateRequest
-import androidx.health.connect.client.request.ReadRecordsRequest
-import androidx.health.connect.client.time.TimeRangeFilter
 import com.getcapacitor.JSArray
 import com.getcapacitor.JSObject
 import com.getcapacitor.Plugin
@@ -33,73 +22,90 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.time.Duration
-import java.time.Instant
-import java.time.LocalDate
-import java.time.ZoneId
-import kotlin.reflect.KClass
 
 @CapacitorPlugin(name = "ConnectedHealth")
 class ConnectedHealthPlugin : Plugin() {
     private val pluginScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var permissionLauncher: ActivityResultLauncher<Set<String>>? = null
     private var pendingPermissionCall: PluginCall? = null
+    private var pendingAutomaticPermission = false
 
-    private val readPermissions = setOf(
-        HealthPermission.getReadPermission(StepsRecord::class),
-        HealthPermission.getReadPermission(SleepSessionRecord::class),
-        HealthPermission.getReadPermission(ExerciseSessionRecord::class),
-        HealthPermission.getReadPermission(DistanceRecord::class),
-        HealthPermission.getReadPermission(ActiveCaloriesBurnedRecord::class),
-        HealthPermission.getReadPermission(HeartRateRecord::class),
-        HealthPermission.getReadPermission(HeartRateVariabilityRmssdRecord::class),
-        HealthPermission.getReadPermission(FloorsClimbedRecord::class),
-    )
+    private val readPermissions
+        get() = ConnectedHealthSnapshotReader.readPermissions
+    private val backgroundPermission
+        get() = HealthPermission.PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND
 
     override fun load() {
         permissionLauncher = activity.registerForActivityResult(
             PermissionController.createRequestPermissionResultContract(),
         ) { grantedPermissions ->
             val call = pendingPermissionCall
+            val automaticRequest = pendingAutomaticPermission
             pendingPermissionCall = null
-            call?.resolve(permissionPayload(grantedPermissions, "Health Connect permissions updated."))
+            pendingAutomaticPermission = false
+
+            if (automaticRequest) {
+                restoreAutomaticSchedule(grantedPermissions, enqueueInitial = true)
+            }
+            call?.resolve(
+                permissionPayload(
+                    grantedPermissions,
+                    if (automaticRequest) {
+                        "Automatic Health Connect permissions updated."
+                    } else {
+                        "Health Connect permissions updated."
+                    },
+                ),
+            )
+        }
+
+        // WorkManager survives process death, but restoring the schedule here also
+        // reconciles app upgrades and permissions that were changed in Settings.
+        pluginScope.launch {
+            val client = healthClientOrNull() ?: return@launch
+            val granted = runCatching {
+                withContext(Dispatchers.IO) { client.permissionController.getGrantedPermissions() }
+            }.getOrDefault(emptySet())
+            restoreAutomaticSchedule(granted, enqueueInitial = false)
         }
     }
 
     @PluginMethod
     fun getStatus(call: PluginCall) {
-        call.resolve(buildStatusPayload())
+        val client = healthClientOrNull()
+        if (client == null) {
+            call.resolve(buildStatusPayload())
+            return
+        }
+
+        pluginScope.launch {
+            val granted = runCatching {
+                withContext(Dispatchers.IO) { client.permissionController.getGrantedPermissions() }
+            }.getOrDefault(emptySet())
+            call.resolve(buildStatusPayload(granted))
+        }
     }
 
     @PluginMethod
     fun getSupportedMetrics(call: PluginCall) {
-        val ret = JSObject()
-        val metrics = JSArray()
-
-        metrics.put(metric("steps", "Steps", "daily", "steps"))
-        metrics.put(metric("sleep", "Sleep", "nightly", "sessions"))
-        metrics.put(metric("exercise", "Exercise sessions", "as completed", "workouts"))
-        metrics.put(metric("distance", "Distance", "daily", "m"))
-        metrics.put(metric("activeCalories", "Active calories", "daily", "kcal"))
-        metrics.put(metric("heartRate", "Heart rate", "samples", "bpm"))
-        metrics.put(metric("heartRateVariability", "HRV", "samples", "ms"))
-        metrics.put(metric("floors", "Floors climbed", "daily", "floors"))
-
-        ret.put("metrics", metrics)
-        call.resolve(ret)
+        val metrics = JSArray().apply {
+            put(metric("steps", "Steps", "daily", "steps"))
+            put(metric("sleep", "Sleep", "nightly", "sessions"))
+            put(metric("exercise", "Exercise sessions", "as completed", "workouts"))
+            put(metric("distance", "Distance", "daily", "m"))
+            put(metric("activeCalories", "Active calories", "daily", "kcal"))
+            put(metric("heartRate", "Heart rate", "samples", "bpm"))
+            put(metric("heartRateVariability", "HRV", "samples", "ms"))
+            put(metric("floors", "Floors climbed", "daily", "floors"))
+        }
+        call.resolve(JSObject().apply { put("metrics", metrics) })
     }
 
     @PluginMethod
     fun checkHealthPermissions(call: PluginCall) {
         val client = healthClientOrNull()
         if (client == null) {
-            val ret = buildStatusPayload()
-            ret.put("allGranted", false)
-            ret.put("permissionsGranted", false)
-            ret.put("requestedPermissions", stringArray(readPermissions))
-            ret.put("grantedPermissions", JSArray())
-            ret.put("missingPermissions", stringArray(readPermissions))
-            call.resolve(ret)
+            call.resolve(unavailablePermissionPayload())
             return
         }
 
@@ -117,20 +123,21 @@ class ConnectedHealthPlugin : Plugin() {
 
     @PluginMethod
     fun requestHealthPermissions(call: PluginCall) {
+        requestPermissions(call, includeBackground = false)
+    }
+
+    @PluginMethod
+    fun requestAutomaticSyncPermissions(call: PluginCall) {
+        requestPermissions(call, includeBackground = true)
+    }
+
+    private fun requestPermissions(call: PluginCall, includeBackground: Boolean) {
         val client = healthClientOrNull()
         val launcher = permissionLauncher
-
         if (client == null) {
-            val ret = buildStatusPayload()
-            ret.put("allGranted", false)
-            ret.put("permissionsGranted", false)
-            ret.put("requestedPermissions", stringArray(readPermissions))
-            ret.put("grantedPermissions", JSArray())
-            ret.put("missingPermissions", stringArray(readPermissions))
-            call.resolve(ret)
+            call.resolve(unavailablePermissionPayload())
             return
         }
-
         if (launcher == null) {
             call.reject("Health Connect permission launcher is not ready yet. Close and reopen Archive, then try again.")
             return
@@ -141,9 +148,25 @@ class ConnectedHealthPlugin : Plugin() {
                 val granted = withContext(Dispatchers.IO) {
                     client.permissionController.getGrantedPermissions()
                 }
+                val backgroundAvailable = backgroundReadAvailable(client)
+                val requested = if (includeBackground && backgroundAvailable) {
+                    readPermissions + backgroundPermission
+                } else {
+                    readPermissions
+                }
 
-                if (granted.containsAll(readPermissions)) {
-                    call.resolve(permissionPayload(granted, "All requested Health Connect permissions are already granted."))
+                if (granted.containsAll(requested)) {
+                    if (includeBackground) restoreAutomaticSchedule(granted, enqueueInitial = true)
+                    call.resolve(
+                        permissionPayload(
+                            granted,
+                            if (includeBackground && backgroundAvailable) {
+                                "All automatic Health Connect permissions are already granted."
+                            } else {
+                                "All requested Health Connect permissions are already granted."
+                            },
+                        ),
+                    )
                     return@launch
                 }
 
@@ -153,9 +176,11 @@ class ConnectedHealthPlugin : Plugin() {
                 }
 
                 pendingPermissionCall = call
-                launcher.launch(readPermissions)
+                pendingAutomaticPermission = includeBackground
+                launcher.launch(requested)
             } catch (error: Exception) {
                 pendingPermissionCall = null
+                pendingAutomaticPermission = false
                 call.reject("Archive could not request Health Connect permissions.", error)
             }
         }
@@ -164,17 +189,22 @@ class ConnectedHealthPlugin : Plugin() {
     @PluginMethod
     fun syncRecentData(call: PluginCall) {
         val days = (call.getInt("days", 30) ?: 30).coerceIn(1, 30)
+        val trigger = when (call.getString("trigger", "manual")) {
+            "background", "foregroundAuto", "manual" -> call.getString("trigger", "manual") ?: "manual"
+            else -> "manual"
+        }
         val client = healthClientOrNull()
 
         if (client == null) {
-            val ret = buildStatusPayload()
-            ret.put("synced", false)
-            ret.put("needsPermissions", false)
-            ret.put("dailySummaries", JSArray())
-            ret.put("sleepSessions", JSArray())
-            ret.put("workouts", JSArray())
-            ret.put("samples", emptySamples())
-            call.resolve(ret)
+            val payload = buildStatusPayload().apply {
+                put("synced", false)
+                put("needsPermissions", false)
+                put("dailySummaries", JSArray())
+                put("sleepSessions", JSArray())
+                put("workouts", JSArray())
+                put("samples", emptySamples())
+            }
+            call.resolve(payload)
             return
         }
 
@@ -183,27 +213,132 @@ class ConnectedHealthPlugin : Plugin() {
                 val granted = withContext(Dispatchers.IO) {
                     client.permissionController.getGrantedPermissions()
                 }
-
                 if (!granted.containsAll(readPermissions)) {
-                    val ret = permissionPayload(granted, "Health Connect permissions are needed before Archive can import watch data.")
-                    ret.put("synced", false)
-                    ret.put("needsPermissions", true)
-                    ret.put("dailySummaries", JSArray())
-                    ret.put("sleepSessions", JSArray())
-                    ret.put("workouts", JSArray())
-                    ret.put("samples", emptySamples())
-                    call.resolve(ret)
+                    val payload = permissionPayload(
+                        granted,
+                        "Health Connect permissions are needed before Archive can import watch data.",
+                    ).apply {
+                        put("synced", false)
+                        put("needsPermissions", true)
+                        put("dailySummaries", JSArray())
+                        put("sleepSessions", JSArray())
+                        put("workouts", JSArray())
+                        put("samples", emptySamples())
+                    }
+                    call.resolve(payload)
                     return@launch
                 }
 
                 val payload = withContext(Dispatchers.IO) {
-                    readHealthConnectData(client, days)
+                    ConnectedHealthSnapshotReader.read(client, days, trigger)
                 }
+                if (trigger == "foregroundAuto") {
+                    HealthConnectAutoSyncStore.markForegroundSuccess(
+                        context,
+                        payload.getString("syncedAt") ?: "",
+                    )
+                }
+                mergeJson(payload, automaticStatusPayload(client, granted))
                 call.resolve(payload)
             } catch (error: Exception) {
+                if (trigger == "foregroundAuto") {
+                    HealthConnectAutoSyncStore.markError(
+                        context,
+                        "Automatic health refresh failed: ${error.message ?: "unknown error"}",
+                    )
+                }
                 call.reject("Archive could not sync Health Connect data.", error)
             }
         }
+    }
+
+    @PluginMethod
+    fun configureAutomaticSync(call: PluginCall) {
+        val enabled = call.getBoolean("enabled", true) ?: true
+        val intervalMinutes = call.getInt(
+            "intervalMinutes",
+            HealthConnectAutoSyncStore.DEFAULT_INTERVAL_MINUTES,
+        ) ?: HealthConnectAutoSyncStore.DEFAULT_INTERVAL_MINUTES
+        val snapshotDays = call.getInt(
+            "snapshotDays",
+            HealthConnectAutoSyncStore.DEFAULT_SNAPSHOT_DAYS,
+        ) ?: HealthConnectAutoSyncStore.DEFAULT_SNAPSHOT_DAYS
+        val client = healthClientOrNull()
+
+        pluginScope.launch {
+            val granted = if (client == null) {
+                emptySet()
+            } else {
+                runCatching {
+                    withContext(Dispatchers.IO) { client.permissionController.getGrantedPermissions() }
+                }.getOrDefault(emptySet())
+            }
+            val backgroundAvailable = client?.let(::backgroundReadAvailable) ?: false
+            val backgroundAllowed = backgroundAvailable &&
+                granted.contains(backgroundPermission) &&
+                granted.containsAll(readPermissions)
+
+            HealthConnectAutoSyncScheduler.configure(
+                context = context,
+                enabled = enabled,
+                intervalMinutes = intervalMinutes,
+                snapshotDays = snapshotDays,
+                backgroundAllowed = backgroundAllowed,
+                backgroundAvailable = backgroundAvailable,
+                enqueueInitial = false,
+            )
+            call.resolve(automaticStatusPayload(client, granted))
+        }
+    }
+
+    @PluginMethod
+    fun getAutomaticSyncStatus(call: PluginCall) {
+        val client = healthClientOrNull()
+        pluginScope.launch {
+            val granted = if (client == null) {
+                emptySet()
+            } else {
+                runCatching {
+                    withContext(Dispatchers.IO) { client.permissionController.getGrantedPermissions() }
+                }.getOrDefault(emptySet())
+            }
+            call.resolve(automaticStatusPayload(client, granted))
+        }
+    }
+
+    @PluginMethod
+    fun getPendingAutomaticSync(call: PluginCall) {
+        val client = healthClientOrNull()
+        pluginScope.launch {
+            val granted = if (client == null) {
+                emptySet()
+            } else {
+                runCatching {
+                    withContext(Dispatchers.IO) { client.permissionController.getGrantedPermissions() }
+                }.getOrDefault(emptySet())
+            }
+            val result = automaticStatusPayload(client, granted)
+            val pending = withContext(Dispatchers.IO) {
+                HealthConnectAutoSyncStore.pendingSnapshot(context)
+            }
+            result.put("pending", pending != null)
+            if (pending != null) result.put("payload", pending)
+            call.resolve(result)
+        }
+    }
+
+    @PluginMethod
+    fun acknowledgeAutomaticSync(call: PluginCall) {
+        val snapshotId = call.getString("snapshotId", "") ?: ""
+        val acknowledged = HealthConnectAutoSyncStore.acknowledgeSnapshot(context, snapshotId)
+        val result = HealthConnectAutoSyncStore.statusPayload(
+            context = context,
+            backgroundAvailable = false,
+            backgroundGranted = false,
+            workerScheduled = false,
+        )
+        result.put("acknowledged", acknowledged)
+        call.resolve(result)
     }
 
     @PluginMethod
@@ -214,23 +349,20 @@ class ConnectedHealthPlugin : Plugin() {
         val systemIntegrated = Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
         val packageInstalled = isPackageInstalled(HEALTH_CONNECT_PACKAGE)
 
-        if (settingsIntent != null) {
-            candidates.add(settingsIntent)
-        }
-
+        if (settingsIntent != null) candidates.add(settingsIntent)
         if (packageInstalled) {
-            val appDetails = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-            appDetails.data = Uri.parse("package:$HEALTH_CONNECT_PACKAGE")
-            candidates.add(appDetails)
+            candidates.add(
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.parse("package:$HEALTH_CONNECT_PACKAGE")
+                },
+            )
         }
-
         candidates.add(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$HEALTH_CONNECT_PACKAGE")))
         candidates.add(Intent(Intent.ACTION_VIEW, Uri.parse(PLAY_STORE_URL)))
 
         for (intent in candidates) {
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             if (!canResolve(intent)) continue
-
             try {
                 activity.startActivity(intent)
                 status.put("opened", true)
@@ -255,291 +387,45 @@ class ConnectedHealthPlugin : Plugin() {
         call.resolve(status)
     }
 
-    private suspend fun readHealthConnectData(client: HealthConnectClient, days: Int): JSObject {
-        val zone = ZoneId.systemDefault()
-        val now = Instant.now()
-        val today = LocalDate.now(zone)
-        val startDate = today.minusDays((days - 1).toLong())
-        val startInstant = startDate.atStartOfDay(zone).toInstant()
-        val range = TimeRangeFilter.between(startInstant, now)
-        val syncedAt = Instant.now().toString()
-
-        val sleepSessions = JSArray()
-        val sleepMinutesByDate = mutableMapOf<String, Long>()
-        val sleepResponse = readAllRecords(client, SleepSessionRecord::class, range)
-
-        sleepResponse.records.forEachIndexed { index, record ->
-            val startedAt = record.startTime
-            val endedAt = record.endTime
-            val minutes = durationMinutes(startedAt, endedAt)
-            val date = endedAt.atZone(zone).toLocalDate().minusDays(1).toString()
-            sleepMinutesByDate[date] = (sleepMinutesByDate[date] ?: 0L) + minutes
-
-            sleepSessions.put(
-                JSObject().apply {
-                    put("id", recordId(record, "sleep-$index-${startedAt.toEpochMilli()}"))
-                    put("source", sourceName(record))
-                    put("date", date)
-                    put("startedAt", startedAt.toString())
-                    put("endedAt", endedAt.toString())
-                    put("durationMinutes", minutes)
-                    put("type", "sleep")
-                    put("notes", "Imported from Health Connect.")
-                },
-            )
-        }
-
-        val workouts = JSArray()
-        val exerciseResponse = readAllRecords(client, ExerciseSessionRecord::class, range)
-
-        exerciseResponse.records.forEachIndexed { index, record ->
-            val startedAt = record.startTime
-            val endedAt = record.endTime
-            workouts.put(
-                JSObject().apply {
-                    put("id", recordId(record, "exercise-$index-${startedAt.toEpochMilli()}"))
-                    put("source", sourceName(record))
-                    put("date", startedAt.atZone(zone).toLocalDate().toString())
-                    put("startedAt", startedAt.toString())
-                    put("endedAt", endedAt.toString())
-                    put("durationMinutes", durationMinutes(startedAt, endedAt))
-                    put("type", exerciseTypeLabel(record.exerciseType))
-                    put("notes", "Imported from Health Connect.")
-                },
-            )
-        }
-
-        val heartRateSamples = readHeartRateSamples(client, range)
-        val hrvSamples = readHeartRateVariabilitySamples(client, range)
-        val hrvByDate = hrvSamples
-            .groupBy { it.timestamp.atZone(zone).toLocalDate().toString() }
-            .mapValues { (_, samples) -> samples.map { it.value }.average() }
-
-        val dailySummaries = JSArray()
-        var dailySummariesComplete = true
-        for (offset in 0 until days) {
-            val date = startDate.plusDays(offset.toLong())
-            val dayStart = date.atStartOfDay(zone).toInstant()
-            val dayEnd = if (date == today) now else date.plusDays(1).atStartOfDay(zone).toInstant()
-            val aggregate = readDailyAggregate(client, dayStart, dayEnd)
-            dailySummariesComplete = dailySummariesComplete && aggregate.complete
-
-            dailySummaries.put(
-                JSObject().apply {
-                    put("date", date.toString())
-                    put("source", "Health Connect")
-                    put("steps", aggregate.steps)
-                    put("distanceMeters", aggregate.distanceMeters)
-                    put("activeCalories", aggregate.activeCalories)
-                    put("floors", aggregate.floors)
-                    put("sleepMinutes", sleepMinutesByDate[date.toString()] ?: 0L)
-                    put("averageHeartRate", aggregate.averageHeartRate)
-                    put("hrvMs", hrvByDate[date.toString()] ?: 0.0)
-                    put("updatedAt", syncedAt)
-                },
-            )
-        }
-
-        val samples = JSObject().apply {
-            put("heartRate", sampleArray(heartRateSamples.takeLast(MAX_SAMPLES)))
-            put("heartRateVariability", sampleArray(hrvSamples.takeLast(MAX_SAMPLES)))
-        }
-
-        val payload = buildStatusPayload()
-        payload.put("provider", "healthConnect")
-        payload.put("sourceName", "Health Connect")
-        payload.put("synced", true)
-        payload.put("syncedAt", syncedAt)
-        payload.put("lastSyncAt", syncedAt)
-        payload.put("days", days)
-        payload.put("healthSchemaVersion", HEALTH_SCHEMA_VERSION)
-        payload.put("policyVersion", HEALTH_POLICY_VERSION)
-        payload.put("sleepDatePolicy", SLEEP_DATE_POLICY)
-        payload.put("timeZone", zone.id)
-        payload.put("syncWindowStart", startInstant.toString())
-        payload.put("syncWindowEnd", now.toString())
-        payload.put("syncWindowStartDate", startDate.toString())
-        payload.put("syncWindowEndDate", today.toString())
-        payload.put("sleepDateStart", startDate.minusDays(1).toString())
-        payload.put("sleepDateEnd", today.minusDays(1).toString())
-        payload.put("completeSnapshot", true)
-        payload.put(
-            "snapshotCompleteness",
-            JSObject().apply {
-                put("dailySummaries", dailySummariesComplete)
-                put("sleepSessions", sleepResponse.complete)
-                put("workouts", exerciseResponse.complete)
-                put("heartRate", false)
-                put("heartRateVariability", false)
-            },
-        )
-        payload.put(
-            "sampleRetention",
-            JSObject().apply {
-                put("mode", "rolling")
-                put("limitPerMetric", MAX_SAMPLES)
-            },
-        )
-        payload.put("allGranted", true)
-        payload.put("permissionsGranted", true)
-        payload.put("requestedPermissions", stringArray(readPermissions))
-        payload.put("grantedPermissions", stringArray(readPermissions))
-        payload.put("missingPermissions", JSArray())
-        payload.put("dailySummaries", dailySummaries)
-        payload.put("sleepSessions", sleepSessions)
-        payload.put("workouts", workouts)
-        payload.put("samples", samples)
-        payload.put(
-            "summary",
-            JSObject().apply {
-                put("dailySummaries", dailySummaries.length())
-                put("sleepSessions", sleepSessions.length())
-                put("workouts", workouts.length())
-                put("heartRateSamples", heartRateSamples.size.coerceAtMost(MAX_SAMPLES))
-                put("heartRateVariabilitySamples", hrvSamples.size.coerceAtMost(MAX_SAMPLES))
-            },
-        )
-        payload.put(
-            "message",
-            "Imported ${dailySummaries.length()} days, ${sleepSessions.length()} sleep sessions, ${workouts.length()} workouts, ${heartRateSamples.size.coerceAtMost(MAX_SAMPLES)} HR samples, and ${hrvSamples.size.coerceAtMost(MAX_SAMPLES)} HRV samples.",
-        )
-        return payload
-    }
-
-    private suspend fun readDailyAggregate(client: HealthConnectClient, start: Instant, end: Instant): DailyAggregate {
-        return try {
-            val response = client.aggregate(
-                AggregateRequest(
-                    metrics = setOf(
-                        StepsRecord.COUNT_TOTAL,
-                        DistanceRecord.DISTANCE_TOTAL,
-                        ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL,
-                        FloorsClimbedRecord.FLOORS_CLIMBED_TOTAL,
-                        HeartRateRecord.BPM_AVG,
-                    ),
-                    timeRangeFilter = TimeRangeFilter.between(start, end),
-                ),
-            )
-
-            DailyAggregate(
-                steps = response[StepsRecord.COUNT_TOTAL] ?: 0L,
-                distanceMeters = response[DistanceRecord.DISTANCE_TOTAL]?.inMeters ?: 0.0,
-                activeCalories = response[ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL]?.inKilocalories ?: 0.0,
-                floors = response[FloorsClimbedRecord.FLOORS_CLIMBED_TOTAL] ?: 0.0,
-                averageHeartRate = response[HeartRateRecord.BPM_AVG] ?: 0L,
-            )
-        } catch (_: Exception) {
-            DailyAggregate(complete = false)
-        }
-    }
-
-    private suspend fun <T : Record> readAllRecords(
-        client: HealthConnectClient,
-        recordType: KClass<T>,
-        range: TimeRangeFilter,
-    ): RecordBatch<T> {
-        val records = mutableListOf<T>()
-        var pageToken: String? = null
-        var pagesRead = 0
-
-        do {
-            val response = client.readRecords(
-                ReadRecordsRequest(
-                    recordType = recordType,
-                    timeRangeFilter = range,
-                    ascendingOrder = true,
-                    pageSize = MAX_RECORDS,
-                    pageToken = pageToken,
-                ),
-            )
-            records.addAll(response.records)
-            pageToken = response.pageToken
-            pagesRead += 1
-        } while (!pageToken.isNullOrBlank() && pagesRead < MAX_RECORD_PAGES)
-
-        return RecordBatch(records = records, complete = pageToken.isNullOrBlank())
-    }
-
-    private suspend fun readHeartRateSamples(
-        client: HealthConnectClient,
-        range: TimeRangeFilter,
-    ): List<WatchSample> {
-        return try {
-            val response = client.readRecords(
-                ReadRecordsRequest(
-                    recordType = HeartRateRecord::class,
-                    timeRangeFilter = range,
-                    ascendingOrder = true,
-                    pageSize = MAX_RECORDS,
-                ),
-            )
-            response.records.flatMapIndexed { recordIndex, record ->
-                record.samples.mapIndexed { sampleIndex, sample ->
-                    WatchSample(
-                        id = "${recordId(record, "heart-rate-$recordIndex")}-${sample.time.toEpochMilli()}-$sampleIndex",
-                        timestamp = sample.time,
-                        value = sample.beatsPerMinute.toDouble(),
-                        source = sourceName(record),
-                    )
-                }
-            }
-        } catch (_: Exception) {
-            emptyList()
-        }
-    }
-
-    private suspend fun readHeartRateVariabilitySamples(
-        client: HealthConnectClient,
-        range: TimeRangeFilter,
-    ): List<WatchSample> {
-        return try {
-            val response = client.readRecords(
-                ReadRecordsRequest(
-                    recordType = HeartRateVariabilityRmssdRecord::class,
-                    timeRangeFilter = range,
-                    ascendingOrder = true,
-                    pageSize = MAX_RECORDS,
-                ),
-            )
-            response.records.mapIndexed { index, record ->
-                WatchSample(
-                    id = recordId(record, "hrv-$index-${record.time.toEpochMilli()}"),
-                    timestamp = record.time,
-                    value = record.heartRateVariabilityMillis,
-                    source = sourceName(record),
-                )
-            }
-        } catch (_: Exception) {
-            emptyList()
-        }
-    }
-
     private fun permissionPayload(grantedPermissions: Set<String>, message: String): JSObject {
         val grantedRequested = grantedPermissions.intersect(readPermissions)
         val missing = readPermissions - grantedPermissions
-        val status = buildStatusPayload()
+        val status = buildStatusPayload(grantedPermissions)
         val healthAvailable = status.getBool("available") ?: false
+        val backgroundAvailable = status.getBool("backgroundReadAvailable") ?: false
+        val backgroundGranted = grantedPermissions.contains(backgroundPermission)
 
-        status.put("status", if (!healthAvailable) "unavailable" else if (missing.isEmpty()) "available" else "permissionsNeeded")
-        status.put("message", if (missing.isEmpty()) message else "Archive needs Health Connect permission before it can import watch data.")
+        status.put(
+            "status",
+            if (!healthAvailable) "unavailable" else if (missing.isEmpty()) "available" else "permissionsNeeded",
+        )
+        status.put(
+            "message",
+            if (missing.isEmpty()) message else "Archive needs Health Connect permission before it can import watch data.",
+        )
         status.put("allGranted", missing.isEmpty())
         status.put("permissionsGranted", missing.isEmpty())
         status.put("requestedPermissions", stringArray(readPermissions))
         status.put("grantedPermissions", stringArray(grantedRequested))
         status.put("missingPermissions", stringArray(missing))
+        status.put("backgroundReadAvailable", backgroundAvailable)
+        status.put("backgroundReadGranted", backgroundGranted)
         return status
     }
 
-    private fun metric(id: String, label: String, cadence: String, unit: String): JSObject {
-        return JSObject().apply {
-            put("id", id)
-            put("label", label)
-            put("cadence", cadence)
-            put("unit", unit)
+    private fun unavailablePermissionPayload(): JSObject {
+        return buildStatusPayload().apply {
+            put("allGranted", false)
+            put("permissionsGranted", false)
+            put("requestedPermissions", stringArray(readPermissions))
+            put("grantedPermissions", JSArray())
+            put("missingPermissions", stringArray(readPermissions))
+            put("backgroundReadAvailable", false)
+            put("backgroundReadGranted", false)
         }
     }
 
-    private fun buildStatusPayload(): JSObject {
+    private fun buildStatusPayload(grantedPermissions: Set<String> = emptySet()): JSObject {
         val systemIntegrated = Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
         val packageInstalled = isPackageInstalled(HEALTH_CONNECT_PACKAGE)
         val settingsResolvable = firstResolvableSettingsIntent() != null
@@ -547,6 +433,7 @@ class ConnectedHealthPlugin : Plugin() {
         val sdkAvailable = sdkStatus == HealthConnectClient.SDK_AVAILABLE
         val updateRequired = sdkStatus == HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED
         val available = sdkAvailable || systemIntegrated || packageInstalled || settingsResolvable
+        val client = if (sdkAvailable) HealthConnectClient.getOrCreate(context) else null
 
         return JSObject().apply {
             put("platform", "android")
@@ -568,7 +455,56 @@ class ConnectedHealthPlugin : Plugin() {
                     else -> "Health Connect was not found. Install or enable it, then check again."
                 },
             )
+            mergeJson(this, automaticStatusPayload(client, grantedPermissions))
         }
+    }
+
+    private fun automaticStatusPayload(
+        client: HealthConnectClient?,
+        grantedPermissions: Set<String>,
+    ): JSObject {
+        val backgroundAvailable = client?.let(::backgroundReadAvailable) ?: false
+        val backgroundGranted = grantedPermissions.contains(backgroundPermission)
+        val config = HealthConnectAutoSyncStore.config(context)
+        return HealthConnectAutoSyncStore.statusPayload(
+            context = context,
+            backgroundAvailable = backgroundAvailable,
+            backgroundGranted = backgroundGranted,
+            workerScheduled = HealthConnectAutoSyncScheduler.workerIsScheduled(
+                config,
+                backgroundAvailable && backgroundGranted && grantedPermissions.containsAll(readPermissions),
+            ),
+        )
+    }
+
+    private fun restoreAutomaticSchedule(
+        grantedPermissions: Set<String>,
+        enqueueInitial: Boolean,
+    ) {
+        val config = HealthConnectAutoSyncStore.config(context)
+        if (!config.enabled) return
+        val client = healthClientOrNull()
+        val backgroundAvailable = client?.let(::backgroundReadAvailable) ?: false
+        val backgroundAllowed = backgroundAvailable &&
+            grantedPermissions.contains(backgroundPermission) &&
+            grantedPermissions.containsAll(readPermissions)
+        HealthConnectAutoSyncScheduler.configure(
+            context = context,
+            enabled = true,
+            intervalMinutes = config.intervalMinutes,
+            snapshotDays = config.snapshotDays,
+            backgroundAllowed = backgroundAllowed,
+            backgroundAvailable = backgroundAvailable,
+            enqueueInitial = enqueueInitial && backgroundAllowed,
+        )
+    }
+
+    private fun backgroundReadAvailable(client: HealthConnectClient): Boolean {
+        return runCatching {
+            client.features.getFeatureStatus(
+                HealthConnectFeatures.FEATURE_READ_HEALTH_DATA_IN_BACKGROUND,
+            ) == HealthConnectFeatures.FEATURE_STATUS_AVAILABLE
+        }.getOrDefault(false)
     }
 
     private fun healthClientOrNull(): HealthConnectClient? {
@@ -600,12 +536,9 @@ class ConnectedHealthPlugin : Plugin() {
         for (action in HEALTH_CONNECT_SETTINGS_ACTIONS) {
             val directIntent = Intent(action)
             if (canResolve(directIntent)) return directIntent
-
-            val packagedIntent = Intent(action)
-            packagedIntent.setPackage(HEALTH_CONNECT_PACKAGE)
+            val packagedIntent = Intent(action).apply { setPackage(HEALTH_CONNECT_PACKAGE) }
             if (canResolve(packagedIntent)) return packagedIntent
         }
-
         return null
     }
 
@@ -622,10 +555,17 @@ class ConnectedHealthPlugin : Plugin() {
         }
     }
 
+    private fun metric(id: String, label: String, cadence: String, unit: String): JSObject {
+        return JSObject().apply {
+            put("id", id)
+            put("label", label)
+            put("cadence", cadence)
+            put("unit", unit)
+        }
+    }
+
     private fun stringArray(values: Collection<String>): JSArray {
-        val array = JSArray()
-        values.sorted().forEach { array.put(it) }
-        return array
+        return JSArray().apply { values.sorted().forEach { put(it) } }
     }
 
     private fun emptySamples(): JSObject {
@@ -635,82 +575,17 @@ class ConnectedHealthPlugin : Plugin() {
         }
     }
 
-    private fun sampleArray(samples: List<WatchSample>): JSArray {
-        val array = JSArray()
-        samples.sortedBy { it.timestamp }.forEach { sample ->
-            array.put(
-                JSObject().apply {
-                    put("id", sample.id)
-                    put("timestamp", sample.timestamp.toString())
-                    put("value", sample.value)
-                    put("source", sample.source)
-                },
-            )
-        }
-        return array
-    }
-
-    private fun durationMinutes(start: Instant, end: Instant): Long {
-        return Duration.between(start, end).toMinutes().coerceAtLeast(0L)
-    }
-
-    private fun sourceName(record: Record): String {
-        val packageName = record.metadata.dataOrigin.packageName
-        return if (packageName.isBlank()) "Health Connect" else packageName
-    }
-
-    private fun recordId(record: Record, fallback: String): String {
-        val id = record.metadata.id
-        return if (id.isBlank()) fallback else id
-    }
-
-    private fun exerciseTypeLabel(type: Int): String {
-        return when (type) {
-            ExerciseSessionRecord.EXERCISE_TYPE_RUNNING,
-            ExerciseSessionRecord.EXERCISE_TYPE_RUNNING_TREADMILL -> "Run"
-            ExerciseSessionRecord.EXERCISE_TYPE_WALKING -> "Walk"
-            ExerciseSessionRecord.EXERCISE_TYPE_BIKING,
-            ExerciseSessionRecord.EXERCISE_TYPE_BIKING_STATIONARY -> "Bike"
-            ExerciseSessionRecord.EXERCISE_TYPE_SWIMMING_OPEN_WATER,
-            ExerciseSessionRecord.EXERCISE_TYPE_SWIMMING_POOL -> "Swim"
-            ExerciseSessionRecord.EXERCISE_TYPE_STRENGTH_TRAINING,
-            ExerciseSessionRecord.EXERCISE_TYPE_WEIGHTLIFTING -> "Strength"
-            ExerciseSessionRecord.EXERCISE_TYPE_YOGA -> "Yoga"
-            ExerciseSessionRecord.EXERCISE_TYPE_OTHER_WORKOUT -> "Workout"
-            else -> "Exercise"
+    private fun mergeJson(target: JSObject, source: JSObject) {
+        val keys = source.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            target.put(key, source.opt(key))
         }
     }
-
-    private data class WatchSample(
-        val id: String,
-        val timestamp: Instant,
-        val value: Double,
-        val source: String,
-    )
-
-    private data class RecordBatch<T : Record>(
-        val records: List<T>,
-        val complete: Boolean,
-    )
-
-    private data class DailyAggregate(
-        val steps: Long = 0,
-        val distanceMeters: Double = 0.0,
-        val activeCalories: Double = 0.0,
-        val floors: Double = 0.0,
-        val averageHeartRate: Long = 0,
-        val complete: Boolean = true,
-    )
 
     companion object {
         private const val HEALTH_CONNECT_PACKAGE = "com.google.android.apps.healthdata"
         private const val PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=$HEALTH_CONNECT_PACKAGE"
-        private const val MAX_RECORDS = 1000
-        private const val MAX_RECORD_PAGES = 50
-        private const val MAX_SAMPLES = 500
-        private const val HEALTH_SCHEMA_VERSION = 1
-        private const val HEALTH_POLICY_VERSION = "archive-health-1"
-        private const val SLEEP_DATE_POLICY = "previous-day-from-wake"
         private val HEALTH_CONNECT_SETTINGS_ACTIONS = arrayOf(
             "android.health.connect.action.HEALTH_CONNECT_SETTINGS",
             "androidx.health.ACTION_HEALTH_CONNECT_SETTINGS",

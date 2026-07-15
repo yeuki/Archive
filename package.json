@@ -1,12 +1,13 @@
 {
   "name": "productivity-health-tracker",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.6.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
     "test:health": "node ./scripts/verify-health-system.mjs",
+    "test:auto-health": "node ./scripts/verify-automatic-health-sync.mjs",
     "test:sleep": "node ./scripts/verify-sleep-policy.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "cap:sync": "cap sync android",
@@ -15,11 +16,12 @@
   },
   "dependencies": {
     "@capacitor/android": "^7.4.3",
+    "@capacitor/app": "^7.1.0",
     "@capacitor/core": "^7.4.3",
     "@vitejs/plugin-react": "^5.0.4",
-    "vite": "^7.1.12",
     "react": "^19.1.1",
-    "react-dom": "^19.1.1"
+    "react-dom": "^19.1.1",
+    "vite": "^7.1.12"
   },
   "devDependencies": {
     "@capacitor/cli": "^7.4.3"

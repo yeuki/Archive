@@ -7,7 +7,7 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $AndroidRoot = Join-Path $ProjectRoot "android"
 $BuiltApk = Join-Path $AndroidRoot "app\build\outputs\apk\debug\app-debug.apk"
-$PackageCache = Join-Path $AndroidRoot "app\build\intermediates\incremental\packageDebug\tmp"
+$GeneratedAppBuild = Join-Path $AndroidRoot "app\build"
 $Version = (Get-Content -Raw (Join-Path $ProjectRoot "VERSION")).Trim()
 $PackageVersion = (Get-Content -Raw (Join-Path $ProjectRoot "package.json") | ConvertFrom-Json).version
 
@@ -53,12 +53,21 @@ try {
       throw "Gradle daemon shutdown failed with exit code $LASTEXITCODE."
     }
 
-    if (Test-Path -LiteralPath $PackageCache) {
-      $ResolvedPackageCache = (Resolve-Path -LiteralPath $PackageCache).Path
-      if (-not $ResolvedPackageCache.StartsWith($AndroidRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw "Refusing to clear generated package cache outside the Android project: '$ResolvedPackageCache'."
+    if (Test-Path -LiteralPath $GeneratedAppBuild) {
+      $ResolvedAppBuild = (Resolve-Path -LiteralPath $GeneratedAppBuild).Path
+      if ($ResolvedAppBuild -ne $GeneratedAppBuild -or -not $ResolvedAppBuild.StartsWith($AndroidRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Refusing to clear an unexpected generated Android path: '$ResolvedAppBuild'."
       }
-      Remove-Item -LiteralPath $ResolvedPackageCache -Recurse -Force
+      Get-ChildItem -LiteralPath $ResolvedAppBuild -Recurse -Force | ForEach-Object {
+        if ($_.Attributes -band [IO.FileAttributes]::ReadOnly) {
+          $_.Attributes = $_.Attributes -bxor [IO.FileAttributes]::ReadOnly
+        }
+      }
+      $AppBuildItem = Get-Item -LiteralPath $ResolvedAppBuild -Force
+      if ($AppBuildItem.Attributes -band [IO.FileAttributes]::ReadOnly) {
+        $AppBuildItem.Attributes = $AppBuildItem.Attributes -bxor [IO.FileAttributes]::ReadOnly
+      }
+      Remove-Item -LiteralPath $ResolvedAppBuild -Recurse -Force
     }
 
     .\gradlew.bat assembleDebug --no-daemon
