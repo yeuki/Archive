@@ -4,6 +4,19 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-07-15
+
+### Fixed
+
+- Added a dedicated centered 72% safe-zone scale to the Android adaptive foreground so Samsung One UI and other aggressive launcher masks no longer zoom the Archive mark against the icon edges.
+- Kept legacy and round launcher artwork at its original size while padding only the independently masked adaptive layer.
+- Updated the editable adaptive SVG and deterministic generator together so future icon regeneration preserves the OEM-safe geometry.
+
+### Known issues and unfinished work
+
+- An existing Samsung home-screen shortcut may briefly retain the v0.7.0 cached rendering; removing and re-adding the shortcut or restarting the launcher forces a refresh.
+- A dedicated Android monochrome themed-icon layer and matching iOS asset catalog remain future packaging work.
+
 ## [0.7.0] - 2026-07-15
 
 ### Added
@@ -267,7 +280,8 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 - The visual system is functional and consistent but has not yet received the planned premium design-system refinement.
 - iOS packaging and Apple Health integration are future work.
 
-[Unreleased]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.4.3...v0.5.0

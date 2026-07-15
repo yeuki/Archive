@@ -4,6 +4,7 @@ Release APKs are immutable. If a packaged build changes, Archive receives a new 
 
 | Version | Release date | APK | Summary | Source reference |
 | --- | --- | --- | --- | --- |
+| 0.7.1 | 2026-07-15 | `Archive-v0.7.1.apk` | Samsung-safe adaptive icon sizing with a dedicated centered foreground safe zone. | `main`, tag `v0.7.1` |
 | 0.7.0 | 2026-07-15 | `Archive-v0.7.0.apk` | First custom Archive identity with a flowing pastel A across adaptive, round, and legacy Android launchers. | `main`, tag `v0.7.0` |
 | 0.6.0 | 2026-07-14 | `Archive-v0.6.0.apk` | Lifecycle-aware automatic Health Connect refresh with durable hourly background snapshots. | `main`, tag `v0.6.0` |
 | 0.5.0 | 2026-07-14 | `Archive-v0.5.0.apk` | Canonical health archive with provenance, authoritative reconciliation, integrity diagnostics, and stable watch-first sleep. | `main`, tag `v0.5.0` |
@@ -16,6 +17,19 @@ Release APKs are immutable. If a packaged build changes, Archive receives a new 
 | 0.2.1 | 2026-07-13 | `Archive-v0.2.1.apk` | Restores Archive's signature gradient on compact charts while preserving solid dense-data views. | `main`, tag `v0.2.1` |
 | 0.2.0 | 2026-07-13 | `Archive-v0.2.0.apk` | Archive Design System 2.0 with premium Home, Sleep, Settings, chart, surface, and navigation refinements. | `main`, tag `v0.2.0` |
 | 0.1.0 | 2026-07-13 | `Archive-v0.1.0.apk` | Formal baseline of the current productivity, health, workout, AI coach, and Health Connect experience. | `main`, tag `v0.1.0` |
+
+## 0.7.1 - Adaptive icon safe zone
+
+- APK filename: `Archive-v0.7.1.apk`
+- Local archive: `releases/v0.7.1/Archive-v0.7.1.apk`
+- Google Drive archive: `Archive Productivity Tracker/Releases/v0.7.1/Archive-v0.7.1.apk`
+- GitHub reference: `main`, tag `v0.7.1`
+- SHA-256: `6e60087076a9c6feb4ae3cf1038c027d66f30a4af481b5dbf95c97e147db8f72`
+- Summary: Corrects the oversized v0.7.0 launcher rendering on Samsung One UI without changing Archive's approved mark.
+- Main UI changes: the adaptive foreground is centered at 72% scale, restoring intentional charcoal breathing room while retaining the full pastel A and endpoint.
+- Structural changes: the adaptive SVG and raster generator now encode the universal safe-zone treatment separately from legacy and round icon output.
+- Functional changes: none; application data, navigation, Health Connect synchronization, and all existing behavior are unchanged.
+- Known issues: an already pinned Samsung shortcut may cache the previous rendering until it is recreated or the launcher restarts; monochrome themed and iOS icon sets remain future work.
 
 ## 0.7.0 - Archive identity
 

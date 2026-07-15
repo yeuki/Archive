@@ -9,6 +9,7 @@ Add-Type -AssemblyName System.Drawing
 $ResourceRoot = Join-Path $ProjectRoot "android\app\src\main\res"
 $BrandRoot = Join-Path $ProjectRoot "resources\branding"
 $Supersample = 4
+$AdaptiveForegroundScale = 0.72
 
 $DensitySizes = [ordered]@{
   "mdpi" = @{ Legacy = 48; Foreground = 108 }
@@ -173,6 +174,25 @@ function New-ArchiveBitmap {
 
   Draw-ArchiveMark -Graphics $graphics -Scale ($renderSize / 108)
   $graphics.Dispose()
+
+  if ($Variant -eq "foreground") {
+    # Adaptive launchers render the 108dp foreground through a tighter moving mask.
+    # Keep the complete mark inside the 66dp universal safe zone so launchers such
+    # as Samsung One UI cannot visually zoom or crop the A against the icon edge.
+    $paddedBitmap = [System.Drawing.Bitmap]::new($renderSize, $renderSize, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $paddedGraphics = [System.Drawing.Graphics]::FromImage($paddedBitmap)
+    $paddedGraphics.Clear([System.Drawing.Color]::Transparent)
+    $paddedGraphics.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality
+    $paddedGraphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+    $paddedGraphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+    $paddedGraphics.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+    $adaptiveSize = $renderSize * $AdaptiveForegroundScale
+    $adaptiveInset = ($renderSize - $adaptiveSize) / 2
+    $paddedGraphics.DrawImage($bitmap, $adaptiveInset, $adaptiveInset, $adaptiveSize, $adaptiveSize)
+    $paddedGraphics.Dispose()
+    $bitmap.Dispose()
+    $bitmap = $paddedBitmap
+  }
 
   $final = [System.Drawing.Bitmap]::new($Size, $Size, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
   $finalGraphics = [System.Drawing.Graphics]::FromImage($final)

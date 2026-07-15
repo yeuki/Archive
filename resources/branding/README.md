@@ -14,4 +14,6 @@ The final green endpoint represents the latest point in the archive. The charcoa
 - `archive-icon-1024.png` and `archive-icon-foreground-1024.png` are generated master rasters.
 - `scripts/generate-launcher-icons.ps1` regenerates Android legacy, round, and adaptive launcher assets at every required density.
 
+The adaptive foreground uses a centered 72% safe-zone scale. Android launchers are free to animate and crop adaptive layers; this padding keeps the complete mark inside the universal safe region on Samsung One UI and other aggressive launcher masks. Legacy and round raster icons retain the full-size mark because their background and mask are already baked into the asset.
+
 Do not edit generated PNGs individually. Change the shared geometry and generator together, then regenerate all densities.
