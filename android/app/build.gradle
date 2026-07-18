@@ -1,6 +1,26 @@
 apply plugin: 'com.android.application'
 apply plugin: 'org.jetbrains.kotlin.android'
 
+def archiveSigningProperties = new Properties()
+def archiveSigningPropertiesFile = rootProject.file('../keystore.properties')
+if (archiveSigningPropertiesFile.exists()) {
+    archiveSigningPropertiesFile.withInputStream { archiveSigningProperties.load(it) }
+}
+
+def archiveSigningValue = { String propertyName, String environmentName ->
+    def value = archiveSigningProperties.getProperty(propertyName)
+    if (!value) {
+        value = System.getenv(environmentName)
+    }
+    value?.trim()
+}
+
+def archiveStoreFile = archiveSigningValue('storeFile', 'ARCHIVE_KEYSTORE_FILE')
+def archiveStorePassword = archiveSigningValue('storePassword', 'ARCHIVE_KEYSTORE_PASSWORD')
+def archiveKeyAlias = archiveSigningValue('keyAlias', 'ARCHIVE_KEY_ALIAS')
+def archiveKeyPassword = archiveSigningValue('keyPassword', 'ARCHIVE_KEY_PASSWORD')
+def hasArchiveSigningOverride = [archiveStoreFile, archiveStorePassword, archiveKeyAlias, archiveKeyPassword].every { it }
+
 def archiveVersionFile = rootProject.file('../VERSION')
 def archiveVersionName = archiveVersionFile.exists() ? archiveVersionFile.text.trim() : '0.1.0'
 def archiveVersionParts = archiveVersionName.tokenize('.').collect { it as int }
@@ -25,8 +45,22 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        archiveRelease {
+            if (hasArchiveSigningOverride) {
+                storeFile file(archiveStoreFile)
+                storePassword archiveStorePassword
+                keyAlias archiveKeyAlias
+                keyPassword archiveKeyPassword
+            }
+        }
+    }
     buildTypes {
         release {
+            // Existing installs use this desktop's legacy debug certificate. An explicit
+            // untracked override is preferred; the verified debug config preserves current
+            // update compatibility until that key is restored to the laptop.
+            signingConfig hasArchiveSigningOverride ? signingConfigs.archiveRelease : signingConfigs.debug
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
@@ -56,6 +90,40 @@ dependencies {
 }
 
 apply from: 'capacitor.build.gradle'
+
+def expectedArchiveCertificateSha256 = 'EACF63657082F50A381C7B61BA7C2FB9C9A52AF39B62F464399B0A4C3630D748'
+def verifyArchiveSigningCertificate = tasks.register('verifyArchiveSigningCertificate') {
+    doLast {
+        def signingConfig = android.buildTypes.release.signingConfig
+        if (!signingConfig?.storeFile?.isFile()) {
+            throw new GradleException('Archive signing key was not found. Restore the existing key before building a release.')
+        }
+
+        def keyStore = java.security.KeyStore.getInstance(signingConfig.storeType ?: 'JKS')
+        signingConfig.storeFile.withInputStream { stream ->
+            keyStore.load(stream, signingConfig.storePassword.toCharArray())
+        }
+        def certificate = keyStore.getCertificate(signingConfig.keyAlias)
+        if (!certificate) {
+            throw new GradleException('Configured Archive key alias was not found in the keystore.')
+        }
+
+        def actualSha256 = java.security.MessageDigest.getInstance('SHA-256')
+            .digest(certificate.encoded)
+            .collect { String.format('%02X', it & 0xff) }
+            .join('')
+        if (actualSha256 != expectedArchiveCertificateSha256) {
+            throw new GradleException(
+                "Archive signing certificate mismatch. Refusing to create an incompatible update. " +
+                "Expected ${expectedArchiveCertificateSha256}; found ${actualSha256}."
+            )
+        }
+    }
+}
+
+tasks.matching { it.name in ['packageRelease', 'bundleRelease'] }.configureEach {
+    dependsOn verifyArchiveSigningCertificate
+}
 
 try {
     def servicesJSON = file('google-services.json')

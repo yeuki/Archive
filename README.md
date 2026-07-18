@@ -52,24 +52,28 @@ Vite prints the local development URL in the terminal.
 npm run build
 ```
 
-## Build the Android debug APK
+## Build the Android APKs
 
 ```powershell
 npm run build
 npx cap sync android
 cd android
 .\gradlew.bat assembleDebug
+.\gradlew.bat assembleRelease
 ```
 
-The APK is generated at:
+The APKs are generated at:
 
 ```text
 android/app/build/outputs/apk/debug/app-debug.apk
+android/app/build/outputs/apk/release/app-release.apk
 ```
+
+Release packaging verifies the existing Archive signing certificate and refuses an incompatible key. See [`MULTI_COMPUTER_SETUP.md`](MULTI_COMPUTER_SETUP.md) before building on another computer.
 
 ## Versioned releases
 
-Archive uses semantic pre-release versions recorded in [`VERSION`](VERSION). To build and preserve the current version locally and in Google Drive, run:
+Archive uses semantic pre-release versions recorded in [`VERSION`](VERSION). To build a signed release and preserve the current version locally and in Google Drive, run:
 
 ```powershell
 npm run release:build

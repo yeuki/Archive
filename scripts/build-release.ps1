@@ -6,7 +6,7 @@ $ErrorActionPreference = "Stop"
 
 $ProjectRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $AndroidRoot = Join-Path $ProjectRoot "android"
-$BuiltApk = Join-Path $AndroidRoot "app\build\outputs\apk\debug\app-debug.apk"
+$BuiltApk = Join-Path $AndroidRoot "app\build\outputs\apk\release\app-release.apk"
 $GeneratedAppBuild = Join-Path $AndroidRoot "app\build"
 $Version = (Get-Content -Raw (Join-Path $ProjectRoot "VERSION")).Trim()
 $PackageVersion = (Get-Content -Raw (Join-Path $ProjectRoot "package.json") | ConvertFrom-Json).version
@@ -20,22 +20,76 @@ if ($PackageVersion -ne $Version) {
 }
 
 $ReleaseName = "Archive-v$Version.apk"
-$LocalReleaseDir = Join-Path $ProjectRoot "releases\v$Version"
+$LocalReleasesRoot = Join-Path $ProjectRoot "releases"
+$LocalReleaseDir = Join-Path $LocalReleasesRoot "v$Version"
 $LocalReleaseApk = Join-Path $LocalReleaseDir $ReleaseName
-$LocalChecksum = "$LocalReleaseApk.sha256"
-$DriveReleaseDir = Join-Path $DriveRoot "Releases\v$Version"
+$DriveReleasesRoot = Join-Path $DriveRoot "Releases"
+$DriveReleaseDir = Join-Path $DriveReleasesRoot "v$Version"
 $DriveReleaseApk = Join-Path $DriveReleaseDir $ReleaseName
-$DriveChecksum = "$DriveReleaseApk.sha256"
-$DriveReleaseNotes = Join-Path $DriveReleaseDir "Archive-v$Version-release-notes.md"
+$StagingId = [guid]::NewGuid().ToString('N')
+$LocalStagingDir = Join-Path $LocalReleasesRoot ".staging-archive-v$Version-$StagingId"
+$DriveStagingDir = Join-Path $DriveReleasesRoot ".staging-archive-v$Version-$StagingId"
+$LocalStagingApk = Join-Path $LocalStagingDir $ReleaseName
+$LocalStagingChecksum = "$LocalStagingApk.sha256"
+$DriveStagingApk = Join-Path $DriveStagingDir $ReleaseName
+$DriveStagingChecksum = "$DriveStagingApk.sha256"
+$DriveStagingReleaseNotes = Join-Path $DriveStagingDir "RELEASE_NOTES.md"
+$ReleaseTag = "v$Version"
+$ReleaseTagPushed = $false
+$DrivePublishCompleted = $false
 
-foreach ($Path in @($LocalReleaseApk, $LocalChecksum, $DriveReleaseApk, $DriveChecksum, $DriveReleaseNotes)) {
+foreach ($Path in @($LocalReleaseDir, $DriveReleaseDir)) {
   if (Test-Path -LiteralPath $Path) {
-    throw "Refusing to overwrite existing release artifact '$Path'. Increase VERSION for a new build."
+    throw "Refusing to overwrite existing release directory '$Path'. Increase VERSION for a new build."
   }
+}
+
+$GitStatus = @(& git -C $ProjectRoot status --porcelain)
+if ($LASTEXITCODE -ne 0) {
+  throw "Could not read Git status."
+}
+if ($GitStatus.Count) {
+  throw "Refusing to publish from a dirty worktree. Commit and push the release changes first."
+}
+
+$Branch = (& git -C $ProjectRoot branch --show-current).Trim()
+if ($LASTEXITCODE -ne 0 -or $Branch -ne 'main') {
+  throw "Releases must be published from the main branch."
+}
+& git -C $ProjectRoot fetch --quiet origin $Branch
+if ($LASTEXITCODE -ne 0) {
+  throw "Could not fetch origin/$Branch. Check GitHub authentication and network access."
+}
+$Head = (& git -C $ProjectRoot rev-parse HEAD).Trim()
+$RemoteHead = (& git -C $ProjectRoot rev-parse "origin/$Branch").Trim()
+if ($LASTEXITCODE -ne 0 -or $Head -ne $RemoteHead) {
+  throw "Local main must exactly match origin/main before publishing a release."
+}
+$ExistingRemoteTag = @(& git -C $ProjectRoot ls-remote --tags origin "refs/tags/$ReleaseTag")
+if ($LASTEXITCODE -ne 0) {
+  throw "Could not inspect remote release tags."
+}
+if ($ExistingRemoteTag.Count) {
+  throw "Remote release tag '$ReleaseTag' already exists. Increase VERSION."
 }
 
 Push-Location $ProjectRoot
 try {
+  npm.cmd run test:health
+  if ($LASTEXITCODE -ne 0) {
+    throw "The health-system checks failed with exit code $LASTEXITCODE."
+  }
+
+  npm.cmd run test:auto-health
+  if ($LASTEXITCODE -ne 0) {
+    throw "The automatic-health checks failed with exit code $LASTEXITCODE."
+  }
+
+  npm.cmd run test:sleep
+  if ($LASTEXITCODE -ne 0) {
+    throw "The sleep-policy checks failed with exit code $LASTEXITCODE."
+  }
+
   npm.cmd run build
   if ($LASTEXITCODE -ne 0) {
     throw "The web build failed with exit code $LASTEXITCODE."
@@ -70,7 +124,7 @@ try {
       Remove-Item -LiteralPath $ResolvedAppBuild -Recurse -Force
     }
 
-    .\gradlew.bat assembleDebug --no-daemon
+    .\gradlew.bat test lint assembleRelease --no-daemon
     if ($LASTEXITCODE -ne 0) {
       throw "The Android build failed with exit code $LASTEXITCODE."
     }
@@ -82,24 +136,45 @@ try {
     throw "Expected APK was not produced at '$BuiltApk'."
   }
 
-  New-Item -ItemType Directory -Path $LocalReleaseDir -Force | Out-Null
-  New-Item -ItemType Directory -Path $DriveReleaseDir -Force | Out-Null
+  $Hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $BuiltApk).Hash.ToLowerInvariant()
+  New-Item -ItemType Directory -Path $LocalReleasesRoot -Force | Out-Null
+  New-Item -ItemType Directory -Path $DriveReleasesRoot -Force | Out-Null
+  New-Item -ItemType Directory -Path $LocalStagingDir | Out-Null
+  New-Item -ItemType Directory -Path $DriveStagingDir | Out-Null
 
-  Copy-Item -LiteralPath $BuiltApk -Destination $LocalReleaseApk
-  Copy-Item -LiteralPath $BuiltApk -Destination $DriveReleaseApk
+  Copy-Item -LiteralPath $BuiltApk -Destination $LocalStagingApk
+  Copy-Item -LiteralPath $BuiltApk -Destination $DriveStagingApk
+  "$Hash  $ReleaseName" | Set-Content -Encoding ascii -NoNewline -LiteralPath $LocalStagingChecksum
+  "$Hash  $ReleaseName" | Set-Content -Encoding ascii -NoNewline -LiteralPath $DriveStagingChecksum
+  Copy-Item -LiteralPath (Join-Path $ProjectRoot "CHANGELOG.md") -Destination $DriveStagingReleaseNotes
 
-  $Hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $LocalReleaseApk).Hash.ToLowerInvariant()
-  "$Hash  $ReleaseName" | Set-Content -Encoding ascii -NoNewline -LiteralPath $LocalChecksum
-  "$Hash  $ReleaseName" | Set-Content -Encoding ascii -NoNewline -LiteralPath $DriveChecksum
-  Copy-Item -LiteralPath (Join-Path $ProjectRoot "CHANGELOG.md") -Destination $DriveReleaseNotes
+  $LocalStagedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $LocalStagingApk).Hash.ToLowerInvariant()
+  $DriveStagedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $DriveStagingApk).Hash.ToLowerInvariant()
+  if ($LocalStagedHash -ne $Hash -or $DriveStagedHash -ne $Hash) {
+    throw "A staged release APK checksum does not match the built APK."
+  }
+
+  # The unique annotated tag object is the shared cross-computer release claim.
+  # A competing publisher receives a non-fast-forward tag rejection.
+  & git -C $ProjectRoot tag -a $ReleaseTag -m "Archive $ReleaseTag release claim $StagingId"
+  if ($LASTEXITCODE -ne 0) {
+    throw "Could not create local release tag '$ReleaseTag'."
+  }
+  & git -C $ProjectRoot push origin "refs/tags/${ReleaseTag}:refs/tags/${ReleaseTag}"
+  if ($LASTEXITCODE -ne 0) {
+    & git -C $ProjectRoot tag -d $ReleaseTag | Out-Null
+    throw "Could not claim remote release tag '$ReleaseTag'; another computer may have published it."
+  }
+  $ReleaseTagPushed = $true
+
+  # Each move prevents a partial final folder on its own volume. Neither move
+  # merges or overwrites; the Git tag above provides distributed uniqueness.
+  [IO.Directory]::Move($DriveStagingDir, $DriveReleaseDir)
+  $DrivePublishCompleted = $true
+  [IO.Directory]::Move($LocalStagingDir, $LocalReleaseDir)
 
   Copy-Item -LiteralPath (Join-Path $ProjectRoot "CHANGELOG.md") -Destination (Join-Path $DriveRoot "CHANGELOG.md") -Force
   Copy-Item -LiteralPath (Join-Path $ProjectRoot "RELEASES.md") -Destination (Join-Path $DriveRoot "RELEASES.md") -Force
-
-  $DriveHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $DriveReleaseApk).Hash.ToLowerInvariant()
-  if ($DriveHash -ne $Hash) {
-    throw "The Google Drive APK checksum does not match the local release."
-  }
 
   Write-Host ""
   Write-Host "Archive v$Version created successfully." -ForegroundColor Green
@@ -107,5 +182,20 @@ try {
   Write-Host "Drive: $DriveReleaseApk"
   Write-Host "SHA-256: $Hash"
 } finally {
+  if ($ReleaseTagPushed -and !$DrivePublishCompleted) {
+    Write-Warning "Remote tag '$ReleaseTag' reserved this version, but Drive publication did not finish. Inspect the tag and staging error before retrying; do not overwrite or delete release files blindly."
+  }
+  foreach ($StagingDir in @($LocalStagingDir, $DriveStagingDir)) {
+    if (Test-Path -LiteralPath $StagingDir) {
+      $ResolvedStagingDir = (Resolve-Path -LiteralPath $StagingDir).Path
+      $ExpectedRoot = if ($StagingDir -eq $LocalStagingDir) { $LocalReleasesRoot } else { $DriveReleasesRoot }
+      $ResolvedExpectedRoot = [IO.Path]::GetFullPath($ExpectedRoot)
+      if (!$ResolvedStagingDir.StartsWith($ResolvedExpectedRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) -or
+          !(Split-Path -Leaf $ResolvedStagingDir).StartsWith('.staging-archive-')) {
+        throw "Refusing to clean an unexpected staging path '$ResolvedStagingDir'."
+      }
+      Remove-Item -LiteralPath $ResolvedStagingDir -Recurse -Force
+    }
+  }
   Pop-Location
 }

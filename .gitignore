@@ -12,6 +12,10 @@ coverage/
 .env
 .env.*
 !.env.example
+keystore.properties
+**/keystore.properties
+google-services.json
+**/google-services.json
 
 # Browser automation profiles
 edge-cdp-profile/
@@ -31,6 +35,8 @@ android/.gradle/
 android/**/build/
 android/local.properties
 android/.idea/
+.android/
+*.avd/
 # Versioned APKs live locally and in Drive; GitHub receives them as release assets.
 releases/**/*.apk
 releases/**/*.sha256
@@ -38,6 +44,10 @@ releases/**/*.sha256
 *.aab
 *.jks
 *.keystore
+*.p12
+*.pfx
+*.pem
+*.key
 
 # Editor and operating-system files
 .vscode/

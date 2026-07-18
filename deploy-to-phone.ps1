@@ -1,6 +1,5 @@
 param(
   [switch]$SkipBuild,
-  [switch]$SkipDriveCopy,
   [switch]$NoLaunch,
   [string]$AdbPath = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
 )
@@ -9,10 +8,7 @@ $ErrorActionPreference = "Stop"
 
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $AndroidRoot = Join-Path $ProjectRoot "android"
-$ApkPath = Join-Path $AndroidRoot "app\build\outputs\apk\debug\app-debug.apk"
-$Version = (Get-Content -Raw (Join-Path $ProjectRoot "VERSION")).Trim()
-$ReleaseFileName = "Archive-v$Version.apk"
-$DriveApkPath = "G:\My Drive\Archive Productivity Tracker\Releases\v$Version\$ReleaseFileName"
+$ApkPath = Join-Path $AndroidRoot "app\build\outputs\apk\release\app-release.apk"
 $AppId = "com.kyle.archive"
 
 function Invoke-Step {
@@ -40,16 +36,25 @@ try {
   if (!$SkipBuild) {
     Invoke-Step "Building web assets" {
       npm.cmd run build
+      if ($LASTEXITCODE -ne 0) {
+        throw "The web build failed with exit code $LASTEXITCODE."
+      }
     }
 
     Invoke-Step "Syncing Capacitor Android project" {
       npx.cmd cap sync android
+      if ($LASTEXITCODE -ne 0) {
+        throw "Capacitor sync failed with exit code $LASTEXITCODE."
+      }
     }
 
-    Invoke-Step "Building Android debug APK" {
+    Invoke-Step "Building certificate-verified Android release APK" {
       Push-Location $AndroidRoot
       try {
-        .\gradlew.bat assembleDebug
+        .\gradlew.bat assembleRelease
+        if ($LASTEXITCODE -ne 0) {
+          throw "The certificate-verified release build failed with exit code $LASTEXITCODE."
+        }
       } finally {
         Pop-Location
       }
@@ -62,7 +67,13 @@ try {
 
   Invoke-Step "Checking connected phone" {
     & $AdbPath start-server | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+      throw "ADB server startup failed with exit code $LASTEXITCODE."
+    }
     $Devices = & $AdbPath devices
+    if ($LASTEXITCODE -ne 0) {
+      throw "ADB device discovery failed with exit code $LASTEXITCODE."
+    }
     $ReadyDevices = @($Devices | Where-Object { $_ -match "\tdevice$" })
     $UnauthorizedDevices = @($Devices | Where-Object { $_ -match "\tunauthorized$" })
 
@@ -79,32 +90,17 @@ try {
 
   Invoke-Step "Installing Archive on phone" {
     & $AdbPath install -r $ApkPath
-  }
-
-  if (!$SkipDriveCopy) {
-    Invoke-Step "Archiving versioned Google Drive APK" {
-      $DriveDir = Split-Path -Parent $DriveApkPath
-      if (!(Test-Path -LiteralPath $DriveDir)) {
-        New-Item -ItemType Directory -Path $DriveDir | Out-Null
-      }
-
-      if (Test-Path -LiteralPath $DriveApkPath) {
-        $SourceHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $ApkPath).Hash
-        $DriveHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $DriveApkPath).Hash
-        if ($SourceHash -ne $DriveHash) {
-          throw "Release '$ReleaseFileName' already exists with different contents. Increase VERSION before archiving another major build."
-        }
-        Write-Host "The matching versioned Drive APK is already archived; leaving it unchanged."
-      } else {
-        Copy-Item -LiteralPath $ApkPath -Destination $DriveApkPath
-      }
-      Get-Item -LiteralPath $DriveApkPath | Select-Object FullName, Length, LastWriteTime
+    if ($LASTEXITCODE -ne 0) {
+      throw "ADB install failed with exit code $LASTEXITCODE."
     }
   }
 
   if (!$NoLaunch) {
     Invoke-Step "Launching Archive" {
       & $AdbPath shell monkey -p $AppId -c android.intent.category.LAUNCHER 1 | Out-Null
+      if ($LASTEXITCODE -ne 0) {
+        throw "Archive launch failed with exit code $LASTEXITCODE."
+      }
     }
   }
 

@@ -10,11 +10,11 @@ Archive uses semantic versioning while it is in pre-release development:
 
 1. Choose the version before implementation and update `VERSION`, `package.json`, `CHANGELOG.md`, and `RELEASES.md`.
 2. Confirm the Android version derives correctly from `VERSION`.
-3. Run `npm run release:build`.
-4. Verify the APK and its SHA-256 checksum in the local and Google Drive release folders.
-5. Install and smoke-test the APK on an Android phone when available.
-6. Commit the release, create an annotated `vX.Y.Z` Git tag, and push both to GitHub.
-7. Attach the APK to the matching GitHub release when GitHub release tooling is available.
+3. Commit the release changes on `main` and push them to GitHub. The local and remote `main` commits must match exactly.
+4. Run `npm run release:build`. The script runs the checks/build, pushes the unique annotated `vX.Y.Z` tag as the cross-computer release claim, and then publishes the staged local and Drive artifacts.
+5. Verify the APK, SHA-256 checksum, and `RELEASE_NOTES.md` in the Google Drive release folder, plus the APK/checksum in the local release folder.
+6. Install and smoke-test the signed release APK on an Android phone when available.
+7. Confirm the pushed tag and attach the APK to the matching GitHub Release when GitHub release tooling is available.
 
 ## Storage layout
 
@@ -30,6 +30,7 @@ Google Drive/Archive Productivity Tracker/
     v0.1.0/
       Archive-v0.1.0.apk
       Archive-v0.1.0.apk.sha256
+      RELEASE_NOTES.md
 ```
 
-The release script refuses to overwrite either local or Drive APKs. A different binary requires a new version.
+The release script refuses to overwrite either local or Drive version directories, and the remote Git tag serializes publishers across computers. A different binary requires a new version.
