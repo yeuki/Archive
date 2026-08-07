@@ -26,7 +26,7 @@ Release APKs are immutable. If a packaged build changes, Archive receives a new 
 - Local archive: `releases/v0.9.0/Archive-v0.9.0.apk`
 - Google Drive archive: `Archive Productivity Tracker/Releases/v0.9.0/Archive-v0.9.0.apk`
 - GitHub reference: `main`, tag `v0.9.0`
-- SHA-256: `PENDING-FINAL-BUILD`
+- SHA-256: `377fa12c168e2f6fdee9c61b66d8c5a7ea19acc252e36711f51ccf79fcad34ed`
 - Summary: Consolidates Archive into four clear destinations and limits automatic Health Connect work to a single app-open refresh presented behind an intentional branded loader.
 - Main UI changes: centered four-button dock for Today, Track, Train, and Progress; compact section switchers for grouped pages; Settings promoted to a utility action; and a grey-to-gradient Archive logo fill with a minimum 1.5-second presentation.
 - Structural changes: the former eight primary destinations now map into three grouped section view sets, while the startup controller coordinates a bounded Health Connect promise with loader progress and transition timing.
