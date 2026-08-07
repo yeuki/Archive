@@ -107,7 +107,11 @@ try {
   assert.match(readerSource, /"launch", "pullToRefresh", "manual"/);
 
   assert.match(appSource, /const HEALTH_SYNC_WINDOW_DAYS = 30/);
+  assert.match(appSource, /const ARCHIVE_LAUNCH_LOGO_WIDTH = 108/);
   assert.match(appSource, /function ArchiveLaunchLogo/);
+  assert.match(appSource, /viewBox="0 0 108 108"/);
+  assert.doesNotMatch(appSource, /<text x="105" y="73">Archive<\/text>/);
+  assert.doesNotMatch(appSource, /Refreshing your health archive/);
   assert.match(appSource, /function ArchiveLaunchScreen/);
   assert.match(appSource, /function PullRefreshIndicator/);
   assert.match(appSource, /trigger: "launch"/);

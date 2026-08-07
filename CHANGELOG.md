@@ -4,6 +4,29 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-08-07
+
+### Changed
+
+- Replaced the horizontal Archive launch wordmark with the standalone flowing A mark while preserving the established grey-to-pastel loading reveal.
+- Centered the A itself on both axes by moving the loader to a square SVG canvas and removing the visible loading caption.
+- Remapped the full habit-pink, sleep-purple, water-blue, and move-green gradient across the narrower mark so every Archive color remains represented.
+
+### Preserved
+
+- Kept the v0.8.0/v0.10.0 liquid-glass expanding navigation, centered Home button, nine separate destinations, page hierarchy, Health Connect launch synchronization, and pull-to-refresh behavior unchanged.
+- Kept the launch status available to assistive technology even though the visible screen now contains only the animated A.
+
+### Fixed
+
+- Removed the wide invisible wordmark footprint that prevented the A itself from occupying the exact visual center of the launch screen.
+- Added a focused regression check for the square A loader alongside the existing navigation and Health Connect policy checks.
+
+### Known issues and unfinished work
+
+- The four-button navigation consolidation discussed for a future release is intentionally not part of v0.10.1; this patch retains the current hierarchy until a direction is approved.
+- Samsung Health publication timing and Android-only Health Connect support remain unchanged from v0.10.0.
+
 ## [0.10.0] - 2026-08-07
 
 ### Added

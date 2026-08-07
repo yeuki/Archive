@@ -97,6 +97,7 @@ const HEALTH_SYNC_WINDOW_DAYS = 30;
 const LAUNCH_MINIMUM_VISIBLE_MS = 420;
 const LAUNCH_SYNC_TIMEOUT_MS = 9000;
 const LAUNCH_FILL_SETTLE_MS = 260;
+const ARCHIVE_LAUNCH_LOGO_WIDTH = 108;
 const PULL_REFRESH_THRESHOLD = 72;
 const PULL_REFRESH_MAX_DISTANCE = 112;
 const HEALTH_SLEEP_DATE_POLICY = "previous-day-from-wake";
@@ -9000,9 +9001,9 @@ function DailySheet({ habitNames, trackedHabits, entries, goals, watchData, conn
 
 function ArchiveLaunchLogo() {
   return (
-    <svg className="archive-launch-logo" viewBox="0 0 342 108" role="img" aria-label="Archive">
+    <svg className="archive-launch-logo" viewBox="0 0 108 108" role="img" aria-label="Archive logo">
       <defs>
-        <linearGradient id="archiveLaunchGradient" x1="18" y1="54" x2="326" y2="54" gradientUnits="userSpaceOnUse">
+        <linearGradient id="archiveLaunchGradient" x1="18" y1="54" x2="90" y2="54" gradientUnits="userSpaceOnUse">
           <stop offset="0" stopColor="#FFC5D3" />
           <stop offset="0.34" stopColor="#C9A0DC" />
           <stop offset="0.68" stopColor="#A2BFFE" />
@@ -9017,14 +9018,12 @@ function ArchiveLaunchLogo() {
         <path d="M22 76 C27 83 32 83 35 74 L49.5 30 C51.1 24.5 56.9 24.5 58.5 30 L73 74 C76 83 81 82 84 76" />
         <path className="archive-launch-wave" d="M39.5 60.5 C41.3 56.4 43.8 56.4 46.75 60.5 C48.55 64.6 51.05 64.6 53.75 60.5 C55.55 56.4 58.05 56.4 61 60.5 C62.8 64.6 65.3 64.6 68.5 60.5" />
         <circle cx="85.2" cy="76.5" r="4.4" />
-        <text x="105" y="73">Archive</text>
       </g>
 
       <g className="archive-launch-mark-color" clipPath="url(#archiveLaunchReveal)" aria-hidden="true">
         <path d="M22 76 C27 83 32 83 35 74 L49.5 30 C51.1 24.5 56.9 24.5 58.5 30 L73 74 C76 83 81 82 84 76" />
         <path className="archive-launch-wave" d="M39.5 60.5 C41.3 56.4 43.8 56.4 46.75 60.5 C48.55 64.6 51.05 64.6 53.75 60.5 C55.55 56.4 58.05 56.4 61 60.5 C62.8 64.6 65.3 64.6 68.5 60.5" />
         <circle cx="85.2" cy="76.5" r="4.4" />
-        <text x="105" y="73">Archive</text>
       </g>
     </svg>
   );
@@ -9041,7 +9040,6 @@ function ArchiveLaunchScreen({ screenRef, phase, syncingHealth }) {
     >
       <div className="archive-launch-lockup">
         <ArchiveLaunchLogo />
-        <span>{syncingHealth ? "Refreshing your health archive" : "Opening your archive"}</span>
       </div>
     </div>
   );
@@ -9755,12 +9753,12 @@ export default function App() {
       if (cancelled || !launchScreen) return;
       const elapsed = Math.max(0, timestamp - startedAt);
       const progress = Math.min(0.9, 0.04 + (1 - Math.exp(-elapsed / 900)) * 0.86);
-      launchScreen.style.setProperty("--launch-progress-width", `${342 * progress}px`);
+      launchScreen.style.setProperty("--launch-progress-width", `${ARCHIVE_LAUNCH_LOGO_WIDTH * progress}px`);
       progressFrame = window.requestAnimationFrame(updateProgress);
     };
 
     if (reduceMotion && launchScreen) {
-      launchScreen.style.setProperty("--launch-progress-width", "342px");
+      launchScreen.style.setProperty("--launch-progress-width", `${ARCHIVE_LAUNCH_LOGO_WIDTH}px`);
     } else {
       progressFrame = window.requestAnimationFrame(updateProgress);
     }
@@ -9780,7 +9778,7 @@ export default function App() {
       if (cancelled) return;
 
       if (progressFrame) window.cancelAnimationFrame(progressFrame);
-      launchScreen?.style.setProperty("--launch-progress-width", "342px");
+      launchScreen?.style.setProperty("--launch-progress-width", `${ARCHIVE_LAUNCH_LOGO_WIDTH}px`);
       setLaunchPhase("settling");
       await new Promise((resolve) => window.setTimeout(resolve, reduceMotion ? 80 : LAUNCH_FILL_SETTLE_MS));
       if (!cancelled) {

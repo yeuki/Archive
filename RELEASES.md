@@ -4,6 +4,7 @@ Release APKs are immutable. If a packaged build changes, Archive receives a new 
 
 | Version | Release date | APK | Summary | Source reference |
 | --- | --- | --- | --- | --- |
+| 0.10.1 | 2026-08-07 | `Archive-v0.10.1.apk` | Centers the standalone Archive A in a cleaner grey-to-pastel launch animation without changing navigation. | `main`, tag `v0.10.1` |
 | 0.10.0 | 2026-08-07 | `Archive-v0.10.0.apk` | Restores the v0.8 hierarchy and introduces launch-gated plus pull-to-refresh Health Connect reconciliation. | `main`, tag `v0.10.0` |
 | 0.9.0 | 2026-08-07 | `Archive-v0.9.0.apk` | Four focused destinations, a slimmer dock, and one battery-conscious Health Connect refresh behind a branded startup screen. | `main`, tag `v0.9.0` |
 | 0.8.0 | 2026-07-15 | `Archive-v0.8.0.apk` | Archive Canvas completed across Workout, History, Coach, and Settings with shared hierarchy, material, and motion. | `main`, tag `v0.8.0` |
@@ -20,6 +21,19 @@ Release APKs are immutable. If a packaged build changes, Archive receives a new 
 | 0.2.1 | 2026-07-13 | `Archive-v0.2.1.apk` | Restores Archive's signature gradient on compact charts while preserving solid dense-data views. | `main`, tag `v0.2.1` |
 | 0.2.0 | 2026-07-13 | `Archive-v0.2.0.apk` | Archive Design System 2.0 with premium Home, Sleep, Settings, chart, surface, and navigation refinements. | `main`, tag `v0.2.0` |
 | 0.1.0 | 2026-07-13 | `Archive-v0.1.0.apk` | Formal baseline of the current productivity, health, workout, AI coach, and Health Connect experience. | `main`, tag `v0.1.0` |
+
+## 0.10.1 - Centered A launch mark
+
+- APK filename: `Archive-v0.10.1.apk`
+- Local archive: `releases/v0.10.1/Archive-v0.10.1.apk`
+- Google Drive archive: `Archive Productivity Tracker/Releases/v0.10.1/Archive-v0.10.1.apk`
+- GitHub reference: `main`, tag `v0.10.1`
+- SHA-256: `PENDING-FINAL-BUILD`
+- Summary: Refines Archive's launch presentation to the standalone flowing A, centered precisely while retaining the existing grey-to-pastel loading behavior.
+- Main UI changes: removes the Archive wordmark and visible status caption from the launch screen, places the A on a responsive square canvas, and distributes the full four-color Archive gradient across the mark.
+- Structural changes: introduces a single shared SVG reveal-width constant and regression coverage for the square loader; the v0.8.0/v0.10.0 navigation component, routes, page hierarchy, layouts, and interactions are untouched.
+- Functional changes: none; cold-launch Health Connect reconciliation, the bounded launch gate, pull-to-refresh, permissions, canonical data handling, and local persistence continue unchanged.
+- Known issues: the proposed four-button information architecture remains a future decision; Samsung Health publication timing remains upstream of Archive; and Health Connect remains Android-only.
 
 ## 0.10.0 - v0.8 hierarchy with launch and pull health sync
 

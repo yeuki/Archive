@@ -4529,16 +4529,14 @@ body.archive-launching {
 .archive-launch-lockup {
   position: relative;
   z-index: 1;
-  width: min(82vw, 342px);
+  width: min(40vw, 148px);
   display: grid;
   justify-items: center;
-  gap: 8px;
-  transform: translateY(-2vh);
   transition: transform 260ms cubic-bezier(0.2, 1, 0.26, 1);
 }
 
 .archive-launch-screen.settling .archive-launch-lockup {
-  transform: translateY(-2vh) scale(1.012);
+  transform: scale(1.012);
 }
 
 .archive-launch-logo {
@@ -4565,8 +4563,7 @@ body.archive-launching {
   stroke: #b9b9bf;
 }
 
-.archive-launch-mark-muted circle,
-.archive-launch-mark-muted text {
+.archive-launch-mark-muted circle {
   fill: #b9b9bf;
 }
 
@@ -4574,30 +4571,13 @@ body.archive-launching {
   stroke: url(#archiveLaunchGradient);
 }
 
-.archive-launch-mark-color circle,
-.archive-launch-mark-color text {
+.archive-launch-mark-color circle {
   fill: url(#archiveLaunchGradient);
-}
-
-.archive-launch-mark-muted text,
-.archive-launch-mark-color text {
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
-  font-size: 53px;
-  font-weight: 660;
-  letter-spacing: -3.2px;
 }
 
 .archive-launch-reveal {
   width: var(--launch-progress-width);
   transition: width 110ms linear;
-}
-
-.archive-launch-lockup > span {
-  color: #8a8a90;
-  font-size: 0.66rem;
-  font-weight: 570;
-  letter-spacing: 0.055em;
-  text-transform: uppercase;
 }
 
 @keyframes archiveLaunchSheen {
