@@ -8,9 +8,7 @@ import android.os.Build
 import android.provider.Settings
 import androidx.activity.result.ActivityResultLauncher
 import androidx.health.connect.client.HealthConnectClient
-import androidx.health.connect.client.HealthConnectFeatures
 import androidx.health.connect.client.PermissionController
-import androidx.health.connect.client.permission.HealthPermission
 import com.getcapacitor.JSArray
 import com.getcapacitor.JSObject
 import com.getcapacitor.Plugin
@@ -28,46 +26,31 @@ class ConnectedHealthPlugin : Plugin() {
     private val pluginScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var permissionLauncher: ActivityResultLauncher<Set<String>>? = null
     private var pendingPermissionCall: PluginCall? = null
-    private var pendingAutomaticPermission = false
 
     private val readPermissions
         get() = ConnectedHealthSnapshotReader.readPermissions
-    private val backgroundPermission
-        get() = HealthPermission.PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND
-
     override fun load() {
         permissionLauncher = activity.registerForActivityResult(
             PermissionController.createRequestPermissionResultContract(),
         ) { grantedPermissions ->
             val call = pendingPermissionCall
-            val automaticRequest = pendingAutomaticPermission
             pendingPermissionCall = null
-            pendingAutomaticPermission = false
-
-            if (automaticRequest) {
-                restoreAutomaticSchedule(grantedPermissions, enqueueInitial = true)
-            }
             call?.resolve(
                 permissionPayload(
                     grantedPermissions,
-                    if (automaticRequest) {
-                        "Automatic Health Connect permissions updated."
-                    } else {
-                        "Health Connect permissions updated."
-                    },
+                    "Health Connect permissions updated.",
                 ),
             )
         }
 
-        // WorkManager survives process death, but restoring the schedule here also
-        // reconciles app upgrades and permissions that were changed in Settings.
-        pluginScope.launch {
-            val client = healthClientOrNull() ?: return@launch
-            val granted = runCatching {
-                withContext(Dispatchers.IO) { client.permissionController.getGrantedPermissions() }
-            }.getOrDefault(emptySet())
-            restoreAutomaticSchedule(granted, enqueueInitial = false)
-        }
+        // Cancel jobs that may have survived an upgrade from the old hourly policy.
+        val config = HealthConnectAutoSyncStore.config(context)
+        HealthConnectAutoSyncScheduler.configure(
+            context = context,
+            enabled = config.enabled,
+            intervalMinutes = 0,
+            snapshotDays = config.snapshotDays,
+        )
     }
 
     @PluginMethod
@@ -123,15 +106,15 @@ class ConnectedHealthPlugin : Plugin() {
 
     @PluginMethod
     fun requestHealthPermissions(call: PluginCall) {
-        requestPermissions(call, includeBackground = false)
+        requestHealthDataPermissions(call)
     }
 
     @PluginMethod
     fun requestAutomaticSyncPermissions(call: PluginCall) {
-        requestPermissions(call, includeBackground = true)
+        requestHealthDataPermissions(call)
     }
 
-    private fun requestPermissions(call: PluginCall, includeBackground: Boolean) {
+    private fun requestHealthDataPermissions(call: PluginCall) {
         val client = healthClientOrNull()
         val launcher = permissionLauncher
         if (client == null) {
@@ -148,23 +131,13 @@ class ConnectedHealthPlugin : Plugin() {
                 val granted = withContext(Dispatchers.IO) {
                     client.permissionController.getGrantedPermissions()
                 }
-                val backgroundAvailable = backgroundReadAvailable(client)
-                val requested = if (includeBackground && backgroundAvailable) {
-                    readPermissions + backgroundPermission
-                } else {
-                    readPermissions
-                }
+                val requested = readPermissions
 
                 if (granted.containsAll(requested)) {
-                    if (includeBackground) restoreAutomaticSchedule(granted, enqueueInitial = true)
                     call.resolve(
                         permissionPayload(
                             granted,
-                            if (includeBackground && backgroundAvailable) {
-                                "All automatic Health Connect permissions are already granted."
-                            } else {
-                                "All requested Health Connect permissions are already granted."
-                            },
+                            "All requested Health Connect permissions are already granted.",
                         ),
                     )
                     return@launch
@@ -176,11 +149,9 @@ class ConnectedHealthPlugin : Plugin() {
                 }
 
                 pendingPermissionCall = call
-                pendingAutomaticPermission = includeBackground
                 launcher.launch(requested)
             } catch (error: Exception) {
                 pendingPermissionCall = null
-                pendingAutomaticPermission = false
                 call.reject("Archive could not request Health Connect permissions.", error)
             }
         }
@@ -238,7 +209,7 @@ class ConnectedHealthPlugin : Plugin() {
                         payload.getString("syncedAt") ?: "",
                     )
                 }
-                mergeJson(payload, automaticStatusPayload(client, granted))
+                mergeJson(payload, automaticStatusPayload())
                 call.resolve(payload)
             } catch (error: Exception) {
                 if (trigger == "foregroundAuto") {
@@ -263,61 +234,24 @@ class ConnectedHealthPlugin : Plugin() {
             "snapshotDays",
             HealthConnectAutoSyncStore.DEFAULT_SNAPSHOT_DAYS,
         ) ?: HealthConnectAutoSyncStore.DEFAULT_SNAPSHOT_DAYS
-        val client = healthClientOrNull()
-
-        pluginScope.launch {
-            val granted = if (client == null) {
-                emptySet()
-            } else {
-                runCatching {
-                    withContext(Dispatchers.IO) { client.permissionController.getGrantedPermissions() }
-                }.getOrDefault(emptySet())
-            }
-            val backgroundAvailable = client?.let(::backgroundReadAvailable) ?: false
-            val backgroundAllowed = backgroundAvailable &&
-                granted.contains(backgroundPermission) &&
-                granted.containsAll(readPermissions)
-
-            HealthConnectAutoSyncScheduler.configure(
-                context = context,
-                enabled = enabled,
-                intervalMinutes = intervalMinutes,
-                snapshotDays = snapshotDays,
-                backgroundAllowed = backgroundAllowed,
-                backgroundAvailable = backgroundAvailable,
-                enqueueInitial = false,
-            )
-            call.resolve(automaticStatusPayload(client, granted))
-        }
+        HealthConnectAutoSyncScheduler.configure(
+            context = context,
+            enabled = enabled,
+            intervalMinutes = intervalMinutes,
+            snapshotDays = snapshotDays,
+        )
+        call.resolve(automaticStatusPayload())
     }
 
     @PluginMethod
     fun getAutomaticSyncStatus(call: PluginCall) {
-        val client = healthClientOrNull()
-        pluginScope.launch {
-            val granted = if (client == null) {
-                emptySet()
-            } else {
-                runCatching {
-                    withContext(Dispatchers.IO) { client.permissionController.getGrantedPermissions() }
-                }.getOrDefault(emptySet())
-            }
-            call.resolve(automaticStatusPayload(client, granted))
-        }
+        call.resolve(automaticStatusPayload())
     }
 
     @PluginMethod
     fun getPendingAutomaticSync(call: PluginCall) {
-        val client = healthClientOrNull()
         pluginScope.launch {
-            val granted = if (client == null) {
-                emptySet()
-            } else {
-                runCatching {
-                    withContext(Dispatchers.IO) { client.permissionController.getGrantedPermissions() }
-                }.getOrDefault(emptySet())
-            }
-            val result = automaticStatusPayload(client, granted)
+            val result = automaticStatusPayload()
             val pending = withContext(Dispatchers.IO) {
                 HealthConnectAutoSyncStore.pendingSnapshot(context)
             }
@@ -331,12 +265,7 @@ class ConnectedHealthPlugin : Plugin() {
     fun acknowledgeAutomaticSync(call: PluginCall) {
         val snapshotId = call.getString("snapshotId", "") ?: ""
         val acknowledged = HealthConnectAutoSyncStore.acknowledgeSnapshot(context, snapshotId)
-        val result = HealthConnectAutoSyncStore.statusPayload(
-            context = context,
-            backgroundAvailable = false,
-            backgroundGranted = false,
-            workerScheduled = false,
-        )
+        val result = HealthConnectAutoSyncStore.statusPayload(context)
         result.put("acknowledged", acknowledged)
         call.resolve(result)
     }
@@ -392,8 +321,6 @@ class ConnectedHealthPlugin : Plugin() {
         val missing = readPermissions - grantedPermissions
         val status = buildStatusPayload(grantedPermissions)
         val healthAvailable = status.getBool("available") ?: false
-        val backgroundAvailable = status.getBool("backgroundReadAvailable") ?: false
-        val backgroundGranted = grantedPermissions.contains(backgroundPermission)
 
         status.put(
             "status",
@@ -408,8 +335,8 @@ class ConnectedHealthPlugin : Plugin() {
         status.put("requestedPermissions", stringArray(readPermissions))
         status.put("grantedPermissions", stringArray(grantedRequested))
         status.put("missingPermissions", stringArray(missing))
-        status.put("backgroundReadAvailable", backgroundAvailable)
-        status.put("backgroundReadGranted", backgroundGranted)
+        status.put("backgroundReadAvailable", false)
+        status.put("backgroundReadGranted", false)
         return status
     }
 
@@ -455,56 +382,12 @@ class ConnectedHealthPlugin : Plugin() {
                     else -> "Health Connect was not found. Install or enable it, then check again."
                 },
             )
-            mergeJson(this, automaticStatusPayload(client, grantedPermissions))
+            mergeJson(this, automaticStatusPayload())
         }
     }
 
-    private fun automaticStatusPayload(
-        client: HealthConnectClient?,
-        grantedPermissions: Set<String>,
-    ): JSObject {
-        val backgroundAvailable = client?.let(::backgroundReadAvailable) ?: false
-        val backgroundGranted = grantedPermissions.contains(backgroundPermission)
-        val config = HealthConnectAutoSyncStore.config(context)
-        return HealthConnectAutoSyncStore.statusPayload(
-            context = context,
-            backgroundAvailable = backgroundAvailable,
-            backgroundGranted = backgroundGranted,
-            workerScheduled = HealthConnectAutoSyncScheduler.workerIsScheduled(
-                config,
-                backgroundAvailable && backgroundGranted && grantedPermissions.containsAll(readPermissions),
-            ),
-        )
-    }
-
-    private fun restoreAutomaticSchedule(
-        grantedPermissions: Set<String>,
-        enqueueInitial: Boolean,
-    ) {
-        val config = HealthConnectAutoSyncStore.config(context)
-        if (!config.enabled) return
-        val client = healthClientOrNull()
-        val backgroundAvailable = client?.let(::backgroundReadAvailable) ?: false
-        val backgroundAllowed = backgroundAvailable &&
-            grantedPermissions.contains(backgroundPermission) &&
-            grantedPermissions.containsAll(readPermissions)
-        HealthConnectAutoSyncScheduler.configure(
-            context = context,
-            enabled = true,
-            intervalMinutes = config.intervalMinutes,
-            snapshotDays = config.snapshotDays,
-            backgroundAllowed = backgroundAllowed,
-            backgroundAvailable = backgroundAvailable,
-            enqueueInitial = enqueueInitial && backgroundAllowed,
-        )
-    }
-
-    private fun backgroundReadAvailable(client: HealthConnectClient): Boolean {
-        return runCatching {
-            client.features.getFeatureStatus(
-                HealthConnectFeatures.FEATURE_READ_HEALTH_DATA_IN_BACKGROUND,
-            ) == HealthConnectFeatures.FEATURE_STATUS_AVAILABLE
-        }.getOrDefault(false)
+    private fun automaticStatusPayload(): JSObject {
+        return HealthConnectAutoSyncStore.statusPayload(context)
     }
 
     private fun healthClientOrNull(): HealthConnectClient? {

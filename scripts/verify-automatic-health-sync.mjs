@@ -16,9 +16,11 @@ try {
   } = await vite.ssrLoadModule("/src/App.jsx");
 
   const migrated = normalizeConnectedHealth({ enabled: true });
-  assert.equal(migrated.automaticSyncEnabled, true, "existing enabled connections migrate to automatic foreground sync");
-  assert.equal(migrated.automaticSyncIntervalMinutes, 60);
+  assert.equal(migrated.automaticSyncEnabled, true, "existing enabled connections migrate to sync-on-open");
+  assert.equal(migrated.automaticSyncIntervalMinutes, 0);
   assert.equal(migrated.automaticSyncSnapshotDays, 3);
+  assert.equal(migrated.automaticSyncScheduled, false);
+  assert.equal(migrated.backgroundReadGranted, false);
 
   const explicitlyDisabled = normalizeConnectedHealth({ enabled: true, automaticSyncEnabled: false });
   assert.equal(explicitlyDisabled.automaticSyncEnabled, false, "an explicit user opt-out is preserved");
@@ -26,20 +28,20 @@ try {
   const nativePatch = nativeAutomaticHealthPatch({
     automaticSyncEnabled: true,
     automaticSyncScheduled: true,
-    automaticSyncStatus: "scheduled",
+    automaticSyncStatus: "foregroundOnly",
     backgroundReadAvailable: true,
     backgroundReadGranted: true,
     lastBackgroundSyncAt: "2026-07-14T20:00:00Z",
   });
   assert.deepEqual(nativePatch, {
-    automaticSyncScheduled: true,
-    backgroundReadAvailable: true,
-    backgroundReadGranted: true,
+    automaticSyncScheduled: false,
+    backgroundReadAvailable: false,
+    backgroundReadGranted: false,
     lastBackgroundSyncAt: "2026-07-14T20:00:00.000Z",
-    automaticSyncStatus: "scheduled",
+    automaticSyncStatus: "foregroundOnly",
   });
 
-  const backgroundMerge = mergeWatchData({
+  const openMerge = mergeWatchData({
     dailySummaries: [
       { date: "2026-07-10", steps: 5000 },
       { date: "2026-07-12", steps: 6000 },
@@ -76,21 +78,30 @@ try {
     workouts: [],
     samples: { heartRate: [], heartRateVariability: [] },
   });
-  assert.ok(backgroundMerge.dailySummaries.some(({ date }) => date === "2026-07-10"), "background windows preserve older canonical history");
-  assert.ok(!backgroundMerge.dailySummaries.some(({ date }) => date === "2026-07-12"), "authoritative background windows remove stale records only inside their window");
-  assert.equal(backgroundMerge.healthSystem.syncWindow.days, 3);
+  assert.ok(openMerge.dailySummaries.some(({ date }) => date === "2026-07-10"), "open-time windows preserve older canonical history");
+  assert.ok(!openMerge.dailySummaries.some(({ date }) => date === "2026-07-12"), "authoritative open-time windows remove stale records only inside their window");
+  assert.equal(openMerge.healthSystem.syncWindow.days, 3);
 
   const manifest = await readFile(new URL("../android/app/src/main/AndroidManifest.xml", import.meta.url), "utf8");
   const workerSource = await readFile(new URL("../android/app/src/main/java/com/kyle/archive/HealthConnectAutoSync.kt", import.meta.url), "utf8");
   const pluginSource = await readFile(new URL("../android/app/src/main/java/com/kyle/archive/ConnectedHealthPlugin.kt", import.meta.url), "utf8");
-  assert.match(manifest, /READ_HEALTH_DATA_IN_BACKGROUND/);
-  assert.match(workerSource, /PeriodicWorkRequestBuilder<HealthConnectSyncWorker>/);
+  const appSource = await readFile(new URL("../src/App.jsx", import.meta.url), "utf8");
+  assert.doesNotMatch(manifest, /READ_HEALTH_DATA_IN_BACKGROUND/);
+  assert.doesNotMatch(workerSource, /PeriodicWorkRequestBuilder<HealthConnectSyncWorker>/);
+  assert.doesNotMatch(workerSource, /ConnectedHealthSnapshotReader\.read/);
+  assert.match(workerSource, /cancelUniqueWork\(PERIODIC_WORK_NAME\)/);
+  assert.match(workerSource, /Kept as a no-op migration target/);
   assert.match(workerSource, /AtomicFile/);
   assert.match(pluginSource, /requestAutomaticSyncPermissions/);
   assert.match(pluginSource, /getPendingAutomaticSync/);
   assert.match(pluginSource, /acknowledgeAutomaticSync/);
+  assert.doesNotMatch(appSource, /setInterval\(refreshIfActive/);
+  assert.doesNotMatch(appSource, /appStateChange/);
+  assert.match(appSource, /const OPEN_HEALTH_SNAPSHOT_DAYS = 3/);
+  assert.match(appSource, /const STARTUP_MINIMUM_MS = 1500/);
+  assert.match(appSource, /function StartupScreen/);
 
-  console.log("Automatic health sync checks passed: migration, native status mapping, bounded background reconciliation, permission declaration, worker scheduling, and durable snapshot handoff.");
+  console.log("Open-only health sync checks passed: migration, three-day reconciliation, no background permission, no periodic worker reads, legacy-job cancellation, and branded startup gating.");
 } finally {
   await vite.close();
 }

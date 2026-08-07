@@ -4,6 +4,7 @@ Release APKs are immutable. If a packaged build changes, Archive receives a new 
 
 | Version | Release date | APK | Summary | Source reference |
 | --- | --- | --- | --- | --- |
+| 0.9.0 | 2026-08-07 | `Archive-v0.9.0.apk` | Four focused destinations, a slimmer dock, and one battery-conscious Health Connect refresh behind a branded startup screen. | `main`, tag `v0.9.0` |
 | 0.8.0 | 2026-07-15 | `Archive-v0.8.0.apk` | Archive Canvas completed across Workout, History, Coach, and Settings with shared hierarchy, material, and motion. | `main`, tag `v0.8.0` |
 | 0.7.1 | 2026-07-15 | `Archive-v0.7.1.apk` | Samsung-safe adaptive icon sizing with a dedicated centered foreground safe zone. | `main`, tag `v0.7.1` |
 | 0.7.0 | 2026-07-15 | `Archive-v0.7.0.apk` | First custom Archive identity with a flowing pastel A across adaptive, round, and legacy Android launchers. | `main`, tag `v0.7.0` |
@@ -18,6 +19,20 @@ Release APKs are immutable. If a packaged build changes, Archive receives a new 
 | 0.2.1 | 2026-07-13 | `Archive-v0.2.1.apk` | Restores Archive's signature gradient on compact charts while preserving solid dense-data views. | `main`, tag `v0.2.1` |
 | 0.2.0 | 2026-07-13 | `Archive-v0.2.0.apk` | Archive Design System 2.0 with premium Home, Sleep, Settings, chart, surface, and navigation refinements. | `main`, tag `v0.2.0` |
 | 0.1.0 | 2026-07-13 | `Archive-v0.1.0.apk` | Formal baseline of the current productivity, health, workout, AI coach, and Health Connect experience. | `main`, tag `v0.1.0` |
+
+## 0.9.0 - Focused navigation and open-time health
+
+- APK filename: `Archive-v0.9.0.apk`
+- Local archive: `releases/v0.9.0/Archive-v0.9.0.apk`
+- Google Drive archive: `Archive Productivity Tracker/Releases/v0.9.0/Archive-v0.9.0.apk`
+- GitHub reference: `main`, tag `v0.9.0`
+- SHA-256: `PENDING-FINAL-BUILD`
+- Summary: Consolidates Archive into four clear destinations and limits automatic Health Connect work to a single app-open refresh presented behind an intentional branded loader.
+- Main UI changes: centered four-button dock for Today, Track, Train, and Progress; compact section switchers for grouped pages; Settings promoted to a utility action; and a grey-to-gradient Archive logo fill with a minimum 1.5-second presentation.
+- Structural changes: the former eight primary destinations now map into three grouped section view sets, while the startup controller coordinates a bounded Health Connect promise with loader progress and transition timing.
+- Functional changes: automatic imports use a recent three-day window only on cold launch; foreground-resume and 15-minute polling are removed; periodic and immediate WorkManager jobs are cancelled; the background-read permission is removed; manual sync and canonical reconciliation remain available.
+- Release tooling changes: the release builder validates every required version reference, finalizes and pushes the actual APK checksum before tagging, and writes both `RELEASE_NOTES.md` and `Archive-v0.9.0-release-notes.md` beside the Drive APK.
+- Known issues: Samsung Health controls when watch data reaches Health Connect; browser previews cannot verify the native bridge; progress levels, achievements, and the optional character are future work; and Apple Health/iOS packaging are not yet available.
 
 ## 0.8.0 - Canvas everywhere
 

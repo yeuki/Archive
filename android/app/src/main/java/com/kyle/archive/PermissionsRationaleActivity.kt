@@ -33,7 +33,7 @@ class PermissionsRationaleActivity : Activity() {
 
         container.addView(
             bodyText(
-                "Archive asks Health Connect for read-only access to steps, sleep, workouts, distance, active calories, heart rate, HRV, and floors climbed so your Samsung watch data can fill the app automatically.",
+                "Archive asks Health Connect for read-only access to steps, sleep, workouts, distance, active calories, heart rate, HRV, and floors climbed so recent Samsung watch data can refresh when you open the app or choose Sync.",
                 topMargin = 18,
             ),
         )

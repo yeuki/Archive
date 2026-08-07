@@ -2,22 +2,13 @@ package com.kyle.archive
 
 import android.content.Context
 import android.util.AtomicFile
-import androidx.health.connect.client.HealthConnectClient
-import androidx.health.connect.client.HealthConnectFeatures
-import androidx.health.connect.client.permission.HealthPermission
-import androidx.work.BackoffPolicy
 import androidx.work.CoroutineWorker
-import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.ExistingWorkPolicy
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.getcapacitor.JSObject
 import java.io.File
 import java.time.Instant
 import java.util.UUID
-import java.util.concurrent.TimeUnit
 
 internal data class AutomaticSyncConfig(
     val enabled: Boolean,
@@ -74,7 +65,7 @@ internal object HealthConnectAutoSyncStore {
             .putString(KEY_STATUS, if (enabled) "scheduled" else "off")
             .putString(
                 KEY_MESSAGE,
-                if (enabled) "Automatic foreground refresh is enabled." else "Automatic health sync is off.",
+                if (enabled) "Recent watch data will refresh once when Archive opens." else "Sync on open is off.",
             )
             .apply()
         return normalized
@@ -84,7 +75,7 @@ internal object HealthConnectAutoSyncStore {
         prefs(context).edit()
             .putString(KEY_LAST_ATTEMPT_AT, at)
             .putString(KEY_STATUS, "running")
-            .putString(KEY_MESSAGE, "Checking Health Connect in the background.")
+            .putString(KEY_MESSAGE, "Refreshing recent Health Connect data while Archive opens.")
             .apply()
     }
 
@@ -103,9 +94,9 @@ internal object HealthConnectAutoSyncStore {
             .putString(
                 KEY_MESSAGE,
                 if (backgroundAvailable) {
-                    "Allow background health access for hourly sync while Archive is closed."
+                    "Health Connect data permission is needed for sync on open."
                 } else {
-                    "This device supports automatic refresh only while Archive is active."
+                    "Health Connect data permission is needed for sync on open."
                 },
             )
             .apply()
@@ -178,38 +169,30 @@ internal object HealthConnectAutoSyncStore {
         }
     }
 
-    fun statusPayload(
-        context: Context,
-        backgroundAvailable: Boolean,
-        backgroundGranted: Boolean,
-        workerScheduled: Boolean,
-    ): JSObject {
+    fun statusPayload(context: Context): JSObject {
         val prefs = prefs(context)
         val config = config(context)
         val storedStatus = prefs.getString(KEY_STATUS, if (config.enabled) "scheduled" else "off") ?: "off"
         val resolvedStatus = when {
             !config.enabled -> "off"
-            !backgroundAvailable -> "foregroundOnly"
-            !backgroundGranted -> "permissionNeeded"
-            else -> storedStatus
+            storedStatus in setOf("running", "synced", "error") -> storedStatus
+            else -> "foregroundOnly"
         }
         val resolvedMessage = when {
-            !config.enabled -> "Automatic health sync is off."
-            !backgroundAvailable -> "This device will refresh automatically whenever Archive is active."
-            !backgroundGranted -> "Background permission is needed for hourly sync while Archive is closed."
-            else -> prefs.getString(KEY_MESSAGE, "Automatic health sync is scheduled.")
-                ?: "Automatic health sync is scheduled."
+            !config.enabled -> "Sync on open is off."
+            else -> prefs.getString(KEY_MESSAGE, "Recent watch data refreshes once when Archive opens.")
+                ?: "Recent watch data refreshes once when Archive opens."
         }
 
         return JSObject().apply {
             put("automaticSyncEnabled", config.enabled)
-            put("automaticSyncIntervalMinutes", config.intervalMinutes)
+            put("automaticSyncIntervalMinutes", 0)
             put("automaticSyncSnapshotDays", config.snapshotDays)
-            put("automaticSyncScheduled", workerScheduled)
+            put("automaticSyncScheduled", false)
             put("automaticSyncStatus", resolvedStatus)
             put("automaticSyncMessage", resolvedMessage)
-            put("backgroundReadAvailable", backgroundAvailable)
-            put("backgroundReadGranted", backgroundGranted)
+            put("backgroundReadAvailable", false)
+            put("backgroundReadGranted", false)
             put("lastAutomaticAttemptAt", prefs.getString(KEY_LAST_ATTEMPT_AT, "") ?: "")
             put("lastAutomaticSyncAt", prefs.getString(KEY_LAST_AUTOMATIC_SYNC_AT, "") ?: "")
             put("lastBackgroundSyncAt", prefs.getString(KEY_LAST_BACKGROUND_SYNC_AT, "") ?: "")
@@ -228,9 +211,9 @@ internal object HealthConnectAutoSyncStore {
         return AtomicFile(File(directory, SNAPSHOT_FILE))
     }
 
-    const val DEFAULT_INTERVAL_MINUTES = 60
+    const val DEFAULT_INTERVAL_MINUTES = 0
     const val DEFAULT_SNAPSHOT_DAYS = 3
-    const val MIN_INTERVAL_MINUTES = 15
+    const val MIN_INTERVAL_MINUTES = 0
     const val MAX_INTERVAL_MINUTES = 1440
     const val MAX_SNAPSHOT_DAYS = 7
 }
@@ -244,9 +227,6 @@ internal object HealthConnectAutoSyncScheduler {
         enabled: Boolean,
         intervalMinutes: Int,
         snapshotDays: Int,
-        backgroundAllowed: Boolean,
-        backgroundAvailable: Boolean,
-        enqueueInitial: Boolean = false,
     ): AutomaticSyncConfig {
         val appContext = context.applicationContext
         val config = HealthConnectAutoSyncStore.updateConfig(
@@ -256,43 +236,14 @@ internal object HealthConnectAutoSyncScheduler {
             snapshotDays,
         )
         val workManager = WorkManager.getInstance(appContext)
-
-        if (!enabled || !backgroundAllowed) {
-            workManager.cancelUniqueWork(PERIODIC_WORK_NAME)
-            workManager.cancelUniqueWork(IMMEDIATE_WORK_NAME)
-            if (enabled && !backgroundAllowed) {
-                HealthConnectAutoSyncStore.markPermissionNeeded(appContext, backgroundAvailable)
-            }
-            return config
-        }
-
-        val request = PeriodicWorkRequestBuilder<HealthConnectSyncWorker>(
-            config.intervalMinutes.toLong(),
-            TimeUnit.MINUTES,
-        )
-            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 15, TimeUnit.MINUTES)
-            .addTag(PERIODIC_WORK_NAME)
-            .build()
-
-        workManager.enqueueUniquePeriodicWork(
-            PERIODIC_WORK_NAME,
-            ExistingPeriodicWorkPolicy.UPDATE,
-            request,
-        )
-
-        if (enqueueInitial) {
-            val initial = OneTimeWorkRequestBuilder<HealthConnectSyncWorker>()
-                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 15, TimeUnit.MINUTES)
-                .addTag(IMMEDIATE_WORK_NAME)
-                .build()
-            workManager.enqueueUniqueWork(IMMEDIATE_WORK_NAME, ExistingWorkPolicy.REPLACE, initial)
-        }
+        // Version upgrades may leave WorkManager jobs created by the old hourly
+        // policy. Always cancel both unique jobs; open-time sync now runs only
+        // from the foreground WebView lifecycle.
+        workManager.cancelUniqueWork(PERIODIC_WORK_NAME)
+        workManager.cancelUniqueWork(IMMEDIATE_WORK_NAME)
         return config
     }
 
-    fun workerIsScheduled(config: AutomaticSyncConfig, backgroundAllowed: Boolean): Boolean {
-        return config.enabled && backgroundAllowed
-    }
 }
 
 class HealthConnectSyncWorker(
@@ -300,59 +251,8 @@ class HealthConnectSyncWorker(
     workerParams: WorkerParameters,
 ) : CoroutineWorker(appContext, workerParams) {
     override suspend fun doWork(): Result {
-        val context = applicationContext
-        val config = HealthConnectAutoSyncStore.config(context)
-        if (!config.enabled) return Result.success()
-
-        HealthConnectAutoSyncStore.markAttempt(context)
-        val sdkStatus = try {
-            HealthConnectClient.getSdkStatus(context)
-        } catch (_: Exception) {
-            HealthConnectClient.SDK_UNAVAILABLE
-        }
-        if (sdkStatus != HealthConnectClient.SDK_AVAILABLE) {
-            HealthConnectAutoSyncStore.markError(context, "Health Connect is unavailable for background sync.")
-            return Result.success()
-        }
-
-        val client = HealthConnectClient.getOrCreate(context)
-        val backgroundAvailable = client.features.getFeatureStatus(
-            HealthConnectFeatures.FEATURE_READ_HEALTH_DATA_IN_BACKGROUND,
-        ) == HealthConnectFeatures.FEATURE_STATUS_AVAILABLE
-        if (!backgroundAvailable) {
-            HealthConnectAutoSyncStore.markPermissionNeeded(context, false)
-            return Result.success()
-        }
-
-        val granted = try {
-            client.permissionController.getGrantedPermissions()
-        } catch (error: Exception) {
-            return retryOrContinue("Could not check background health permissions: ${error.message ?: "unknown error"}")
-        }
-        val backgroundGranted = granted.contains(HealthPermission.PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND)
-        if (!granted.containsAll(ConnectedHealthSnapshotReader.readPermissions) || !backgroundGranted) {
-            HealthConnectAutoSyncStore.markPermissionNeeded(context, true)
-            return Result.success()
-        }
-
-        return try {
-            val payload = ConnectedHealthSnapshotReader.read(
-                client = client,
-                requestedDays = config.snapshotDays,
-                trigger = "background",
-            )
-            HealthConnectAutoSyncStore.saveBackgroundSnapshot(context, payload)
-            Result.success()
-        } catch (_: SecurityException) {
-            HealthConnectAutoSyncStore.markPermissionNeeded(context, true)
-            Result.success()
-        } catch (error: Exception) {
-            retryOrContinue("Background Health Connect sync failed: ${error.message ?: "unknown error"}")
-        }
-    }
-
-    private fun retryOrContinue(message: String): Result {
-        HealthConnectAutoSyncStore.markError(applicationContext, message)
-        return if (runAttemptCount < 2) Result.retry() else Result.success()
+        // Kept as a no-op migration target so a job persisted by an older APK
+        // cannot perform a watch read before the new policy cancels it.
+        return Result.success()
     }
 }

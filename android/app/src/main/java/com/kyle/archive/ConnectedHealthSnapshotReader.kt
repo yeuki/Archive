@@ -23,9 +23,9 @@ import java.time.ZoneId
 import kotlin.reflect.KClass
 
 /**
- * Creates the same canonical Health Connect snapshot for foreground and
- * WorkManager reads. Keeping this code independent of the Capacitor activity
- * lets background work continue after Archive's WebView has been paused.
+ * Creates the canonical Health Connect snapshot used by app-open and manual
+ * synchronization. Keeping this reader independent of the UI makes the
+ * foreground import predictable and easy to verify.
  */
 internal object ConnectedHealthSnapshotReader {
     val readPermissions = setOf(

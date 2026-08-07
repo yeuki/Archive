@@ -10,9 +10,9 @@ Archive uses semantic versioning while it is in pre-release development:
 
 1. Choose the version before implementation and update `VERSION`, `package.json`, `CHANGELOG.md`, and `RELEASES.md`.
 2. Confirm the Android version derives correctly from `VERSION`.
-3. Commit the release changes on `main` and push them to GitHub. The local and remote `main` commits must match exactly.
-4. Run `npm run release:build`. The script runs the checks/build, pushes the unique annotated `vX.Y.Z` tag as the cross-computer release claim, and then publishes the staged local and Drive artifacts.
-5. Verify the APK, SHA-256 checksum, and `RELEASE_NOTES.md` in the Google Drive release folder, plus the APK/checksum in the local release folder.
+3. Add the new `RELEASES.md` entry with `PENDING-FINAL-BUILD`, commit the release changes on `main`, and push them to GitHub. The local and remote `main` commits must match exactly.
+4. Run `npm run release:build`. The script runs the checks/build, replaces the pending checksum with the final APK hash, commits and pushes that finalized record, pushes the unique annotated `vX.Y.Z` tag as the cross-computer release claim, and then publishes the staged local and Drive artifacts.
+5. Verify the APK, SHA-256 checksum, `RELEASE_NOTES.md`, and version-named release notes in the Google Drive release folder, plus the APK/checksum in the local release folder.
 6. Install and smoke-test the signed release APK on an Android phone when available.
 7. Confirm the pushed tag and attach the APK to the matching GitHub Release when GitHub release tooling is available.
 

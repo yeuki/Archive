@@ -8,8 +8,11 @@ $ProjectRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Pa
 $AndroidRoot = Join-Path $ProjectRoot "android"
 $BuiltApk = Join-Path $AndroidRoot "app\build\outputs\apk\release\app-release.apk"
 $GeneratedAppBuild = Join-Path $AndroidRoot "app\build"
+$ReleasesDocument = Join-Path $ProjectRoot "RELEASES.md"
 $Version = (Get-Content -Raw (Join-Path $ProjectRoot "VERSION")).Trim()
 $PackageVersion = (Get-Content -Raw (Join-Path $ProjectRoot "package.json") | ConvertFrom-Json).version
+$PackageLockText = Get-Content -Raw (Join-Path $ProjectRoot "package-lock.json")
+$PackageLockVersions = [regex]::Matches($PackageLockText, '"version"\s*:\s*"([^"]+)"')
 
 if ($Version -notmatch '^\d+\.\d+\.\d+$') {
   throw "VERSION must contain a semantic version such as 0.2.0. Found '$Version'."
@@ -17,6 +20,16 @@ if ($Version -notmatch '^\d+\.\d+\.\d+$') {
 
 if ($PackageVersion -ne $Version) {
   throw "package.json version '$PackageVersion' does not match VERSION '$Version'."
+}
+
+if ($PackageLockVersions.Count -lt 2) {
+  throw "package-lock.json does not contain the expected root version references."
+}
+
+$PackageLockVersion = $PackageLockVersions[0].Groups[1].Value
+$PackageLockRootVersion = $PackageLockVersions[1].Groups[1].Value
+if ($PackageLockVersion -ne $Version -or $PackageLockRootVersion -ne $Version) {
+  throw "package-lock.json versions '$PackageLockVersion' and '$PackageLockRootVersion' do not both match VERSION '$Version'."
 }
 
 $ReleaseName = "Archive-v$Version.apk"
@@ -34,6 +47,7 @@ $LocalStagingChecksum = "$LocalStagingApk.sha256"
 $DriveStagingApk = Join-Path $DriveStagingDir $ReleaseName
 $DriveStagingChecksum = "$DriveStagingApk.sha256"
 $DriveStagingReleaseNotes = Join-Path $DriveStagingDir "RELEASE_NOTES.md"
+$DriveStagingNamedReleaseNotes = Join-Path $DriveStagingDir "Archive-v$Version-release-notes.md"
 $ReleaseTag = "v$Version"
 $ReleaseTagPushed = $false
 $DrivePublishCompleted = $false
@@ -137,6 +151,50 @@ try {
   }
 
   $Hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $BuiltApk).Hash.ToLowerInvariant()
+
+  $ReleasesText = [IO.File]::ReadAllText($ReleasesDocument)
+  $ReleaseHeading = "## $Version "
+  $ReleaseSectionStart = $ReleasesText.IndexOf($ReleaseHeading, [StringComparison]::Ordinal)
+  if ($ReleaseSectionStart -lt 0) {
+    throw "RELEASES.md does not contain a detail section for version '$Version'."
+  }
+  $NextReleaseSection = $ReleasesText.IndexOf("`n## ", $ReleaseSectionStart + $ReleaseHeading.Length, [StringComparison]::Ordinal)
+  $ReleaseSectionLength = if ($NextReleaseSection -lt 0) {
+    $ReleasesText.Length - $ReleaseSectionStart
+  } else {
+    $NextReleaseSection - $ReleaseSectionStart
+  }
+  $ReleaseSection = $ReleasesText.Substring($ReleaseSectionStart, $ReleaseSectionLength)
+  $PendingChecksumLine = '- SHA-256: `PENDING-FINAL-BUILD`'
+  $FinalChecksumLine = "- SHA-256: ``$Hash``"
+
+  if ($ReleaseSection.Contains($PendingChecksumLine)) {
+    $FinalReleaseSection = $ReleaseSection.Replace($PendingChecksumLine, $FinalChecksumLine)
+    $FinalReleasesText = $ReleasesText.Substring(0, $ReleaseSectionStart) +
+      $FinalReleaseSection +
+      $ReleasesText.Substring($ReleaseSectionStart + $ReleaseSectionLength)
+    $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [IO.File]::WriteAllText($ReleasesDocument, $FinalReleasesText, $Utf8NoBom)
+
+    & git -C $ProjectRoot add -- RELEASES.md
+    if ($LASTEXITCODE -ne 0) {
+      throw "Could not stage the finalized release checksum."
+    }
+    & git -C $ProjectRoot commit -m "Finalize Archive v$Version checksum"
+    if ($LASTEXITCODE -ne 0) {
+      throw "Could not commit the finalized release checksum."
+    }
+    & git -C $ProjectRoot push origin main
+    if ($LASTEXITCODE -ne 0) {
+      throw "Could not push the finalized release checksum to origin/main."
+    }
+  } else {
+    $RecordedHashMatch = [regex]::Match($ReleaseSection, '- SHA-256: `([0-9a-fA-F]{64})`')
+    if (!$RecordedHashMatch.Success -or $RecordedHashMatch.Groups[1].Value.ToLowerInvariant() -ne $Hash) {
+      throw "The recorded v$Version checksum does not match the final APK and is not pending."
+    }
+  }
+
   New-Item -ItemType Directory -Path $LocalReleasesRoot -Force | Out-Null
   New-Item -ItemType Directory -Path $DriveReleasesRoot -Force | Out-Null
   New-Item -ItemType Directory -Path $LocalStagingDir | Out-Null
@@ -147,6 +205,7 @@ try {
   "$Hash  $ReleaseName" | Set-Content -Encoding ascii -NoNewline -LiteralPath $LocalStagingChecksum
   "$Hash  $ReleaseName" | Set-Content -Encoding ascii -NoNewline -LiteralPath $DriveStagingChecksum
   Copy-Item -LiteralPath (Join-Path $ProjectRoot "CHANGELOG.md") -Destination $DriveStagingReleaseNotes
+  Copy-Item -LiteralPath (Join-Path $ProjectRoot "CHANGELOG.md") -Destination $DriveStagingNamedReleaseNotes
 
   $LocalStagedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $LocalStagingApk).Hash.ToLowerInvariant()
   $DriveStagedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $DriveStagingApk).Hash.ToLowerInvariant()
@@ -174,7 +233,7 @@ try {
   [IO.Directory]::Move($LocalStagingDir, $LocalReleaseDir)
 
   Copy-Item -LiteralPath (Join-Path $ProjectRoot "CHANGELOG.md") -Destination (Join-Path $DriveRoot "CHANGELOG.md") -Force
-  Copy-Item -LiteralPath (Join-Path $ProjectRoot "RELEASES.md") -Destination (Join-Path $DriveRoot "RELEASES.md") -Force
+  Copy-Item -LiteralPath $ReleasesDocument -Destination (Join-Path $DriveRoot "RELEASES.md") -Force
 
   Write-Host ""
   Write-Host "Archive v$Version created successfully." -ForegroundColor Green

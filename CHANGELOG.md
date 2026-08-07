@@ -4,6 +4,35 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-08-07
+
+### Added
+
+- Added a focused four-destination navigation model: Today, Track, Train, and Progress.
+- Added compact in-page destination switchers so Track contains Habits, Water, and Sleep; Train contains Today and History; and Progress contains Insights and Coach without turning any one page into an overloaded dashboard.
+- Added a branded startup screen whose Archive mark fills from muted grey to its full pastel gradient from left to right while the app prepares recent data.
+- Added a minimum 1.5-second startup presentation so fast launches still feel deliberate, with an upper wait bound so a slow Health Connect response cannot trap the user on the loader.
+
+### Changed
+
+- Replaced the eight-destination, edge-to-edge bottom taskbar with a slimmer centered dock while keeping Settings available as a top-level utility rather than a primary destination.
+- Changed automatic Health Connect behavior to one recent three-day refresh per cold app launch; returning to the foreground and leaving the app open no longer triggers repeated watch reads.
+- Retained explicit manual Health Connect refreshes for users who want an update without restarting Archive.
+- Removed the background health permission and disabled periodic and immediate WorkManager scheduling, while keeping the existing canonical reconciliation and local persistence model intact.
+- Hardened the release builder to verify `VERSION`, `package.json`, and both root package versions in `package-lock.json`, finalize and push the built APK checksum before tagging, and place both generic and version-named release notes beside each Drive APK.
+
+### Fixed
+
+- Cancelled legacy periodic jobs during configuration and converted the retained migration worker to a no-op, preventing an older installed scheduling policy from continuing watch reads after upgrade.
+- Preserved zero horizontal overflow at 412 x 915 and 360 x 800 phone sizes across the consolidated navigation and startup experience.
+
+### Known issues and unfinished work
+
+- Archive can only import data after Samsung Health has shared it with Health Connect, so newly recorded watch data may still reflect Samsung's upstream delay when the app opens.
+- Browser previews show the branded minimum-duration loader but cannot exercise native Health Connect permissions or watch synchronization.
+- The Progress destination establishes the information architecture for future progress feedback, but levels, achievements, and the optional character system are not included in this release.
+- Health Connect remains Android-only; iOS packaging and Apple Health integration remain future work.
+
 ## [0.8.0] - 2026-07-15
 
 ### Added
@@ -308,7 +337,9 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 - The visual system is functional and consistent but has not yet received the planned premium design-system refinement.
 - iOS packaging and Apple Health integration are future work.
 
-[Unreleased]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.8.0...v0.9.0
+[0.8.0]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/yeuki/archive-productivity-tracker/compare/v0.5.0...v0.6.0
