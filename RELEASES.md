@@ -27,7 +27,7 @@ Release APKs are immutable. If a packaged build changes, Archive receives a new 
 - Local archive: `releases/v0.10.0/Archive-v0.10.0.apk`
 - Google Drive archive: `Archive Productivity Tracker/Releases/v0.10.0/Archive-v0.10.0.apk`
 - GitHub reference: `main`, tag `v0.10.0`
-- SHA-256: `PENDING-FINAL-BUILD`
+- SHA-256: `a90efa632ade404ff10d68e49044a06044a34dc0d031eb54e68984c23f74dee0`
 - Summary: Re-establishes v0.8.0 as Archive's UI and hierarchy baseline, then adds a polished launch gate and pull-to-refresh as the only Health Connect read paths.
 - Main UI changes: the exact v0.8.0 liquid-glass expanding navigation and separate Workout, Workout History, Habit, Coach, Home, Water, Sleep, Stats, and Settings pages are restored; launch now presents a horizontal grey-to-pastel Archive lockup; and a compact material refresh indicator follows the pull gesture without blocking the interface.
 - Structural changes: app initialization owns one bounded launch-sync promise; a root gesture controller owns pull-to-refresh without modifying page components; the native migration layer cancels obsolete WorkManager jobs; and no post-v0.8 section tabs, merged screens, or alternate hierarchy remain.
