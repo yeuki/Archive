@@ -4,6 +4,7 @@ Release APKs are immutable. If a packaged build changes, Archive receives a new 
 
 | Version | Release date | APK | Summary | Source reference |
 | --- | --- | --- | --- | --- |
+| 0.10.0 | 2026-08-07 | `Archive-v0.10.0.apk` | Restores the v0.8 hierarchy and introduces launch-gated plus pull-to-refresh Health Connect reconciliation. | `main`, tag `v0.10.0` |
 | 0.9.0 | 2026-08-07 | `Archive-v0.9.0.apk` | Four focused destinations, a slimmer dock, and one battery-conscious Health Connect refresh behind a branded startup screen. | `main`, tag `v0.9.0` |
 | 0.8.0 | 2026-07-15 | `Archive-v0.8.0.apk` | Archive Canvas completed across Workout, History, Coach, and Settings with shared hierarchy, material, and motion. | `main`, tag `v0.8.0` |
 | 0.7.1 | 2026-07-15 | `Archive-v0.7.1.apk` | Samsung-safe adaptive icon sizing with a dedicated centered foreground safe zone. | `main`, tag `v0.7.1` |
@@ -19,6 +20,19 @@ Release APKs are immutable. If a packaged build changes, Archive receives a new 
 | 0.2.1 | 2026-07-13 | `Archive-v0.2.1.apk` | Restores Archive's signature gradient on compact charts while preserving solid dense-data views. | `main`, tag `v0.2.1` |
 | 0.2.0 | 2026-07-13 | `Archive-v0.2.0.apk` | Archive Design System 2.0 with premium Home, Sleep, Settings, chart, surface, and navigation refinements. | `main`, tag `v0.2.0` |
 | 0.1.0 | 2026-07-13 | `Archive-v0.1.0.apk` | Formal baseline of the current productivity, health, workout, AI coach, and Health Connect experience. | `main`, tag `v0.1.0` |
+
+## 0.10.0 - v0.8 hierarchy with launch and pull health sync
+
+- APK filename: `Archive-v0.10.0.apk`
+- Local archive: `releases/v0.10.0/Archive-v0.10.0.apk`
+- Google Drive archive: `Archive Productivity Tracker/Releases/v0.10.0/Archive-v0.10.0.apk`
+- GitHub reference: `main`, tag `v0.10.0`
+- SHA-256: `PENDING-FINAL-BUILD`
+- Summary: Re-establishes v0.8.0 as Archive's UI and hierarchy baseline, then adds a polished launch gate and pull-to-refresh as the only Health Connect read paths.
+- Main UI changes: the exact v0.8.0 liquid-glass expanding navigation and separate Workout, Workout History, Habit, Coach, Home, Water, Sleep, Stats, and Settings pages are restored; launch now presents a horizontal grey-to-pastel Archive lockup; and a compact material refresh indicator follows the pull gesture without blocking the interface.
+- Structural changes: app initialization owns one bounded launch-sync promise; a root gesture controller owns pull-to-refresh without modifying page components; the native migration layer cancels obsolete WorkManager jobs; and no post-v0.8 section tabs, merged screens, or alternate hierarchy remain.
+- Functional changes: enabled Health Connect imports perform a full 30-day canonical read once on cold launch and after a completed pull gesture; resume, visibility, interval, and background reads are absent; permissions and connection utilities remain; and the sleep Sync choice uses already-imported watch data rather than launching another read.
+- Known issues: upstream Samsung Health publication delays remain outside Archive's control; browser previews cannot execute native reads; Apple Health/iOS support is future work; and v0.9.0 remains archived but is superseded for continued development.
 
 ## 0.9.0 - Focused navigation and open-time health
 

@@ -8,7 +8,6 @@ import androidx.work.WorkerParameters
 import com.getcapacitor.JSObject
 import java.io.File
 import java.time.Instant
-import java.util.UUID
 
 internal data class AutomaticSyncConfig(
     val enabled: Boolean,
@@ -16,7 +15,7 @@ internal data class AutomaticSyncConfig(
     val snapshotDays: Int,
 )
 
-/** Private native storage for scheduler state and the latest unapplied snapshot. */
+/** Private native storage for launch policy and a legacy unapplied snapshot. */
 internal object HealthConnectAutoSyncStore {
     private const val PREFS_NAME = "archive_health_connect_auto_sync"
     private const val SNAPSHOT_DIRECTORY = "connected-health"
@@ -65,7 +64,7 @@ internal object HealthConnectAutoSyncStore {
             .putString(KEY_STATUS, if (enabled) "scheduled" else "off")
             .putString(
                 KEY_MESSAGE,
-                if (enabled) "Recent watch data will refresh once when Archive opens." else "Sync on open is off.",
+                if (enabled) "Health data refreshes on launch and pull-to-refresh." else "Health Connect import is off.",
             )
             .apply()
         return normalized
@@ -75,7 +74,7 @@ internal object HealthConnectAutoSyncStore {
         prefs(context).edit()
             .putString(KEY_LAST_ATTEMPT_AT, at)
             .putString(KEY_STATUS, "running")
-            .putString(KEY_MESSAGE, "Refreshing recent Health Connect data while Archive opens.")
+            .putString(KEY_MESSAGE, "Refreshing Health Connect data while Archive launches.")
             .apply()
     }
 
@@ -84,21 +83,7 @@ internal object HealthConnectAutoSyncStore {
             .putString(KEY_LAST_ATTEMPT_AT, syncedAt)
             .putString(KEY_LAST_AUTOMATIC_SYNC_AT, syncedAt)
             .putString(KEY_STATUS, "synced")
-            .putString(KEY_MESSAGE, "Health data refreshed when Archive became active.")
-            .apply()
-    }
-
-    fun markPermissionNeeded(context: Context, backgroundAvailable: Boolean) {
-        prefs(context).edit()
-            .putString(KEY_STATUS, if (backgroundAvailable) "permissionNeeded" else "foregroundOnly")
-            .putString(
-                KEY_MESSAGE,
-                if (backgroundAvailable) {
-                    "Health Connect data permission is needed for sync on open."
-                } else {
-                    "Health Connect data permission is needed for sync on open."
-                },
-            )
+            .putString(KEY_MESSAGE, "Health data refreshed when Archive launched.")
             .apply()
     }
 
@@ -107,36 +92,6 @@ internal object HealthConnectAutoSyncStore {
             .putString(KEY_STATUS, "error")
             .putString(KEY_MESSAGE, message.take(240))
             .apply()
-    }
-
-    fun saveBackgroundSnapshot(context: Context, payload: JSObject) {
-        synchronized(lock) {
-            val snapshotId = UUID.randomUUID().toString()
-            val capturedAt = payload.getString("syncedAt") ?: Instant.now().toString()
-            payload.put("automaticSnapshotId", snapshotId)
-            payload.put("backgroundCapturedAt", capturedAt)
-            payload.put("syncTrigger", "background")
-
-            val atomicFile = snapshotFile(context)
-            var output = atomicFile.startWrite()
-            try {
-                output.write(payload.toString().toByteArray(Charsets.UTF_8))
-                atomicFile.finishWrite(output)
-            } catch (error: Exception) {
-                atomicFile.failWrite(output)
-                throw error
-            }
-
-            prefs(context).edit()
-                .putString(KEY_PENDING_SNAPSHOT_ID, snapshotId)
-                .putString(KEY_PENDING_CAPTURED_AT, capturedAt)
-                .putString(KEY_LAST_ATTEMPT_AT, capturedAt)
-                .putString(KEY_LAST_AUTOMATIC_SYNC_AT, capturedAt)
-                .putString(KEY_LAST_BACKGROUND_SYNC_AT, capturedAt)
-                .putString(KEY_STATUS, "captured")
-                .putString(KEY_MESSAGE, "Background health data is ready to apply in Archive.")
-                .apply()
-        }
     }
 
     fun pendingSnapshot(context: Context): JSObject? {
@@ -179,9 +134,9 @@ internal object HealthConnectAutoSyncStore {
             else -> "foregroundOnly"
         }
         val resolvedMessage = when {
-            !config.enabled -> "Sync on open is off."
-            else -> prefs.getString(KEY_MESSAGE, "Recent watch data refreshes once when Archive opens.")
-                ?: "Recent watch data refreshes once when Archive opens."
+            !config.enabled -> "Health Connect import is off."
+            else -> prefs.getString(KEY_MESSAGE, "Health data refreshes on launch and pull-to-refresh.")
+                ?: "Health data refreshes on launch and pull-to-refresh."
         }
 
         return JSObject().apply {
@@ -212,10 +167,10 @@ internal object HealthConnectAutoSyncStore {
     }
 
     const val DEFAULT_INTERVAL_MINUTES = 0
-    const val DEFAULT_SNAPSHOT_DAYS = 3
+    const val DEFAULT_SNAPSHOT_DAYS = 30
     const val MIN_INTERVAL_MINUTES = 0
     const val MAX_INTERVAL_MINUTES = 1440
-    const val MAX_SNAPSHOT_DAYS = 7
+    const val MAX_SNAPSHOT_DAYS = 30
 }
 
 internal object HealthConnectAutoSyncScheduler {
@@ -237,8 +192,8 @@ internal object HealthConnectAutoSyncScheduler {
         )
         val workManager = WorkManager.getInstance(appContext)
         // Version upgrades may leave WorkManager jobs created by the old hourly
-        // policy. Always cancel both unique jobs; open-time sync now runs only
-        // from the foreground WebView lifecycle.
+        // policy. Always cancel both unique jobs; launch and pull-to-refresh
+        // syncing now run only from explicit foreground WebView interactions.
         workManager.cancelUniqueWork(PERIODIC_WORK_NAME)
         workManager.cancelUniqueWork(IMMEDIATE_WORK_NAME)
         return config

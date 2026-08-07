@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import { renderBodyMapSvg } from "./assets/bodymap.js";
 import pencilIcon from "./assets/pencil-icon.png";
-import archiveLogo from "../android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png";
 
 const DAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"];
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -20,43 +19,16 @@ const DEFAULT_PAGE_MODULES = {
   settings: [],
 };
 const PAGE_MOTION_ORDER = {
+  workout: -4,
+  workoutHistory: -3,
+  habit: -2,
+  coach: -1,
   home: 0,
-  habit: 1,
-  water: 1.1,
-  sleep: 1.2,
-  workout: 2,
-  workoutHistory: 2.1,
+  water: 1,
+  sleep: 2,
   stats: 3,
-  coach: 3.1,
   settings: 4,
 };
-
-const PRIMARY_SECTIONS = [
-  { id: "today", label: "Today", icon: "home", defaultPage: "home", pages: ["home"] },
-  { id: "track", label: "Track", icon: "habit", defaultPage: "habit", pages: ["habit", "water", "sleep"] },
-  { id: "train", label: "Train", icon: "workout", defaultPage: "workout", pages: ["workout", "workoutHistory"] },
-  { id: "progress", label: "Progress", icon: "stats", defaultPage: "stats", pages: ["stats", "coach"] },
-];
-
-const SECTION_VIEWS = {
-  track: [
-    { page: "habit", label: "Habits" },
-    { page: "water", label: "Water" },
-    { page: "sleep", label: "Sleep" },
-  ],
-  train: [
-    { page: "workout", label: "Today" },
-    { page: "workoutHistory", label: "History" },
-  ],
-  progress: [
-    { page: "stats", label: "Insights" },
-    { page: "coach", label: "Coach" },
-  ],
-};
-
-function sectionForPage(page) {
-  return PRIMARY_SECTIONS.find((section) => section.pages.includes(page))?.id ?? null;
-}
 const DEFAULT_COACH_MESSAGES = [
   {
     id: "coach-welcome",
@@ -121,11 +93,12 @@ const WATCH_METRIC_DEFINITIONS = [
 ];
 const HEALTH_DATA_SCHEMA_VERSION = 1;
 const HEALTH_POLICY_VERSION = "archive-health-1";
-const OPEN_HEALTH_SNAPSHOT_DAYS = 3;
-const STARTUP_MINIMUM_MS = 1500;
-const STARTUP_SYNC_TIMEOUT_MS = 6500;
-const STARTUP_FILL_SETTLE_MS = 150;
-const STARTUP_FADE_MS = 250;
+const HEALTH_SYNC_WINDOW_DAYS = 30;
+const LAUNCH_MINIMUM_VISIBLE_MS = 420;
+const LAUNCH_SYNC_TIMEOUT_MS = 9000;
+const LAUNCH_FILL_SETTLE_MS = 260;
+const PULL_REFRESH_THRESHOLD = 72;
+const PULL_REFRESH_MAX_DISTANCE = 112;
 const HEALTH_SLEEP_DATE_POLICY = "previous-day-from-wake";
 const DEFAULT_HEALTH_SYSTEM = {
   schemaVersion: HEALTH_DATA_SCHEMA_VERSION,
@@ -192,7 +165,7 @@ const DEFAULT_CONNECTED_HEALTH = {
   automaticSyncStatus: "off",
   automaticSyncMessage: "",
   automaticSyncIntervalMinutes: 0,
-  automaticSyncSnapshotDays: OPEN_HEALTH_SNAPSHOT_DAYS,
+  automaticSyncSnapshotDays: HEALTH_SYNC_WINDOW_DAYS,
   automaticSyncScheduled: false,
   backgroundReadAvailable: false,
   backgroundReadGranted: false,
@@ -925,19 +898,15 @@ function normalizeConnectedHealth(settings = {}) {
     systemIntegrated: Boolean(source.systemIntegrated),
     packageInstalled: Boolean(source.packageInstalled),
     settingsResolvable: Boolean(source.settingsResolvable),
-    automaticSyncEnabled: source.automaticSyncEnabled === undefined
-      ? Boolean(source.enabled)
-      : Boolean(source.automaticSyncEnabled),
+    // v0.10 has one import switch. When Health Connect import is enabled,
+    // launch and pull-to-refresh syncing are both enabled with it.
+    automaticSyncEnabled: Boolean(source.enabled),
     automaticSyncStatus: automaticStatusOptions.has(source.automaticSyncStatus)
       ? source.automaticSyncStatus
       : DEFAULT_CONNECTED_HEALTH.automaticSyncStatus,
     automaticSyncMessage: String(source.automaticSyncMessage ?? "").trim().slice(0, 300),
     automaticSyncIntervalMinutes: 0,
-    automaticSyncSnapshotDays: clamp(
-      Number(source.automaticSyncSnapshotDays) || DEFAULT_CONNECTED_HEALTH.automaticSyncSnapshotDays,
-      1,
-      7,
-    ),
+    automaticSyncSnapshotDays: HEALTH_SYNC_WINDOW_DAYS,
     automaticSyncScheduled: false,
     backgroundReadAvailable: false,
     backgroundReadGranted: false,
@@ -959,6 +928,9 @@ function nativeAutomaticHealthPatch(payload = {}) {
   const patch = {};
   const has = (key) => Object.prototype.hasOwnProperty.call(source, key);
   const booleanKeys = [
+    "automaticSyncScheduled",
+    "backgroundReadAvailable",
+    "backgroundReadGranted",
     "pendingAutomaticSync",
   ];
   const timestampKeys = [
@@ -970,10 +942,8 @@ function nativeAutomaticHealthPatch(payload = {}) {
   ];
 
   booleanKeys.forEach((key) => {
-    if (has(key)) patch[key] = Boolean(source[key]);
-  });
-  ["automaticSyncScheduled", "backgroundReadAvailable", "backgroundReadGranted"].forEach((key) => {
-    if (has(key)) patch[key] = false;
+    if (!has(key)) return;
+    patch[key] = key === "pendingAutomaticSync" ? Boolean(source[key]) : false;
   });
   timestampKeys.forEach((key) => {
     if (has(key)) patch[key] = normalizeTimestamp(source[key]);
@@ -984,7 +954,7 @@ function nativeAutomaticHealthPatch(payload = {}) {
     patch.automaticSyncIntervalMinutes = 0;
   }
   if (has("automaticSyncSnapshotDays")) {
-    patch.automaticSyncSnapshotDays = clamp(Number(source.automaticSyncSnapshotDays) || 3, 1, 7);
+    patch.automaticSyncSnapshotDays = HEALTH_SYNC_WINDOW_DAYS;
   }
   if (has("pendingAutomaticSnapshotId")) {
     patch.pendingAutomaticSnapshotId = String(source.pendingAutomaticSnapshotId ?? "").trim().slice(0, 100);
@@ -4498,13 +4468,6 @@ function GuidedHighlight({ eyebrow = "For you", title, copy, actionLabel, onActi
 
 function NavIcon({ type }) {
   const icons = {
-    home: (
-      <>
-        <path d="M4.8 10.5 12 4.7l7.2 5.8" />
-        <path d="M6.5 9.5v9h11v-9" />
-        <path d="M10 18.5v-5h4v5" />
-      </>
-    ),
     workout: (
       <>
         <path d="M6 8v8" />
@@ -4583,62 +4546,151 @@ function NavIcon({ type }) {
   );
 }
 
-function BottomNav({ activePage, onSectionChange }) {
-  const activeSection = sectionForPage(activePage);
+function BottomNav({ activePage, onPageChange }) {
+  const pageGroup = (page) => {
+    if (["workout", "workoutHistory", "habit", "coach"].includes(page)) return "productivity";
+    if (["water", "sleep", "stats", "settings"].includes(page)) return "health";
+    return null;
+  };
+  const [expandedGroup, setExpandedGroup] = useState(() => pageGroup(activePage));
+  const navRef = useRef(null);
+  const groups = {
+    productivity: [
+      { page: "workout", label: "Workout", icon: "workout" },
+      { page: "workoutHistory", label: "Workout history", icon: "calendar" },
+      { page: "habit", label: "Habit", icon: "habit" },
+      { page: "coach", label: "Coach", icon: "coach" },
+    ],
+    health: [
+      { page: "water", label: "Water", icon: "water" },
+      { page: "sleep", label: "Sleep", icon: "sleep" },
+      { page: "stats", label: "Stats", icon: "stats" },
+      { page: "settings", label: "Settings", icon: "settings" },
+    ],
+  };
+  const activeGroup = pageGroup(activePage);
+  useEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return undefined;
+
+    let frameId = 0;
+    const positionSelectionLens = () => {
+      const selected =
+        nav.querySelector(".nav-page.active") ||
+        nav.querySelector(".home-logo.active") ||
+        nav.querySelector(".nav-category.active");
+      if (!selected) return;
+
+      const navBounds = nav.getBoundingClientRect();
+      const selectedBounds = selected.getBoundingClientRect();
+      nav.style.setProperty("--selection-x", `${selectedBounds.left - navBounds.left + selectedBounds.width / 2}px`);
+      nav.style.setProperty("--selection-y", `${selectedBounds.top - navBounds.top + selectedBounds.height / 2}px`);
+      nav.style.setProperty("--selection-size", `${Math.max(selectedBounds.width, 32)}px`);
+    };
+    const scheduleSelectionLens = () => {
+      cancelAnimationFrame(frameId);
+      frameId = requestAnimationFrame(positionSelectionLens);
+    };
+
+    scheduleSelectionLens();
+    const settleTimer = window.setTimeout(positionSelectionLens, 440);
+    window.addEventListener("resize", scheduleSelectionLens);
+    return () => {
+      cancelAnimationFrame(frameId);
+      window.clearTimeout(settleTimer);
+      window.removeEventListener("resize", scheduleSelectionLens);
+    };
+  }, [activePage, expandedGroup]);
+
+  const updateGlassLight = (event) => {
+    const nav = navRef.current;
+    if (!nav) return;
+    const bounds = nav.querySelector(".nav-shell")?.getBoundingClientRect() || nav.getBoundingClientRect();
+    const x = Math.max(0, Math.min(100, ((event.clientX - bounds.left) / bounds.width) * 100));
+    const y = Math.max(0, Math.min(100, ((event.clientY - bounds.top) / bounds.height) * 100));
+    nav.style.setProperty("--glass-light-x", `${x}%`);
+    nav.style.setProperty("--glass-light-y", `${y}%`);
+  };
+  const settleGlassLight = () => {
+    const nav = navRef.current;
+    if (!nav) return;
+    nav.classList.remove("is-touching");
+    nav.style.removeProperty("--glass-light-x");
+    nav.style.removeProperty("--glass-light-y");
+  };
+  const pressGlass = (event) => {
+    updateGlassLight(event);
+    navRef.current?.classList.add("is-touching");
+  };
+  const selectPage = (page) => {
+    setExpandedGroup(pageGroup(page));
+    onPageChange(page);
+  };
+  const toggleGroup = (group) => {
+    setExpandedGroup((current) => (current === group ? null : group));
+  };
+  const renderPageButton = ({ page, label, icon }) => (
+    <button
+      key={page}
+      className={`nav-icon nav-page ${activePage === page ? "active" : ""}`}
+      aria-label={label}
+      aria-current={activePage === page ? "page" : undefined}
+      onClick={() => selectPage(page)}
+    >
+      <NavIcon type={icon} />
+    </button>
+  );
+
   return (
-    <nav className={`bottom-nav primary-nav metric-${activePage}`} aria-label="Primary">
-      {PRIMARY_SECTIONS.map((section) => {
-        const active = activeSection === section.id;
-        return (
-          <button
-            type="button"
-            className={`primary-nav-button ${active ? "active" : ""}`}
-            aria-label={section.label}
-            aria-current={active ? "page" : undefined}
-            onClick={() => onSectionChange(section.id)}
-            key={section.id}
-          >
-            <NavIcon type={section.icon} />
-            <span>{section.label}</span>
-          </button>
-        );
-      })}
+    <nav
+      ref={navRef}
+      className={`bottom-nav metric-${activePage} ${expandedGroup ? `expanded ${expandedGroup}` : "collapsed"}`}
+      aria-label="Primary"
+      onPointerMove={updateGlassLight}
+      onPointerDown={pressGlass}
+      onPointerUp={settleGlassLight}
+      onPointerCancel={settleGlassLight}
+      onPointerLeave={settleGlassLight}
+    >
+      <span className="nav-shell" aria-hidden="true">
+        <span className="nav-refraction" />
+        <span className="nav-specular" />
+        <span className="nav-caustic" />
+      </span>
+      <span className="nav-selection-lens" aria-hidden="true" />
+      <div className={`nav-group productivity ${expandedGroup === "productivity" ? "open" : ""}`}>
+        {expandedGroup === "productivity" && groups.productivity.map(renderPageButton)}
+        <button
+          className={`nav-icon nav-category ${activeGroup === "productivity" ? "active" : ""}`}
+          aria-label="Productivity pages"
+          aria-expanded={expandedGroup === "productivity"}
+          onClick={() => toggleGroup("productivity")}
+        >
+          <NavIcon type="workout" />
+        </button>
+      </div>
+      <button
+        className={`home-logo ${activePage === "home" ? "active" : ""}`}
+        aria-label="Home"
+        aria-current={activePage === "home" ? "page" : undefined}
+        onClick={() => selectPage("home")}
+      />
+      <div className={`nav-group health ${expandedGroup === "health" ? "open" : ""}`}>
+        <button
+          className={`nav-icon nav-category ${activeGroup === "health" ? "active" : ""}`}
+          aria-label="Health pages"
+          aria-expanded={expandedGroup === "health"}
+          onClick={() => toggleGroup("health")}
+        >
+          <NavIcon type="health" />
+        </button>
+        {expandedGroup === "health" && groups.health.map(renderPageButton)}
+      </div>
     </nav>
   );
 }
 
-function SectionTabs({ section, activePage, onPageChange }) {
-  const views = SECTION_VIEWS[section] ?? [];
-  if (views.length < 2) return null;
-
-  return (
-    <div className={`section-tabs section-tabs-${section}`} role="tablist" aria-label={`${section} views`}>
-      {views.map((view) => (
-        <button
-          type="button"
-          role="tab"
-          className={activePage === view.page ? "active" : ""}
-          aria-selected={activePage === view.page}
-          onClick={() => onPageChange(view.page)}
-          key={view.page}
-        >
-          {view.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function SettingsShortcut({ onSettings }) {
-  if (!onSettings) return null;
-  return (
-    <button className="icon-btn settings-shortcut" aria-label="Open settings" onClick={onSettings}>
-      <NavIcon type="settings" />
-    </button>
-  );
-}
-
-function TopBar({ title, actionLabel, onAdd, historyLabel = "Open record history", onHistory, onSettings }) {
+function TopBar({ title, actionLabel, onAdd, historyLabel = "Open record history", onHistory, backupLabel = "Import or export data", onBackup }) {
   const isHome = title === "Archive" || title === "Archive Home";
   return (
     <div className="topbar">
@@ -4647,9 +4699,11 @@ function TopBar({ title, actionLabel, onAdd, historyLabel = "Open record history
         <h1>{isHome ? "Archive" : title}</h1>
       </div>
       <div className="topbar-actions">
-        {onHistory && <button className="icon-btn history-btn" aria-label={historyLabel} onClick={onHistory} />}
-        <SettingsShortcut onSettings={onSettings} />
-        {onAdd && <button className="icon-btn" aria-label={actionLabel} onClick={onAdd}>+</button>}
+        <button className="icon-btn history-btn" aria-label={historyLabel} onClick={onHistory} />
+        <button className="icon-btn backup-btn" aria-label={backupLabel} onClick={onBackup} />
+        <button className="icon-btn" aria-label={actionLabel} onClick={onAdd}>
+          +
+        </button>
       </div>
     </div>
   );
@@ -4680,7 +4734,7 @@ function MetricBalance({ weekDays, habitNames, goals }) {
   );
 }
 
-function HomePage({ weekDays, habitNames, goals, onAdd, onCustomize, onHistory, onSettings, modules, moduleContext, onRemoveModule, onEditModule, onReorderModule }) {
+function HomePage({ weekDays, habitNames, goals, onAdd, onCustomize, onBackup, onHistory, modules, moduleContext, onRemoveModule, onEditModule, onReorderModule }) {
   const scores = weekDays.map((day) => entryScore(day.entry, habitNames, goals));
   const recordedScores = scores.filter(Number.isFinite);
   const averageValue = Math.round(average(recordedScores));
@@ -4729,7 +4783,7 @@ function HomePage({ weekDays, habitNames, goals, onAdd, onCustomize, onHistory, 
 
   return (
     <div className="screen canvas-screen home-canvas-screen">
-      <TopBar title="Archive" actionLabel="Add action" onAdd={onAdd} onHistory={onHistory} onSettings={onSettings} />
+      <TopBar title="Archive" actionLabel="Add action" onAdd={onAdd} onBackup={onBackup} onHistory={onHistory} />
 
       <CanvasHero
         label="Daily value"
@@ -4816,9 +4870,8 @@ function WeeklyMetricPage({
   weekDays,
   onAdd,
   onCustomize,
+  onBackup,
   onHistory,
-  onSettings,
-  sectionTabs,
   modules,
   moduleContext,
   extraPanels,
@@ -4845,8 +4898,7 @@ function WeeklyMetricPage({
 
   return (
     <div className={`screen canvas-screen metric-story-screen ${type}-screen`}>
-      <TopBar title={title} actionLabel={`Add ${type} action`} onAdd={onAdd} onHistory={onHistory} onSettings={onSettings} />
-      {sectionTabs}
+      <TopBar title={title} actionLabel={`Add ${type} action`} onAdd={onAdd} onBackup={onBackup} onHistory={onHistory} />
 
       <CanvasHero
         label={heroLabel}
@@ -5021,7 +5073,7 @@ function HabitTrackingPanel({ habitNames, trackedHabits, onToggleHabitTracking, 
   );
 }
 
-function HabitPage({ weekDays, habitNames, trackedHabits, goals, onAdd, onCustomize, onHistory, onSettings, sectionTabs, modules, moduleContext, onToggleHabitTracking, onRenameHabit, onReorderHabit, onRemoveModule, onEditModule, onReorderModule }) {
+function HabitPage({ weekDays, habitNames, trackedHabits, goals, onAdd, onCustomize, onBackup, onHistory, modules, moduleContext, onToggleHabitTracking, onRenameHabit, onReorderHabit, onRemoveModule, onEditModule, onReorderModule }) {
   const entries = weekDays.map((day) => day.entry).filter(Boolean);
   const values = entries.map((entry) => habitPercent(entry, trackedHabits));
   const habitCounts = trackedHabits.map((habit) => [habit, entries.filter((entry) => entry.habits?.[habit]).length]);
@@ -5056,9 +5108,8 @@ function HabitPage({ weekDays, habitNames, trackedHabits, goals, onAdd, onCustom
       weekDays={weekDays}
       onAdd={onAdd}
       onCustomize={onCustomize}
+      onBackup={onBackup}
       onHistory={onHistory}
-      onSettings={onSettings}
-      sectionTabs={sectionTabs}
       modules={modules}
       moduleContext={moduleContext}
       onRemoveModule={onRemoveModule}
@@ -5078,7 +5129,7 @@ function HabitPage({ weekDays, habitNames, trackedHabits, goals, onAdd, onCustom
   );
 }
 
-function WaterPage({ weekDays, goals, onAdd, onCustomize, onHistory, onSettings, sectionTabs, modules, moduleContext, onRemoveModule, onEditModule, onReorderModule }) {
+function WaterPage({ weekDays, goals, onAdd, onCustomize, onBackup, onHistory, modules, moduleContext, onRemoveModule, onEditModule, onReorderModule }) {
   const entries = weekDays.map((day) => day.entry).filter(Boolean);
   const waters = entries.map((entry) => entry.water);
   const averageWater = average(waters);
@@ -5115,9 +5166,8 @@ function WaterPage({ weekDays, goals, onAdd, onCustomize, onHistory, onSettings,
       weekDays={weekDays}
       onAdd={onAdd}
       onCustomize={onCustomize}
+      onBackup={onBackup}
       onHistory={onHistory}
-      onSettings={onSettings}
-      sectionTabs={sectionTabs}
       modules={modules}
       moduleContext={moduleContext}
       onRemoveModule={onRemoveModule}
@@ -5127,7 +5177,7 @@ function WaterPage({ weekDays, goals, onAdd, onCustomize, onHistory, onSettings,
   );
 }
 
-function SleepPage({ weekDays, goals, onAdd, onCustomize, onHistory, onSettings, sectionTabs, modules, moduleContext, onRemoveModule, onEditModule, onReorderModule }) {
+function SleepPage({ weekDays, goals, onAdd, onCustomize, onBackup, onHistory, modules, moduleContext, onRemoveModule, onEditModule, onReorderModule }) {
   const entries = weekDays.map((day) => day.entry).filter(Boolean);
   const sleeps = entries.map((entry) => entry.sleep);
   const averageSleep = average(sleeps);
@@ -5144,8 +5194,7 @@ function SleepPage({ weekDays, goals, onAdd, onCustomize, onHistory, onSettings,
 
   return (
     <div className="screen canvas-screen sleep-screen metric-story-screen">
-      <TopBar title="Sleep" actionLabel="Add sleep action" onAdd={onAdd} onHistory={onHistory} onSettings={onSettings} />
-      {sectionTabs}
+      <TopBar title="Sleep" actionLabel="Add sleep action" onAdd={onAdd} onBackup={onBackup} onHistory={onHistory} />
 
       <CanvasHero
         label="7-day average"
@@ -5263,7 +5312,7 @@ function ValueGrid({ entries, habitNames, goals, onEditDate }) {
   );
 }
 
-function StatsPage({ entries, habitNames, goals, onAdd, onCustomize, onHistory, onSettings, sectionTabs, onEditDate, modules, moduleContext, onRemoveModule, onEditModule, onReorderModule }) {
+function StatsPage({ entries, habitNames, goals, onAdd, onCustomize, onBackup, onHistory, onEditDate, modules, moduleContext, onRemoveModule, onEditModule, onReorderModule }) {
   const weekDays = buildWeek(entries);
   const entriesByDate = new Map(entries.map((entry) => [entry.date, entry]));
   const today = new Date();
@@ -5288,8 +5337,7 @@ function StatsPage({ entries, habitNames, goals, onAdd, onCustomize, onHistory, 
 
   return (
     <div className="screen canvas-screen stats-screen metric-story-screen">
-      <TopBar title="Insights" actionLabel="Add action" onAdd={onAdd} onHistory={onHistory} onSettings={onSettings} />
-      {sectionTabs}
+      <TopBar title="Stats" actionLabel="Add action" onAdd={onAdd} onBackup={onBackup} onHistory={onHistory} />
 
       <CanvasHero
         label="Current week"
@@ -6109,7 +6157,7 @@ function WorkoutHistoryPanel({ workouts }) {
   );
 }
 
-function WorkoutHistoryPage({ workout, onWorkoutChange, onSettings, sectionTabs }) {
+function WorkoutHistoryPage({ workout, onWorkoutChange }) {
   const data = normalizeWorkoutState(workout);
   const sortedWorkouts = [...data.workouts].sort((a, b) => b.date.localeCompare(a.date));
   const latestWorkout = sortedWorkouts[0] ?? null;
@@ -6208,11 +6256,7 @@ function WorkoutHistoryPage({ workout, onWorkoutChange, onSettings, sectionTabs 
     <div className="screen canvas-screen workout-history-screen workout-history-canvas-screen">
       <div className="topbar">
         <h1>Workout history</h1>
-        <div className="topbar-actions">
-          <SettingsShortcut onSettings={onSettings} />
-        </div>
       </div>
-      {sectionTabs}
 
       <CanvasHero
         label="Training archive"
@@ -6609,7 +6653,7 @@ function WorkoutSettingsView({ workout, routine, workoutActions, onSetSchedule, 
   );
 }
 
-function WorkoutPage({ workout, onWorkoutChange, onAdd, onSettings, sectionTabs, modules, moduleContext, onRemoveModule, onEditModule, onReorderModule }) {
+function WorkoutPage({ workout, onWorkoutChange, onAdd, onBackup, modules, moduleContext, onRemoveModule, onEditModule, onReorderModule }) {
   const data = normalizeWorkoutState(workout);
   const selectedRoutine = data.routines.find((routine) => routine.id === data.selectedRoutineId) ?? data.routines[0];
   const [activeWorkout, setActiveWorkout] = useState(null);
@@ -6708,11 +6752,10 @@ function WorkoutPage({ workout, onWorkoutChange, onAdd, onSettings, sectionTabs,
       <div className="topbar">
         <h1>Workout</h1>
         <div className="topbar-actions">
-          <SettingsShortcut onSettings={onSettings} />
+          <button className="icon-btn backup-btn" aria-label="Import or export data" onClick={onBackup} />
           <button className="icon-btn" aria-label="Add workout module" onClick={onAdd}>+</button>
         </div>
       </div>
-      {sectionTabs}
 
       <CanvasHero
         label="Training"
@@ -6829,16 +6872,13 @@ function connectedHealthStatusDetail(settings) {
 
 function connectedHealthAutomaticLabel(settings) {
   const normalized = normalizeConnectedHealth(settings);
-  if (!normalized.enabled || !normalized.automaticSyncEnabled) return "Off";
-  return "On open";
+  return normalized.enabled ? "Launch + pull" : "Off";
 }
 
 function connectedHealthAutomaticDetail(settings) {
   const normalized = normalizeConnectedHealth(settings);
-  if (!normalized.enabled || !normalized.automaticSyncEnabled) {
-    return "Turn this on to refresh recent watch data once when Archive opens.";
-  }
-  return "Refreshes recent watch data once when Archive opens. There is no background or repeating polling.";
+  if (!normalized.enabled) return "Enable Health Connect import to refresh watch data when Archive launches and when you pull down.";
+  return "Refreshes once when Archive launches and whenever you pull down from the top of a main page. There is no periodic or background polling.";
 }
 
 function formatSettingsTimestamp(value) {
@@ -6885,9 +6925,6 @@ function healthOriginLabel(value) {
 }
 
 function SettingsPage({
-  onClose,
-  onHistory,
-  onBackup,
   goals,
   onUpdateGoals,
   aiSettings,
@@ -6898,8 +6935,6 @@ function SettingsPage({
   onCheckConnectedHealth,
   onOpenConnectedHealthSettings,
   onRequestConnectedHealthPermissions,
-  onToggleAutomaticHealthSync,
-  onSyncConnectedHealth,
   onUpdateAISettings,
   onUpdateGeminiApiKey,
 }) {
@@ -6914,9 +6949,6 @@ function SettingsPage({
         <div className="topbar-title">
           <span>Archive</span>
           <h1>Settings</h1>
-        </div>
-        <div className="topbar-actions">
-          <button className="icon-btn settings-close-btn" type="button" aria-label="Close settings" onClick={onClose}>←</button>
         </div>
       </div>
 
@@ -6937,24 +6969,6 @@ function SettingsPage({
           <i>Reviewable AI</i>
         </div>
       </CanvasHero>
-
-      <PageSection
-        eyebrow="Archive"
-        title="Data & app"
-        meta="Utilities"
-        className="settings-tools-section"
-      >
-        <div className="panel settings-tools-panel">
-          <button className="settings-tool-row" type="button" onClick={onHistory}>
-            <span><strong>Record history</strong><small>Review or edit previous daily records</small></span>
-            <i aria-hidden="true">›</i>
-          </button>
-          <button className="settings-tool-row" type="button" onClick={onBackup}>
-            <span><strong>Import or export</strong><small>Back up or restore your Archive data</small></span>
-            <i aria-hidden="true">›</i>
-          </button>
-        </div>
-      </PageSection>
 
       <PageSection
         eyebrow="Personal"
@@ -6978,8 +6992,6 @@ function SettingsPage({
           onCheckStatus={onCheckConnectedHealth}
           onOpenSettings={onOpenConnectedHealthSettings}
           onRequestPermissions={onRequestConnectedHealthPermissions}
-          onToggleAutomaticSync={onToggleAutomaticHealthSync}
-          onSync={onSyncConnectedHealth}
         />
       </PageSection>
 
@@ -7007,8 +7019,6 @@ function ConnectedHealthPanel({
   onCheckStatus,
   onOpenSettings,
   onRequestPermissions,
-  onToggleAutomaticSync,
-  onSync,
 }) {
   const [busyAction, setBusyAction] = useState("");
   const settings = normalizeConnectedHealth(connectedHealth);
@@ -7070,13 +7080,7 @@ function ConnectedHealthPanel({
           <strong>{settings.enabled ? statusLabel : "Import is off"}</strong>
           <span>{settings.lastSyncAt ? `Last synced ${formatSettingsTimestamp(settings.lastSyncAt)}` : "Ready when your watch data is"}</span>
         </div>
-        <button
-          type="button"
-          onClick={() => runAction("sync", onSync)}
-          disabled={busyAction === "sync" || !settings.enabled}
-        >
-          {busyAction === "sync" ? "Syncing" : "Sync"}
-        </button>
+        <span className="health-sync-method">{connectedHealthAutomaticLabel(settings)}</span>
       </div>
 
       <SettingsSection title="Connection & Sync" meta={settings.enabled ? statusLabel : "Off"} collapsible defaultOpen={false}>
@@ -7095,19 +7099,10 @@ function ConnectedHealthPanel({
           </button>
         </SettingsRow>
         <SettingsRow
-          label="Sync on open"
+          label="Syncing"
           value={connectedHealthAutomaticLabel(settings)}
           detail={connectedHealthAutomaticDetail(settings)}
-        >
-          <button
-            type="button"
-            className={`settings-pill-toggle ${settings.enabled && settings.automaticSyncEnabled ? "active" : ""}`}
-            onClick={() => runAction("automatic", () => onToggleAutomaticSync?.(!(settings.enabled && settings.automaticSyncEnabled)))}
-            disabled={busyAction === "automatic"}
-          >
-            {settings.enabled && settings.automaticSyncEnabled ? "On" : "Off"}
-          </button>
-        </SettingsRow>
+        />
         <SettingsRow
           label="Status"
           value={statusLabel}
@@ -7126,12 +7121,12 @@ function ConnectedHealthPanel({
         <SettingsRow
           label="Last sync"
           value={formatSettingsTimestamp(settings.lastSyncAt)}
-          detail="Automatic refresh reads only the most recent three days when Archive opens. Manual sync remains available below."
+          detail="Each launch or pull-to-refresh reconciles the latest 30 days, including corrections and deletions."
         />
         <SettingsRow
-          label="Last open sync"
+          label="Last launch sync"
           value={formatSettingsTimestamp(settings.lastAutomaticSyncAt)}
-          detail="Established after the first successful app-open refresh."
+          detail="Established after the first successful Health Connect refresh during launch."
         />
         <div className="settings-option-list">
           <button
@@ -7157,18 +7152,6 @@ function ConnectedHealthPanel({
               <small>Open Android's Health Connect permission screen for Archive.</small>
             </span>
             <b>Review</b>
-          </button>
-          <button
-            type="button"
-            className="settings-option"
-            onClick={() => runAction("sync", onSync)}
-            disabled={busyAction === "sync"}
-          >
-            <span>
-              <strong>{busyAction === "sync" ? "Syncing..." : "Sync watch data"}</strong>
-              <small>Import recent steps, sleep, workouts, distance, calories, HR, HRV, and floors.</small>
-            </span>
-            <b>Sync</b>
           </button>
           <button
             type="button"
@@ -7264,7 +7247,7 @@ function ConnectedHealthPanel({
         </div>
       </SettingsSection>
       <div className="ai-disclosure">
-        Health Connect import is read-only. Samsung Health must be set to share data with Health Connect before Archive can import anything useful here.
+        Health Connect import is read-only. Samsung Health must share data with Health Connect; launch Archive or pull down from the top of a main page to import the latest records.
       </div>
     </div>
   );
@@ -7535,7 +7518,7 @@ function CoachProposalReview({ proposal, workout, onApply, onClose }) {
   );
 }
 
-function CoachPage({ analytics, workout, aiSettings, geminiApiKey, coachMessages, onSaveMessages, onApplyProposal, onSettings, sectionTabs }) {
+function CoachPage({ analytics, workout, aiSettings, geminiApiKey, coachMessages, onSaveMessages, onApplyProposal }) {
   const [messages, setMessages] = useState(() => normalizeCoachMessages(coachMessages));
   const [draft, setDraft] = useState("");
   const [reviewProposal, setReviewProposal] = useState(null);
@@ -7622,11 +7605,7 @@ function CoachPage({ analytics, workout, aiSettings, geminiApiKey, coachMessages
     <div className="screen canvas-screen coach-screen coach-canvas-screen">
       <div className="topbar">
         <h1>Coach</h1>
-        <div className="topbar-actions">
-          <SettingsShortcut onSettings={onSettings} />
-        </div>
       </div>
-      {sectionTabs}
 
       <CanvasHero
         label="Coach signal"
@@ -8698,7 +8677,7 @@ function ModulePicker({ pageId, pageName, context, addedModuleIds = [], moduleTe
   );
 }
 
-function DailySheet({ habitNames, trackedHabits, entries, goals, watchData, connectedHealth, initialDate, title = "Add previous day", onClose, onSave, onDelete, onAddHabit, onSyncSleep }) {
+function DailySheet({ habitNames, trackedHabits, entries, goals, watchData, connectedHealth, initialDate, title = "Add previous day", onClose, onSave, onDelete, onAddHabit }) {
   const normalizedGoals = normalizeGoals(goals);
   const defaultWater = Math.round(normalizedGoals.waterTarget * 0.75);
   const yesterday = dateKey(addDays(new Date(), -1));
@@ -8725,8 +8704,6 @@ function DailySheet({ habitNames, trackedHabits, entries, goals, watchData, conn
   const [manualSleep, setManualSleep] = useState(() => (
     initialSleepMode === "manual" && Number(existingEntry?.sleep) > 0 ? String(existingEntry.sleep) : ""
   ));
-  const [isSyncingSleep, setIsSyncingSleep] = useState(false);
-  const [sleepSyncNotice, setSleepSyncNotice] = useState("");
   const [newHabit, setNewHabit] = useState("");
   const [dragY, setDragY] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
@@ -8756,7 +8733,6 @@ function DailySheet({ habitNames, trackedHabits, entries, goals, watchData, conn
     setWater(waterInputValue(entry?.water ?? defaultWater, normalizedGoals));
     setSleepMode(nextSleepMode);
     setManualSleep(nextSleepMode === "manual" && Number(entry?.sleep) > 0 ? String(entry.sleep) : "");
-    setSleepSyncNotice("");
   };
 
   const addHabit = () => {
@@ -8795,24 +8771,6 @@ function DailySheet({ habitNames, trackedHabits, entries, goals, watchData, conn
         return map;
       }, {}),
     });
-  };
-
-  const syncSleepFromWatch = async () => {
-    if (typeof onSyncSleep !== "function" || isSyncingSleep) return;
-    setSleepMode("sync");
-    setIsSyncingSleep(true);
-    setSleepSyncNotice("");
-
-    try {
-      const result = await onSyncSleep();
-      setSleepSyncNotice(result?.ok
-        ? "Watch data refreshed."
-        : (result?.message || "Archive could not refresh watch sleep."));
-    } catch (error) {
-      setSleepSyncNotice(error?.message || "Archive could not refresh watch sleep.");
-    } finally {
-      setIsSyncingSleep(false);
-    }
   };
 
   const selectManualSleep = () => {
@@ -9001,13 +8959,10 @@ function DailySheet({ habitNames, trackedHabits, entries, goals, watchData, conn
                   <span>
                     {hasSyncedSleep
                       ? `${sleepWindow ? `${sleepWindow} · ` : ""}Filed under ${recordDayName}, the day before wake-up. Watch sync takes priority.`
-                      : `Sync again, or use Manual if your watch missed this sleep period.`}
+                      : `Pull down from the top of a main page to refresh, or use Manual if your watch missed this sleep period.`}
                   </span>
-                  {sleepSyncNotice && <em>{sleepSyncNotice}</em>}
                 </div>
-                <button type="button" className="sleep-sync-action" onClick={syncSleepFromWatch} disabled={isSyncingSleep}>
-                  {isSyncingSleep ? "Syncing…" : hasSyncedSleep ? "Sync again" : "Sync now"}
-                </button>
+                <span className="sleep-sync-state">{hasSyncedSleep ? "Imported" : "Pull to refresh"}</span>
               </div>
             ) : (
               <label className="quick-field sleep-manual-field">
@@ -9043,26 +8998,76 @@ function DailySheet({ habitNames, trackedHabits, entries, goals, watchData, conn
   );
 }
 
-function StartupScreen({ progress, closing, syncingHealth }) {
+function ArchiveLaunchLogo() {
+  return (
+    <svg className="archive-launch-logo" viewBox="0 0 342 108" role="img" aria-label="Archive">
+      <defs>
+        <linearGradient id="archiveLaunchGradient" x1="18" y1="54" x2="326" y2="54" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#FFC5D3" />
+          <stop offset="0.34" stopColor="#C9A0DC" />
+          <stop offset="0.68" stopColor="#A2BFFE" />
+          <stop offset="1" stopColor="#E5F9E4" />
+        </linearGradient>
+        <clipPath id="archiveLaunchReveal">
+          <rect className="archive-launch-reveal" x="0" y="0" height="108" />
+        </clipPath>
+      </defs>
+
+      <g className="archive-launch-mark-muted" aria-hidden="true">
+        <path d="M22 76 C27 83 32 83 35 74 L49.5 30 C51.1 24.5 56.9 24.5 58.5 30 L73 74 C76 83 81 82 84 76" />
+        <path className="archive-launch-wave" d="M39.5 60.5 C41.3 56.4 43.8 56.4 46.75 60.5 C48.55 64.6 51.05 64.6 53.75 60.5 C55.55 56.4 58.05 56.4 61 60.5 C62.8 64.6 65.3 64.6 68.5 60.5" />
+        <circle cx="85.2" cy="76.5" r="4.4" />
+        <text x="105" y="73">Archive</text>
+      </g>
+
+      <g className="archive-launch-mark-color" clipPath="url(#archiveLaunchReveal)" aria-hidden="true">
+        <path d="M22 76 C27 83 32 83 35 74 L49.5 30 C51.1 24.5 56.9 24.5 58.5 30 L73 74 C76 83 81 82 84 76" />
+        <path className="archive-launch-wave" d="M39.5 60.5 C41.3 56.4 43.8 56.4 46.75 60.5 C48.55 64.6 51.05 64.6 53.75 60.5 C55.55 56.4 58.05 56.4 61 60.5 C62.8 64.6 65.3 64.6 68.5 60.5" />
+        <circle cx="85.2" cy="76.5" r="4.4" />
+        <text x="105" y="73">Archive</text>
+      </g>
+    </svg>
+  );
+}
+
+function ArchiveLaunchScreen({ screenRef, phase, syncingHealth }) {
   return (
     <div
-      className={`startup-screen ${closing ? "closing" : ""}`}
+      ref={screenRef}
+      className={`archive-launch-screen ${phase === "settling" ? "settling" : ""}`}
       role="status"
       aria-live="polite"
-      aria-label={syncingHealth ? "Opening Archive and refreshing recent watch data" : "Opening Archive"}
+      aria-label={syncingHealth ? "Opening Archive and syncing Health Connect" : "Opening Archive"}
     >
-      <div className="startup-brand">
-        <div className="startup-logo" aria-hidden="true">
-          <img className="startup-logo-image startup-logo-muted" src={archiveLogo} alt="" />
-          <span className="startup-logo-fill" style={{ width: `${progress}%` }}>
-            <img className="startup-logo-image startup-logo-color" src={archiveLogo} alt="" />
-          </span>
-        </div>
-        <div className="startup-copy">
-          <strong>Archive</strong>
-          <span>{syncingHealth ? "Refreshing recent watch data" : "Opening your archive"}</span>
-        </div>
+      <div className="archive-launch-lockup">
+        <ArchiveLaunchLogo />
+        <span>{syncingHealth ? "Refreshing your health archive" : "Opening your archive"}</span>
       </div>
+    </div>
+  );
+}
+
+function PullRefreshIndicator({ state, message }) {
+  const label = message || ({
+    pulling: "Pull to refresh",
+    armed: "Release to sync",
+    refreshing: "Syncing Health Connect",
+    complete: "Health data is current",
+    disabled: "Health import is off",
+    permissionsNeeded: "Health permissions needed",
+    webPreview: "Android sync only",
+    error: "Could not refresh",
+  }[state] ?? "Pull to refresh");
+
+  return (
+    <div className={`pull-refresh-indicator ${state}`} role="status" aria-live="polite">
+      <span className="pull-refresh-glyph" aria-hidden="true">
+        <svg viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="8.5" />
+          <path d="M12 7.2v7.9m0 0 3-3m-3 3-3-3" />
+        </svg>
+      </span>
+      <span>{label}</span>
     </div>
   );
 }
@@ -9086,12 +9091,6 @@ export {
 export default function App() {
   const [state, setTrackerState] = useTrackerState();
   const [activePage, setActivePage] = useState("home");
-  const [lastPageBySection, setLastPageBySection] = useState({
-    track: "habit",
-    train: "workout",
-    progress: "stats",
-  });
-  const [settingsReturnPage, setSettingsReturnPage] = useState("home");
   const [pageMotion, setPageMotion] = useState("center");
   const [chromeCompact, setChromeCompact] = useState(false);
   const [choiceOpen, setChoiceOpen] = useState(false);
@@ -9104,16 +9103,28 @@ export default function App() {
   const [editingHabit, setEditingHabit] = useState(null);
   const [backupNotice, setBackupNotice] = useState(null);
   const [geminiApiKey, setGeminiApiKey] = useState(loadGeminiApiKey);
-  const [startupProgress, setStartupProgress] = useState(0);
-  const [startupClosing, setStartupClosing] = useState(false);
-  const [startupVisible, setStartupVisible] = useState(true);
+  const [launchPhase, setLaunchPhase] = useState("syncing");
+  const [pullRefreshState, setPullRefreshState] = useState("idle");
+  const [pullRefreshMessage, setPullRefreshMessage] = useState("");
   const backupNoticeTimer = useRef(null);
   const importInputRef = useRef(null);
+  const appShellRef = useRef(null);
+  const launchScreenRef = useRef(null);
   const lastScrollPosition = useRef(0);
   const latestStateRef = useRef(state);
-  const automaticHealthSyncInFlightRef = useRef(false);
-  const startupSyncPromiseRef = useRef(null);
+  const healthSyncInFlightRef = useRef(null);
+  const launchSyncPromiseRef = useRef(null);
+  const pullRefreshActionRef = useRef(null);
+  const pullRefreshBlockedRef = useRef(true);
   latestStateRef.current = state;
+  pullRefreshBlockedRef.current = launchPhase !== "ready"
+    || choiceOpen
+    || backupOpen
+    || historyOpen
+    || sheetOpen
+    || modulePickerOpen
+    || Boolean(editingModule)
+    || Boolean(editingHabit);
   const weekDays = useMemo(() => buildWeek(state.entries), [state.entries]);
   const trackedHabitNames = (state.trackedHabits ?? state.habitNames).filter((habit) => state.habitNames.includes(habit));
   const goals = normalizeGoals(state.goals);
@@ -9177,13 +9188,6 @@ export default function App() {
   }, [activePage]);
 
   const changeActivePage = (nextPage) => {
-    const nextSection = sectionForPage(nextPage);
-    if (nextSection && nextSection !== "today") {
-      setLastPageBySection((current) => (
-        current[nextSection] === nextPage ? current : { ...current, [nextSection]: nextPage }
-      ));
-    }
-
     const updatePage = () => {
       if (activePage === nextPage) {
         setPageMotion("center");
@@ -9205,22 +9209,6 @@ export default function App() {
       updatePage();
     }
   };
-
-  const changePrimarySection = (sectionId) => {
-    const section = PRIMARY_SECTIONS.find((item) => item.id === sectionId);
-    if (!section) return;
-    const nextPage = sectionId === "today"
-      ? section.defaultPage
-      : lastPageBySection[sectionId] ?? section.defaultPage;
-    changeActivePage(nextPage);
-  };
-
-  const openSettings = () => {
-    if (activePage !== "settings") setSettingsReturnPage(activePage);
-    changeActivePage("settings");
-  };
-
-  const closeSettings = () => changeActivePage(settingsReturnPage);
 
   const openAddChoice = () => {
     setBackupOpen(false);
@@ -9518,36 +9506,6 @@ export default function App() {
     }
   };
 
-  const toggleAutomaticHealthSync = async (nextEnabled) => {
-    const enabled = Boolean(nextEnabled);
-    const isNative = typeof Capacitor.isNativePlatform === "function" && Capacitor.isNativePlatform();
-    updateConnectedHealth({
-      ...(enabled ? { enabled: true } : {}),
-      automaticSyncEnabled: enabled,
-      automaticSyncStatus: enabled ? "foregroundOnly" : "off",
-      automaticSyncMessage: enabled
-        ? "Recent watch data will refresh once when Archive opens."
-        : "Sync on open is off.",
-    });
-
-    if (!isNative) return;
-    try {
-      const result = await ConnectedHealthNative.configureAutomaticSync({
-        enabled,
-        intervalMinutes: 0,
-        snapshotDays: OPEN_HEALTH_SNAPSHOT_DAYS,
-      });
-      updateConnectedHealth(nativeAutomaticHealthPatch(result));
-    } catch (error) {
-      updateConnectedHealth({
-        automaticSyncStatus: "error",
-        automaticSyncMessage: error?.message
-          ? `Automatic sync could not be configured: ${error.message}`
-          : "Archive could not configure automatic health sync.",
-      });
-    }
-  };
-
   const reconcileConnectedHealthSnapshot = (result, {
     checkedAt = new Date().toISOString(),
     automaticSnapshotId = "",
@@ -9596,70 +9554,83 @@ export default function App() {
     });
   };
 
-  const syncConnectedHealth = async ({ automatic = false, days = 30 } = {}) => {
-    const checkedAt = new Date().toISOString();
-    const syncDays = clamp(Math.round(Number(days) || 30), 1, 30);
-    const isNative = typeof Capacitor.isNativePlatform === "function" && Capacitor.isNativePlatform();
+  const syncConnectedHealth = ({ trigger = "pullToRefresh", days = HEALTH_SYNC_WINDOW_DAYS } = {}) => {
+    if (healthSyncInFlightRef.current) return healthSyncInFlightRef.current;
 
-    if (!isNative) {
-      const message = "Watch-data import runs inside the Android app.";
-      updateConnectedHealth({
-        status: "webPreview",
-        statusMessage: message,
-        platform: "web",
-        lastCheckedAt: checkedAt,
-      });
-      return { ok: false, status: "webPreview", message };
-    }
+    const syncTask = (async () => {
+      const checkedAt = new Date().toISOString();
+      const syncDays = clamp(Math.round(Number(days) || HEALTH_SYNC_WINDOW_DAYS), 1, HEALTH_SYNC_WINDOW_DAYS);
+      const isNative = typeof Capacitor.isNativePlatform === "function" && Capacitor.isNativePlatform();
+      const currentSettings = normalizeConnectedHealth(latestStateRef.current.connectedHealth);
 
-    try {
-      const result = await ConnectedHealthNative.syncRecentData({
-        days: syncDays,
-        trigger: automatic ? "foregroundAuto" : "manual",
-      });
-      const permissionsGranted = Boolean(result?.allGranted ?? result?.permissionsGranted);
-
-      if (result?.needsPermissions || !permissionsGranted) {
-        const message = String(result?.message ?? "Archive needs Health Connect permissions before syncing watch data.").trim();
-        updateConnectedHealth({
-          enabled: true,
-          status: "permissionsNeeded",
-          statusMessage: message,
-          platform: String(result?.platform ?? Capacitor.getPlatform?.() ?? "android"),
-          lastCheckedAt: checkedAt,
-          permissionsGranted,
-          grantedPermissions: result?.grantedPermissions ?? [],
-          missingPermissions: result?.missingPermissions ?? [],
-          requestedPermissions: result?.requestedPermissions ?? [],
-          systemIntegrated: Boolean(result?.systemIntegrated),
-          packageInstalled: Boolean(result?.packageInstalled),
-          settingsResolvable: Boolean(result?.settingsResolvable),
-          ...nativeAutomaticHealthPatch(result),
-        });
-        return { ok: false, status: "permissionsNeeded", message };
+      if (!currentSettings.enabled) {
+        return { ok: false, status: "disabled", message: "Health Connect import is off." };
       }
 
-      reconcileConnectedHealthSnapshot(result, {
-        checkedAt,
-        statusMessage: automatic
-          ? "Recent health data refreshed when Archive opened."
-          : String(result?.message ?? "Health Connect data synced.").trim(),
-      });
-      return {
-        ok: true,
-        status: result?.synced ? "synced" : "available",
-        message: String(result?.message ?? "Health Connect data synced.").trim(),
-      };
-    } catch (error) {
-      const message = error?.message ? `Health Connect sync failed: ${error.message}` : "Archive could not sync Health Connect data.";
-      updateConnectedHealth({
-        status: "error",
-        statusMessage: message,
-        platform: String(Capacitor.getPlatform?.() ?? "android"),
-        lastCheckedAt: checkedAt,
-      });
-      return { ok: false, status: "error", message };
-    }
+      if (!isNative) {
+        const message = "Watch-data import runs inside the Android app.";
+        updateConnectedHealth({
+          status: "webPreview",
+          statusMessage: message,
+          platform: "web",
+          lastCheckedAt: checkedAt,
+        });
+        return { ok: false, status: "webPreview", message };
+      }
+
+      try {
+        const result = await ConnectedHealthNative.syncRecentData({
+          days: syncDays,
+          trigger,
+        });
+        const permissionsGranted = Boolean(result?.allGranted ?? result?.permissionsGranted);
+
+        if (result?.needsPermissions || !permissionsGranted) {
+          const message = String(result?.message ?? "Archive needs Health Connect permissions before syncing watch data.").trim();
+          updateConnectedHealth({
+            enabled: true,
+            status: "permissionsNeeded",
+            statusMessage: message,
+            platform: String(result?.platform ?? Capacitor.getPlatform?.() ?? "android"),
+            lastCheckedAt: checkedAt,
+            permissionsGranted,
+            grantedPermissions: result?.grantedPermissions ?? [],
+            missingPermissions: result?.missingPermissions ?? [],
+            requestedPermissions: result?.requestedPermissions ?? [],
+            systemIntegrated: Boolean(result?.systemIntegrated),
+            packageInstalled: Boolean(result?.packageInstalled),
+            settingsResolvable: Boolean(result?.settingsResolvable),
+            ...nativeAutomaticHealthPatch(result),
+          });
+          return { ok: false, status: "permissionsNeeded", message };
+        }
+
+        const statusMessage = trigger === "launch"
+          ? "Health data refreshed while Archive opened."
+          : "Health data refreshed with pull-to-refresh.";
+        reconcileConnectedHealthSnapshot(result, { checkedAt, statusMessage });
+        return {
+          ok: true,
+          status: result?.synced ? "synced" : "available",
+          message: statusMessage,
+        };
+      } catch (error) {
+        const message = error?.message ? `Health Connect sync failed: ${error.message}` : "Archive could not sync Health Connect data.";
+        updateConnectedHealth({
+          status: "error",
+          statusMessage: message,
+          platform: String(Capacitor.getPlatform?.() ?? "android"),
+          lastCheckedAt: checkedAt,
+        });
+        return { ok: false, status: "error", message };
+      }
+    })();
+
+    healthSyncInFlightRef.current = syncTask;
+    syncTask.finally(() => {
+      if (healthSyncInFlightRef.current === syncTask) healthSyncInFlightRef.current = null;
+    });
+    return syncTask;
   };
 
   const openConnectedHealthSettings = async () => {
@@ -9722,78 +9693,249 @@ export default function App() {
     reconcileConnectedHealthSnapshot(payload, {
       checkedAt: new Date().toISOString(),
       automaticSnapshotId: snapshotId,
-      statusMessage: "Applied the final saved Health Connect update from the previous sync policy.",
-    });
-    const acknowledged = await ConnectedHealthNative.acknowledgeAutomaticSync({ snapshotId });
-    updateConnectedHealth({
-      ...nativeAutomaticHealthPatch(acknowledged),
-      pendingAutomaticSync: false,
-      pendingAutomaticSnapshotId: "",
-      pendingAutomaticCapturedAt: "",
+      statusMessage: "Applied a background Health Connect update.",
     });
     return { applied: true, syncedAt: payload?.syncedAt ?? pendingResult?.lastAutomaticSyncAt ?? "" };
   };
 
-  const runOpenHealthSync = async () => {
+  const runLaunchHealthSync = async () => {
     const isNative = typeof Capacitor.isNativePlatform === "function" && Capacitor.isNativePlatform();
     const currentSettings = normalizeConnectedHealth(latestStateRef.current.connectedHealth);
     if (!isNative) return { ok: false, status: "webPreview" };
-    if (automaticHealthSyncInFlightRef.current) return { ok: false, status: "busy" };
 
-    automaticHealthSyncInFlightRef.current = true;
     try {
+      // This call is configuration-only. The native layer cancels periodic jobs
+      // left behind by older Archive builds and never schedules a new read.
       const nativeStatus = await ConnectedHealthNative.configureAutomaticSync({
-        enabled: currentSettings.enabled && currentSettings.automaticSyncEnabled,
+        enabled: currentSettings.enabled,
         intervalMinutes: 0,
-        snapshotDays: OPEN_HEALTH_SNAPSHOT_DAYS,
+        snapshotDays: HEALTH_SYNC_WINDOW_DAYS,
       });
       updateConnectedHealth(nativeAutomaticHealthPatch(nativeStatus));
-      await reconcilePendingAutomaticHealth();
-      if (!currentSettings.enabled || !currentSettings.automaticSyncEnabled) {
-        return { ok: true, status: "disabled" };
-      }
-      return await syncConnectedHealth({ automatic: true, days: OPEN_HEALTH_SNAPSHOT_DAYS });
     } catch (error) {
       updateConnectedHealth({
         automaticSyncStatus: "error",
         automaticSyncMessage: error?.message
-          ? `App-open Health Connect refresh failed: ${error.message}`
-          : "App-open Health Connect refresh failed.",
+          ? `Archive could not retire the previous sync schedule: ${error.message}`
+          : "Archive could not retire the previous sync schedule.",
       });
-      return { ok: false, status: "error", message: error?.message ?? "Open sync failed." };
-    } finally {
-      automaticHealthSyncInFlightRef.current = false;
     }
+
+    try {
+      await reconcilePendingAutomaticHealth();
+    } catch {
+      // A legacy pending snapshot is optional; the authoritative launch read
+      // below remains the source of truth if migration reconciliation fails.
+    }
+
+    if (!currentSettings.enabled) return { ok: false, status: "disabled" };
+    return syncConnectedHealth({ trigger: "launch", days: HEALTH_SYNC_WINDOW_DAYS });
   };
+
+  pullRefreshActionRef.current = () => syncConnectedHealth({
+    trigger: "pullToRefresh",
+    days: HEALTH_SYNC_WINDOW_DAYS,
+  });
 
   useEffect(() => {
     let cancelled = false;
-    setStartupProgress(84);
-
-    if (!startupSyncPromiseRef.current) {
-      startupSyncPromiseRef.current = runOpenHealthSync();
-    }
-
-    const finishStartup = async () => {
-      const minimumDelay = new Promise((resolve) => window.setTimeout(resolve, STARTUP_MINIMUM_MS));
-      const syncTimeout = new Promise((resolve) => window.setTimeout(resolve, STARTUP_SYNC_TIMEOUT_MS));
-      await Promise.all([
-        minimumDelay,
-        Promise.race([startupSyncPromiseRef.current, syncTimeout]),
-      ]);
-      if (cancelled) return;
-      setStartupProgress(100);
-      await new Promise((resolve) => window.setTimeout(resolve, STARTUP_FILL_SETTLE_MS));
-      if (cancelled) return;
-      setStartupClosing(true);
-      await new Promise((resolve) => window.setTimeout(resolve, STARTUP_FADE_MS));
-      if (!cancelled) setStartupVisible(false);
+    let progressFrame = 0;
+    const startedAt = performance.now();
+    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    const launchScreen = launchScreenRef.current;
+    const releaseLaunchScrollLock = () => {
+      document.documentElement.classList.remove("archive-launching");
+      document.body.classList.remove("archive-launching");
     };
 
-    finishStartup();
+    document.documentElement.classList.add("archive-launching");
+    document.body.classList.add("archive-launching");
+
+    const updateProgress = (timestamp) => {
+      if (cancelled || !launchScreen) return;
+      const elapsed = Math.max(0, timestamp - startedAt);
+      const progress = Math.min(0.9, 0.04 + (1 - Math.exp(-elapsed / 900)) * 0.86);
+      launchScreen.style.setProperty("--launch-progress-width", `${342 * progress}px`);
+      progressFrame = window.requestAnimationFrame(updateProgress);
+    };
+
+    if (reduceMotion && launchScreen) {
+      launchScreen.style.setProperty("--launch-progress-width", "342px");
+    } else {
+      progressFrame = window.requestAnimationFrame(updateProgress);
+    }
+
+    if (!launchSyncPromiseRef.current) launchSyncPromiseRef.current = runLaunchHealthSync();
+
+    const finishLaunch = async () => {
+      const minimumVisible = new Promise((resolve) => window.setTimeout(
+        resolve,
+        reduceMotion ? 140 : LAUNCH_MINIMUM_VISIBLE_MS,
+      ));
+      const timeout = new Promise((resolve) => window.setTimeout(resolve, LAUNCH_SYNC_TIMEOUT_MS));
+      await Promise.all([
+        minimumVisible,
+        Promise.race([launchSyncPromiseRef.current, timeout]),
+      ]);
+      if (cancelled) return;
+
+      if (progressFrame) window.cancelAnimationFrame(progressFrame);
+      launchScreen?.style.setProperty("--launch-progress-width", "342px");
+      setLaunchPhase("settling");
+      await new Promise((resolve) => window.setTimeout(resolve, reduceMotion ? 80 : LAUNCH_FILL_SETTLE_MS));
+      if (!cancelled) {
+        releaseLaunchScrollLock();
+        setLaunchPhase("ready");
+      }
+    };
+
+    finishLaunch();
+    return () => {
+      cancelled = true;
+      if (progressFrame) window.cancelAnimationFrame(progressFrame);
+      releaseLaunchScrollLock();
+    };
+  }, []);
+
+  useEffect(() => {
+    const snapshotId = connectedHealth.lastAppliedAutomaticSnapshotId;
+    const isNative = typeof Capacitor.isNativePlatform === "function" && Capacitor.isNativePlatform();
+    if (!isNative || !snapshotId) return undefined;
+    let cancelled = false;
+
+    ConnectedHealthNative.acknowledgeAutomaticSync({ snapshotId })
+      .then(() => ConnectedHealthNative.getAutomaticSyncStatus())
+      .then((status) => {
+        if (!cancelled) updateConnectedHealth(nativeAutomaticHealthPatch(status));
+      })
+      .catch(() => {
+        // The snapshot remains native-side and will be retried on the next launch.
+      });
 
     return () => {
       cancelled = true;
+    };
+  }, [connectedHealth.lastAppliedAutomaticSnapshotId]);
+
+  useEffect(() => {
+    const shell = appShellRef.current;
+    if (!shell) return undefined;
+    let tracking = false;
+    let refreshing = false;
+    let startX = 0;
+    let startY = 0;
+    let armed = false;
+    let visualState = "idle";
+    let resetTimer = 0;
+
+    const updateVisual = (distance, progress) => {
+      shell.style.setProperty("--pull-distance", `${distance}px`);
+      shell.style.setProperty("--pull-progress", String(progress));
+    };
+
+    const finishVisual = (delay = 0) => {
+      window.clearTimeout(resetTimer);
+      resetTimer = window.setTimeout(() => {
+        shell.classList.add("pull-refresh-settling");
+        shell.classList.remove("pull-refresh-active", "pull-refresh-armed", "pull-refresh-refreshing");
+        updateVisual(0, 0);
+        window.setTimeout(() => {
+          shell.classList.remove("pull-refresh-settling");
+          visualState = "idle";
+          setPullRefreshState("idle");
+          setPullRefreshMessage("");
+        }, 260);
+      }, delay);
+    };
+
+    const beginRefresh = async () => {
+      refreshing = true;
+      shell.classList.remove("pull-refresh-armed");
+      shell.classList.add("pull-refresh-refreshing");
+      updateVisual(58, 1);
+      visualState = "refreshing";
+      setPullRefreshState("refreshing");
+      setPullRefreshMessage("");
+
+      const result = await pullRefreshActionRef.current?.();
+      const nextState = result?.ok
+        ? "complete"
+        : ["disabled", "permissionsNeeded", "webPreview"].includes(result?.status)
+          ? result.status
+          : "error";
+      visualState = nextState;
+      setPullRefreshState(nextState);
+      setPullRefreshMessage(nextState === "error" ? "Check Health Connect in Settings" : "");
+      refreshing = false;
+      finishVisual(nextState === "complete" ? 560 : 900);
+    };
+
+    const handleTouchStart = (event) => {
+      const touch = event.touches[0];
+      const target = event.target instanceof Element ? event.target : null;
+      const scrollTop = Math.max(0, window.scrollY || document.documentElement.scrollTop || 0);
+      if (!touch || refreshing || pullRefreshBlockedRef.current || scrollTop > 1) return;
+      if (target?.closest(".bottom-nav, input, textarea, select, [data-no-pull-refresh]")) return;
+      tracking = true;
+      armed = false;
+      startX = touch.clientX;
+      startY = touch.clientY;
+    };
+
+    const handleTouchMove = (event) => {
+      if (!tracking || refreshing) return;
+      const touch = event.touches[0];
+      if (!touch) return;
+      const deltaY = touch.clientY - startY;
+      const deltaX = Math.abs(touch.clientX - startX);
+      const scrollTop = Math.max(0, window.scrollY || document.documentElement.scrollTop || 0);
+
+      if (deltaY <= 0 || deltaX > deltaY || scrollTop > 1) {
+        if (deltaY < -8 || deltaX > Math.abs(deltaY)) tracking = false;
+        return;
+      }
+
+      event.preventDefault();
+      const distance = Math.min(PULL_REFRESH_MAX_DISTANCE, deltaY * 0.5);
+      const progress = Math.min(1, distance / PULL_REFRESH_THRESHOLD);
+      const nextArmed = distance >= PULL_REFRESH_THRESHOLD;
+      const nextState = nextArmed ? "armed" : "pulling";
+      shell.classList.add("pull-refresh-active");
+      shell.classList.toggle("pull-refresh-armed", nextArmed);
+      updateVisual(distance, progress);
+      if (nextState !== visualState) {
+        visualState = nextState;
+        setPullRefreshState(nextState);
+      }
+      armed = nextArmed;
+    };
+
+    const handleTouchEnd = () => {
+      if (!tracking) return;
+      tracking = false;
+      if (armed) beginRefresh();
+      else finishVisual();
+      armed = false;
+    };
+
+    const handleTouchCancel = () => {
+      if (!tracking) return;
+      tracking = false;
+      armed = false;
+      finishVisual();
+    };
+
+    shell.addEventListener("touchstart", handleTouchStart, { passive: true });
+    shell.addEventListener("touchmove", handleTouchMove, { passive: false });
+    shell.addEventListener("touchend", handleTouchEnd, { passive: true });
+    shell.addEventListener("touchcancel", handleTouchCancel, { passive: true });
+
+    return () => {
+      window.clearTimeout(resetTimer);
+      shell.removeEventListener("touchstart", handleTouchStart);
+      shell.removeEventListener("touchmove", handleTouchMove);
+      shell.removeEventListener("touchend", handleTouchEnd);
+      shell.removeEventListener("touchcancel", handleTouchCancel);
     };
   }, []);
 
@@ -9936,114 +10078,114 @@ export default function App() {
     setEditingModule(null);
   };
 
-  const sectionTabs = (section) => (
-    <SectionTabs section={section} activePage={activePage} onPageChange={changeActivePage} />
-  );
-
   const pages = {
-    workout: <WorkoutPage workout={state.workout} onWorkoutChange={updateWorkoutData} onAdd={openModulePicker} onSettings={openSettings} sectionTabs={sectionTabs("train")} modules={pageModules.workout} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
-    workoutHistory: <WorkoutHistoryPage workout={state.workout} onWorkoutChange={updateWorkoutData} onSettings={openSettings} sectionTabs={sectionTabs("train")} />,
-    home: <HomePage weekDays={weekDays} habitNames={trackedHabitNames} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onHistory={openHistory} onSettings={openSettings} modules={pageModules.home} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
-    habit: <HabitPage weekDays={weekDays} habitNames={state.habitNames} trackedHabits={trackedHabitNames} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onHistory={openHistory} onSettings={openSettings} sectionTabs={sectionTabs("track")} modules={pageModules.habit} moduleContext={moduleContext} onToggleHabitTracking={toggleHabitTracking} onRenameHabit={setEditingHabit} onReorderHabit={reorderHabit} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
-    water: <WaterPage weekDays={weekDays} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onHistory={openHistory} onSettings={openSettings} sectionTabs={sectionTabs("track")} modules={pageModules.water} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
-    sleep: <SleepPage weekDays={weekDays} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onHistory={openHistory} onSettings={openSettings} sectionTabs={sectionTabs("track")} modules={pageModules.sleep} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
-    stats: <StatsPage entries={state.entries} habitNames={trackedHabitNames} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onHistory={openHistory} onSettings={openSettings} sectionTabs={sectionTabs("progress")} onEditDate={openRecordForDate} modules={pageModules.stats} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
-    coach: <CoachPage analytics={coachAnalytics} workout={state.workout} aiSettings={aiSettings} geminiApiKey={geminiApiKey} coachMessages={state.coachMessages} onSaveMessages={saveCoachMessages} onApplyProposal={applyCoachProposal} onSettings={openSettings} sectionTabs={sectionTabs("progress")} />,
-    settings: <SettingsPage onClose={closeSettings} onHistory={openHistory} onBackup={openBackupChoice} goals={goals} onUpdateGoals={updateGoals} aiSettings={aiSettings} geminiApiKey={geminiApiKey} connectedHealth={connectedHealth} watchData={watchData} onUpdateConnectedHealth={updateConnectedHealth} onCheckConnectedHealth={checkConnectedHealth} onOpenConnectedHealthSettings={openConnectedHealthSettings} onRequestConnectedHealthPermissions={requestConnectedHealthPermissions} onToggleAutomaticHealthSync={toggleAutomaticHealthSync} onSyncConnectedHealth={syncConnectedHealth} onUpdateAISettings={updateAISettings} onUpdateGeminiApiKey={updateGeminiApiKey} />,
+    workout: <WorkoutPage workout={state.workout} onWorkoutChange={updateWorkoutData} onAdd={openModulePicker} onBackup={openBackupChoice} modules={pageModules.workout} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
+    workoutHistory: <WorkoutHistoryPage workout={state.workout} onWorkoutChange={updateWorkoutData} />,
+    home: <HomePage weekDays={weekDays} habitNames={trackedHabitNames} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.home} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
+    habit: <HabitPage weekDays={weekDays} habitNames={state.habitNames} trackedHabits={trackedHabitNames} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.habit} moduleContext={moduleContext} onToggleHabitTracking={toggleHabitTracking} onRenameHabit={setEditingHabit} onReorderHabit={reorderHabit} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
+    water: <WaterPage weekDays={weekDays} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.water} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
+    sleep: <SleepPage weekDays={weekDays} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.sleep} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
+    stats: <StatsPage entries={state.entries} habitNames={trackedHabitNames} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onBackup={openBackupChoice} onHistory={openHistory} onEditDate={openRecordForDate} modules={pageModules.stats} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
+    coach: <CoachPage analytics={coachAnalytics} workout={state.workout} aiSettings={aiSettings} geminiApiKey={geminiApiKey} coachMessages={state.coachMessages} onSaveMessages={saveCoachMessages} onApplyProposal={applyCoachProposal} />,
+    settings: <SettingsPage goals={goals} onUpdateGoals={updateGoals} aiSettings={aiSettings} geminiApiKey={geminiApiKey} connectedHealth={connectedHealth} watchData={watchData} onUpdateConnectedHealth={updateConnectedHealth} onCheckConnectedHealth={checkConnectedHealth} onOpenConnectedHealthSettings={openConnectedHealthSettings} onRequestConnectedHealthPermissions={requestConnectedHealthPermissions} onUpdateAISettings={updateAISettings} onUpdateGeminiApiKey={updateGeminiApiKey} />,
   };
 
   return (
     <>
-    <main className={`app-shell ${chromeCompact ? "chrome-compact" : ""}`} aria-hidden={startupVisible ? "true" : undefined}>
-      <div className={`page-stage page-${pageMotion} metric-${activePage}`} key={activePage}>
-        {pages[activePage]}
-      </div>
-      <BottomNav activePage={activePage === "settings" ? settingsReturnPage : activePage} onSectionChange={changePrimarySection} />
-      <input
-        ref={importInputRef}
-        className="backup-file-input"
-        type="file"
-        accept="application/json,.json"
-        onChange={importBackup}
-      />
-      {backupNotice && !choiceOpen && !backupOpen && <div className={`backup-toast ${backupNotice.type}`}>{backupNotice.message}</div>}
-      {choiceOpen && (
-        <AddChoiceSheet
-          onRecord={openRecordDay}
-          onModules={openModulePicker}
-          onClose={() => setChoiceOpen(false)}
+      <main
+        ref={appShellRef}
+        className={`app-shell ${chromeCompact ? "chrome-compact" : ""}`}
+        aria-hidden={launchPhase !== "ready" ? "true" : undefined}
+      >
+        <PullRefreshIndicator state={pullRefreshState} message={pullRefreshMessage} />
+        <div className={`page-stage page-${pageMotion} metric-${activePage}`} key={activePage}>
+          {pages[activePage]}
+        </div>
+        <BottomNav activePage={activePage} onPageChange={changeActivePage} />
+        <input
+          ref={importInputRef}
+          className="backup-file-input"
+          type="file"
+          accept="application/json,.json"
+          onChange={importBackup}
+        />
+        {backupNotice && !choiceOpen && !backupOpen && <div className={`backup-toast ${backupNotice.type}`}>{backupNotice.message}</div>}
+        {choiceOpen && (
+          <AddChoiceSheet
+            onRecord={openRecordDay}
+            onModules={openModulePicker}
+            onClose={() => setChoiceOpen(false)}
+          />
+        )}
+        {backupOpen && (
+          <BackupChoiceSheet
+            onExport={exportBackup}
+            onImport={openImportPicker}
+            backupNotice={backupNotice}
+            onClose={() => setBackupOpen(false)}
+          />
+        )}
+        {historyOpen && (
+          <HistorySheet
+            entries={state.entries}
+            habitNames={trackedHabitNames}
+            goals={goals}
+            onEditDate={openRecordForDate}
+            onClose={() => setHistoryOpen(false)}
+          />
+        )}
+        {sheetOpen && (
+          <DailySheet
+            key={recordDate ?? "daily-sheet"}
+            habitNames={state.habitNames}
+            trackedHabits={trackedHabitNames}
+            entries={state.entries}
+            goals={goals}
+            watchData={watchData}
+            connectedHealth={connectedHealth}
+            initialDate={recordDate}
+            title={state.entries.some((entry) => entry.date === recordDate) ? "Edit record" : "Add record"}
+            onClose={() => setSheetOpen(false)}
+            onSave={saveEntry}
+            onDelete={deleteEntry}
+            onAddHabit={addHabit}
+          />
+        )}
+        {modulePickerOpen && (
+          <ModulePicker
+            pageId={activePage}
+            pageName={activePage === "home" ? "Home" : activePage[0].toUpperCase() + activePage.slice(1)}
+            context={{ ...moduleContext, metricType: activePage }}
+            addedModuleIds={(pageModules[activePage] ?? []).map((module) => module.moduleId)}
+            moduleTemplates={moduleTemplates}
+            onAddModule={addModuleToCurrentPage}
+            onEditTemplate={openTemplateModuleEditor}
+            onClose={() => setModulePickerOpen(false)}
+          />
+        )}
+        {editedModuleDefinition && (
+          <ModuleEditSheet
+            module={editedModuleDefinition}
+            settings={editedModuleSettings}
+            onSave={saveModuleSettings}
+            onClose={() => setEditingModule(null)}
+          />
+        )}
+        {editingHabit && (
+          <HabitRenameSheet
+            habit={editingHabit}
+            onSave={renameHabit}
+            onClose={() => setEditingHabit(null)}
+          />
+        )}
+      </main>
+      {launchPhase !== "ready" && (
+        <ArchiveLaunchScreen
+          screenRef={launchScreenRef}
+          phase={launchPhase}
+          syncingHealth={connectedHealth.enabled}
         />
       )}
-      {backupOpen && (
-        <BackupChoiceSheet
-          onExport={exportBackup}
-          onImport={openImportPicker}
-          backupNotice={backupNotice}
-          onClose={() => setBackupOpen(false)}
-        />
-      )}
-      {historyOpen && (
-        <HistorySheet
-          entries={state.entries}
-          habitNames={trackedHabitNames}
-          goals={goals}
-          onEditDate={openRecordForDate}
-          onClose={() => setHistoryOpen(false)}
-        />
-      )}
-      {sheetOpen && (
-        <DailySheet
-          key={recordDate ?? "daily-sheet"}
-          habitNames={state.habitNames}
-          trackedHabits={trackedHabitNames}
-          entries={state.entries}
-          goals={goals}
-          watchData={watchData}
-          connectedHealth={connectedHealth}
-          initialDate={recordDate}
-          title={state.entries.some((entry) => entry.date === recordDate) ? "Edit record" : "Add record"}
-          onClose={() => setSheetOpen(false)}
-          onSave={saveEntry}
-          onDelete={deleteEntry}
-          onAddHabit={addHabit}
-          onSyncSleep={syncConnectedHealth}
-        />
-      )}
-      {modulePickerOpen && (
-        <ModulePicker
-          pageId={activePage}
-          pageName={activePage === "home" ? "Home" : activePage[0].toUpperCase() + activePage.slice(1)}
-          context={{ ...moduleContext, metricType: activePage }}
-          addedModuleIds={(pageModules[activePage] ?? []).map((module) => module.moduleId)}
-          moduleTemplates={moduleTemplates}
-          onAddModule={addModuleToCurrentPage}
-          onEditTemplate={openTemplateModuleEditor}
-          onClose={() => setModulePickerOpen(false)}
-        />
-      )}
-      {editedModuleDefinition && (
-        <ModuleEditSheet
-          module={editedModuleDefinition}
-          settings={editedModuleSettings}
-          onSave={saveModuleSettings}
-          onClose={() => setEditingModule(null)}
-        />
-      )}
-      {editingHabit && (
-        <HabitRenameSheet
-          habit={editingHabit}
-          onSave={renameHabit}
-          onClose={() => setEditingHabit(null)}
-        />
-      )}
-    </main>
-    {startupVisible && (
-      <StartupScreen
-        progress={startupProgress}
-        closing={startupClosing}
-        syncingHealth={connectedHealth.enabled && connectedHealth.automaticSyncEnabled}
-      />
-    )}
     </>
   );
 }

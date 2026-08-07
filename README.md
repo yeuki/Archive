@@ -14,7 +14,7 @@ Archive is a private-first personal productivity, health, and workout tracker. I
 - Detailed workout logging and monthly workout history
 - Gemini-powered coaching with reviewable changes
 - Local JSON backup and restore
-- Canonical Health Connect archive with automatic lifecycle/background refresh, source provenance, reconciliation, and watch-first sleep precedence
+- Canonical Health Connect archive with launch and pull-to-refresh syncing, source provenance, reconciliation, and watch-first sleep precedence
 - Android packaging through Capacitor
 
 ## Privacy
@@ -85,7 +85,7 @@ The release script refuses to overwrite an existing version. Release notes and A
 
 Archive does not generate simulated history for new users. Daily records and completed workouts are persisted only after user actions. A workout enters history only after **Finish workout** is selected.
 
-Health Connect data is normalized into one local, versioned health archive. Archive refreshes on launch and resume, while separately approved Android background access enables inexact hourly snapshots. Recent syncs reconcile authoritative daily totals, sleep sessions, and workouts—including corrections and deletions—while high-frequency heart-rate and HRV data use a bounded rolling sample window. Each imported record retains provider, source, timezone, and import provenance.
+Health Connect data is normalized into one local, versioned health archive. When import is enabled, Archive performs an authoritative 30-day reconciliation during cold launch and whenever the user completes a pull-to-refresh gesture on a main page. There is no periodic, resume, or background polling. Each refresh reconciles daily totals, sleep sessions, and workouts—including corrections and deletions—while high-frequency heart-rate and HRV data use a bounded rolling sample window. Each imported record retains provider, source, timezone, and import provenance.
 
 ## Project status
 

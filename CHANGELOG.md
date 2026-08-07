@@ -4,6 +4,40 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-08-07
+
+### Added
+
+- Added a dedicated launch gate that keeps the normal interface hidden while Archive initializes and performs its Health Connect reconciliation.
+- Added a horizontal Archive loading lockup built from the approved flowing A geometry, two-wave crossbar, and wordmark; the mark begins muted grey and fills from left to right through habit pink, sleep purple, water blue, and move green.
+- Added native-feeling pull-to-refresh on normal scrollable pages with resisted drag, release threshold, compact material progress indicator, success/error feedback, and reduced-motion and reduced-transparency accommodations.
+
+### Changed
+
+- Restored the v0.8.0 navigation bar, navigation behavior, nine separate destinations, page hierarchy, layouts, and Archive Canvas interaction model as the source of truth; the consolidated v0.9.0 hierarchy is not carried forward.
+- Simplified Health Connect to exactly two data-read triggers: one authoritative 30-day reconciliation on cold launch and one authoritative 30-day reconciliation after a completed pull-to-refresh gesture.
+- Replaced separate automatic-sync controls with the existing Health Connect Import switch: when import is on, launch and pull syncing are on; when import is off, neither reads health data.
+- Changed the daily sleep Sync option to consume the latest already-imported watch record. It no longer starts a third Health Connect read; missing data directs the user to pull down on a main page or use Manual fallback.
+- Retained connection checks, standard Health Connect permission review, canonical source provenance, previous-day sleep ownership, watch-over-manual priority, correction/deletion reconciliation, and local persistence.
+
+### Removed
+
+- Removed foreground-resume syncing, visibility-triggered syncing, 15-minute active polling, periodic background reads, background Health Connect permission requests, manual sync buttons in Settings, and the sleep-sheet Sync now action.
+- Removed every v0.9.0 section-tab, merged-destination, four-button dock, and Settings-as-utility change from the active application interface.
+
+### Fixed
+
+- Added upgrade cleanup that cancels WorkManager jobs left behind by older automatic-sync policies and leaves the retained migration worker unable to read Health Connect data.
+- Prevented the underlying interface and document scrollbar from appearing during launch initialization.
+- Preserved zero horizontal overflow at both 412 x 915 and 360 x 800 while keeping the exact v0.8.0 bottom navigation implementation.
+
+### Known issues and unfinished work
+
+- Samsung Health controls when watch records reach Health Connect, so a successful Archive refresh cannot import data Samsung has not published yet.
+- Browser previews can verify the loader, layout, and gesture wiring but cannot execute Android Health Connect reads or permission flows.
+- Health Connect remains Android-only; iOS packaging and Apple Health integration remain future work.
+- v0.9.0 remains preserved in Git and the immutable APK archive for release-history integrity, but v0.10.0 intentionally supersedes its navigation and hierarchy.
+
 ## [0.9.0] - 2026-08-07
 
 ### Added

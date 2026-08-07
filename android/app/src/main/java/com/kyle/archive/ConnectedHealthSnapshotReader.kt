@@ -23,9 +23,9 @@ import java.time.ZoneId
 import kotlin.reflect.KClass
 
 /**
- * Creates the canonical Health Connect snapshot used by app-open and manual
- * synchronization. Keeping this reader independent of the UI makes the
- * foreground import predictable and easy to verify.
+ * Creates the canonical Health Connect snapshot used by launch and
+ * pull-to-refresh synchronization. Keeping this reader independent of the UI
+ * makes both foreground import paths predictable and easy to verify.
  */
 internal object ConnectedHealthSnapshotReader {
     val readPermissions = setOf(
@@ -53,7 +53,7 @@ internal object ConnectedHealthSnapshotReader {
         val range = TimeRangeFilter.between(startInstant, now)
         val syncedAt = now.toString()
         val safeTrigger = when (trigger) {
-            "background", "foregroundAuto", "manual" -> trigger
+            "launch", "pullToRefresh", "manual" -> trigger
             else -> "manual"
         }
 

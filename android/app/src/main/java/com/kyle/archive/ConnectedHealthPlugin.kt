@@ -161,7 +161,7 @@ class ConnectedHealthPlugin : Plugin() {
     fun syncRecentData(call: PluginCall) {
         val days = (call.getInt("days", 30) ?: 30).coerceIn(1, 30)
         val trigger = when (call.getString("trigger", "manual")) {
-            "background", "foregroundAuto", "manual" -> call.getString("trigger", "manual") ?: "manual"
+            "launch", "pullToRefresh", "manual" -> call.getString("trigger", "manual") ?: "manual"
             else -> "manual"
         }
         val client = healthClientOrNull()
@@ -200,10 +200,14 @@ class ConnectedHealthPlugin : Plugin() {
                     return@launch
                 }
 
+                if (trigger == "launch") {
+                    HealthConnectAutoSyncStore.markAttempt(context)
+                }
+
                 val payload = withContext(Dispatchers.IO) {
                     ConnectedHealthSnapshotReader.read(client, days, trigger)
                 }
-                if (trigger == "foregroundAuto") {
+                if (trigger == "launch") {
                     HealthConnectAutoSyncStore.markForegroundSuccess(
                         context,
                         payload.getString("syncedAt") ?: "",
@@ -212,10 +216,10 @@ class ConnectedHealthPlugin : Plugin() {
                 mergeJson(payload, automaticStatusPayload())
                 call.resolve(payload)
             } catch (error: Exception) {
-                if (trigger == "foregroundAuto") {
+                if (trigger == "launch") {
                     HealthConnectAutoSyncStore.markError(
                         context,
-                        "Automatic health refresh failed: ${error.message ?: "unknown error"}",
+                        "Launch health refresh failed: ${error.message ?: "unknown error"}",
                     )
                 }
                 call.reject("Archive could not sync Health Connect data.", error)
