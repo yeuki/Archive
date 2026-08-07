@@ -28,7 +28,7 @@ Release APKs are immutable. If a packaged build changes, Archive receives a new 
 - Local archive: `releases/v0.10.1/Archive-v0.10.1.apk`
 - Google Drive archive: `Archive Productivity Tracker/Releases/v0.10.1/Archive-v0.10.1.apk`
 - GitHub reference: `main`, tag `v0.10.1`
-- SHA-256: `PENDING-FINAL-BUILD`
+- SHA-256: `dd0fbd82a3bd05f235a84584f9e2ba4fcc1d302fbfea06ab8fe03b2876be7219`
 - Summary: Refines Archive's launch presentation to the standalone flowing A, centered precisely while retaining the existing grey-to-pastel loading behavior.
 - Main UI changes: removes the Archive wordmark and visible status caption from the launch screen, places the A on a responsive square canvas, and distributes the full four-color Archive gradient across the mark.
 - Structural changes: introduces a single shared SVG reveal-width constant and regression coverage for the square loader; the v0.8.0/v0.10.0 navigation component, routes, page hierarchy, layouts, and interactions are untouched.
