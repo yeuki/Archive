@@ -29,7 +29,7 @@ Release APKs are immutable. If a packaged build changes, Archive receives a new 
 - Local archive: `releases/v0.11.0/Archive-v0.11.0.apk`
 - Google Drive archive: `Archive Productivity Tracker/Releases/v0.11.0/Archive-v0.11.0.apk`
 - GitHub reference: `main`, tag `v0.11.0`
-- SHA-256: `PENDING-FINAL-BUILD`
+- SHA-256: `18781e9361df31f364aadee525c2e00edcbfa323bab1d7636ff102ad99086782`
 - Summary: Replaces the overwhelming live workout table with a calm, full-screen set, rest, and review flow that saves every meaningful action and resumes exactly where the user stopped.
 - Main UI changes: one current exercise and set at a time; vertical touch wheels for weight, reps, and duration; adaptive bodyweight controls; automatic rest timer; compact progress outline; optional effort; progressive-disclosure exception actions; and a concise completion summary.
 - Structural changes: introduces a normalized active-session schema, immutable routine/exercise snapshots, absolute rest deadlines, pause accounting, idempotent history conversion, top-layer portal rendering, future superset metadata, and a dedicated Workout Mode component and regression suite.
