@@ -30,7 +30,7 @@ Release APKs are immutable. If a packaged build changes, Archive receives a new 
 - Local archive: `releases/v0.12.0/Archive-v0.12.0.apk`
 - Google Drive archive: `Archive Productivity Tracker/Releases/v0.12.0/Archive-v0.12.0.apk`
 - GitHub reference: `main`, tag `v0.12.0`
-- SHA-256: `PENDING-FINAL-BUILD`
+- SHA-256: `bec9b83d69f19838cb994b3751464ae36a664b2f8b0a65fa4c823e1a69186c84`
 - Summary: Gives every meaningful movement one coherent, calm rhythm while removing the rendering patterns that made scrolling, navigation expansion, sheets, menus, and Workout Mode controls feel choppy.
 - Main UI changes: smoother page and full-screen-flow transitions; a compositor-driven liquid-glass dock with fluid expansion and selection movement; continuous depth-aware workout wheels; reversible menus and settings disclosures; animated habit and module reordering; responsive sheet gestures; and consistent press, hover, chart, and overlay motion.
 - Structural changes: introduces a shared JavaScript motion coordinator, reusable FLIP layout animation, stable mounted disclosure states, animation-frame gesture updates, unified CSS motion tokens, and an automated motion-system regression suite included in the release pipeline.
