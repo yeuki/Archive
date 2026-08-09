@@ -1,7 +1,7 @@
 {
   "name": "productivity-health-tracker",
   "private": true,
-  "version": "0.11.0",
+  "version": "0.12.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
@@ -10,6 +10,7 @@
     "test:auto-health": "node ./scripts/verify-automatic-health-sync.mjs",
     "test:sleep": "node ./scripts/verify-sleep-policy.mjs",
     "test:workout": "node ./scripts/verify-workout-mode.mjs",
+    "test:motion": "node ./scripts/verify-motion-system.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "cap:sync": "cap sync android",
     "android:build": "cd android && gradlew.bat assembleDebug",

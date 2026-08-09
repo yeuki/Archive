@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { archivePrefersReducedMotion, runArchiveTransition } from "./motion.js";
 import {
   addWorkoutSessionSet,
   adjustWorkoutSessionRest,
@@ -24,7 +25,7 @@ import {
 } from "./workoutSession.js";
 
 const WHEEL_ROW_HEIGHT = 52;
-const WHEEL_RANGE = 12;
+const WHEEL_RANGE = 48;
 const EFFORT_OPTIONS = [
   { value: "easy", label: "Easy" },
   { value: "expected", label: "As expected" },
@@ -90,39 +91,97 @@ function workoutHaptic(duration = 9) {
 function WorkoutValueWheel({ label, value, min = 0, step = 1, unit, onChange }) {
   const scrollRef = useRef(null);
   const settleTimerRef = useRef(null);
+  const paintFrameRef = useRef(0);
   const selected = Math.max(min, numericValue(value, min));
   const precision = String(step).includes(".") ? String(step).split(".")[1].length : 0;
+  const alignedSelected = Number((Math.round(selected / step) * step).toFixed(precision));
+  const [rangeAnchor, setRangeAnchor] = useState(alignedSelected);
   const options = useMemo(() => {
-    const alignedSelected = Number((Math.round(selected / step) * step).toFixed(precision));
-    const start = Math.max(min, alignedSelected - WHEEL_RANGE * step);
+    const alignedAnchor = Number((Math.round(rangeAnchor / step) * step).toFixed(precision));
+    const start = Math.max(min, alignedAnchor - WHEEL_RANGE * step);
     return Array.from({ length: WHEEL_RANGE * 2 + 1 }, (_, index) => (
       Number((start + index * step).toFixed(precision))
     ));
-  }, [min, precision, selected, step]);
+  }, [min, precision, rangeAnchor, step]);
   const selectedIndex = options.reduce((closest, option, index) => (
     Math.abs(option - selected) < Math.abs(options[closest] - selected) ? index : closest
   ), 0);
 
-  useEffect(() => {
+  const paintWheel = () => {
     const node = scrollRef.current;
     if (!node) return;
-    node.scrollTo({ top: selectedIndex * WHEEL_ROW_HEIGHT, behavior: "auto" });
-  }, [selectedIndex, options]);
+    const visualIndex = node.scrollTop / WHEEL_ROW_HEIGHT;
+    Array.from(node.children).forEach((row, index) => {
+      const offset = index - visualIndex;
+      const distance = Math.min(3.25, Math.abs(offset));
+      row.style.setProperty("--wheel-scale", `${1 - distance * 0.105}`);
+      row.style.setProperty("--wheel-opacity", `${Math.max(0.2, 1 - distance * 0.25)}`);
+      row.style.setProperty("--wheel-tilt", `${Math.max(-14, Math.min(14, offset * -5.5))}deg`);
+      row.classList.toggle("wheel-current", Math.abs(offset) < 0.46);
+    });
+  };
 
-  useEffect(() => () => window.clearTimeout(settleTimerRef.current), []);
+  const scheduleWheelPaint = () => {
+    if (paintFrameRef.current) return;
+    paintFrameRef.current = window.requestAnimationFrame(() => {
+      paintFrameRef.current = 0;
+      paintWheel();
+    });
+  };
+
+  useLayoutEffect(() => {
+    const first = options[0];
+    const last = options[options.length - 1];
+    if (selected < first || selected > last) {
+      setRangeAnchor(alignedSelected);
+      return;
+    }
+
+    const node = scrollRef.current;
+    if (!node) return;
+    const targetTop = selectedIndex * WHEEL_ROW_HEIGHT;
+    if (Math.abs(node.scrollTop - targetTop) > 1) node.scrollTop = targetTop;
+    paintWheel();
+  }, [alignedSelected, options, selected, selectedIndex]);
+
+  useEffect(() => () => {
+    window.clearTimeout(settleTimerRef.current);
+    if (paintFrameRef.current) window.cancelAnimationFrame(paintFrameRef.current);
+  }, []);
 
   const commitScrollValue = () => {
     const node = scrollRef.current;
     if (!node) return;
     const index = Math.max(0, Math.min(options.length - 1, Math.round(node.scrollTop / WHEEL_ROW_HEIGHT)));
     const nextValue = options[index];
+    node.classList.remove("is-scrolling");
     if (nextValue !== selected) onChange(nextValue);
+    if ((index < 7 && options[0] > min) || index > options.length - 8) setRangeAnchor(nextValue);
   };
 
   const nudge = (direction) => {
     const nextValue = Math.max(min, Number((selected + direction * step).toFixed(precision)));
+    if (nextValue === selected) return;
     workoutHaptic(5);
-    onChange(nextValue);
+    const nextIndex = options.findIndex((option) => option === nextValue);
+    if (nextIndex < 0) {
+      setRangeAnchor(nextValue);
+      onChange(nextValue);
+      return;
+    }
+    scrollRef.current?.scrollTo({
+      top: nextIndex * WHEEL_ROW_HEIGHT,
+      behavior: archivePrefersReducedMotion() ? "auto" : "smooth",
+    });
+  };
+
+  const chooseOption = (option, index) => {
+    if (option === selected) return;
+    workoutHaptic(5);
+    scrollRef.current?.scrollTo({
+      top: index * WHEEL_ROW_HEIGHT,
+      behavior: archivePrefersReducedMotion() ? "auto" : "smooth",
+    });
   };
 
   return (
@@ -142,8 +201,10 @@ function WorkoutValueWheel({ label, value, min = 0, step = 1, unit, onChange }) 
             aria-label={label}
             tabIndex="0"
             onScroll={() => {
+              scrollRef.current?.classList.add("is-scrolling");
+              scheduleWheelPaint();
               window.clearTimeout(settleTimerRef.current);
-              settleTimerRef.current = window.setTimeout(commitScrollValue, 90);
+              settleTimerRef.current = window.setTimeout(commitScrollValue, 130);
             }}
             onKeyDown={(event) => {
               if (event.key === "ArrowUp") {
@@ -162,7 +223,7 @@ function WorkoutValueWheel({ label, value, min = 0, step = 1, unit, onChange }) 
                 role="option"
                 aria-selected={index === selectedIndex}
                 className={index === selectedIndex ? "selected" : ""}
-                onClick={() => onChange(option)}
+                onClick={() => chooseOption(option, index)}
                 key={`${label}-${option}`}
               >
                 {formatNumber(option)}
@@ -594,6 +655,15 @@ export default function WorkoutMode({ session, exercises, onChange, onLeave, onF
     const normalized = normalizeActiveWorkoutSession(currentSession);
     return typeof updater === "function" ? updater(normalized) : updater;
   });
+  const changePanel = (nextPanel, direction = nextPanel ? "open" : "close") => {
+    runArchiveTransition(() => setPanel(nextPanel), { kind: "workout-sheet", direction });
+  };
+  const transitionSession = (updater, direction = "forward") => {
+    runArchiveTransition(() => updateSession(updater), { kind: "workout-stage", direction });
+  };
+  const leaveWorkoutMode = () => {
+    runArchiveTransition(onLeave, { kind: "workout-mode", direction: "close" });
+  };
   const patchCurrentSet = (patch) => {
     const cursor = data.cursor;
     updateSession((currentSession) => patchWorkoutSessionSet(currentSession, cursor, patch));
@@ -601,16 +671,18 @@ export default function WorkoutMode({ session, exercises, onChange, onLeave, onF
   const completeCurrentSet = (status = "completed") => {
     const outcomeStatus = status === "completed" && current?.set.effort === "failed" ? "failed" : status;
     workoutHaptic(outcomeStatus === "failed" ? 22 : 11);
-    updateSession((currentSession) => completeWorkoutSessionSet(currentSession, { status: outcomeStatus }));
-    setPanel(null);
-    setEffortExpanded(false);
+    runArchiveTransition(() => {
+      updateSession((currentSession) => completeWorkoutSessionSet(currentSession, { status: outcomeStatus }));
+      setPanel(null);
+      setEffortExpanded(false);
+    }, { kind: "workout-stage", direction: "forward" });
   };
   const updateNotes = (notes) => updateSession((currentSession) => ({
     ...currentSession,
     notes,
     lastSavedAt: new Date().toISOString(),
   }));
-  const openExit = () => setPanel("exit");
+  const openExit = () => changePanel("exit");
 
   return createPortal(
     <div
@@ -624,10 +696,10 @@ export default function WorkoutMode({ session, exercises, onChange, onLeave, onF
       <div className="workout-mode-ambient" aria-hidden="true" />
       <WorkoutModeHeader
         session={data}
-        onLeave={onLeave}
-        onOutline={() => setPanel("outline")}
+        onLeave={leaveWorkoutMode}
+        onOutline={() => changePanel("outline")}
         onOptions={data.status === "active"
-          ? () => setPanel("options")
+          ? () => changePanel("options")
           : data.status === "resting" ? openExit : null}
       />
 
@@ -648,15 +720,15 @@ export default function WorkoutMode({ session, exercises, onChange, onLeave, onF
             remaining={remaining}
             onAdjust={(seconds) => updateSession((currentSession) => adjustWorkoutSessionRest(currentSession, seconds))}
             onToggle={() => updateSession((currentSession) => toggleWorkoutRestTimer(currentSession))}
-            onSkip={() => updateSession((currentSession) => finishWorkoutSessionRest(currentSession))}
+            onSkip={() => transitionSession((currentSession) => finishWorkoutSessionRest(currentSession))}
           />
         )}
         {data.status === "paused" && (
           <WorkoutPausedScreen
             session={data}
-            onResume={() => updateSession((currentSession) => resumeWorkoutSession(currentSession))}
-            onLeave={onLeave}
-            onEnd={() => updateSession((currentSession) => endWorkoutSessionEarly(currentSession))}
+            onResume={() => transitionSession((currentSession) => resumeWorkoutSession(currentSession))}
+            onLeave={leaveWorkoutMode}
+            onEnd={() => transitionSession((currentSession) => endWorkoutSessionEarly(currentSession))}
           />
         )}
         {data.status === "summary" && (
@@ -664,9 +736,9 @@ export default function WorkoutMode({ session, exercises, onChange, onLeave, onF
             session={data}
             clock={clock}
             onNotes={updateNotes}
-            onReview={() => setPanel("outline")}
-            onFinish={() => onFinish(data)}
-            onDiscard={() => setPanel("discard")}
+            onReview={() => changePanel("outline")}
+            onFinish={() => runArchiveTransition(() => onFinish(data), { kind: "workout-mode", direction: "close" })}
+            onDiscard={() => changePanel("discard")}
           />
         )}
       </div>
@@ -674,30 +746,47 @@ export default function WorkoutMode({ session, exercises, onChange, onLeave, onF
       {panel === "options" && (
         <WorkoutOptionsSheet
           session={data}
-          onClose={() => setPanel(null)}
-          onWarmup={() => { updateSession((currentSession) => insertWorkoutWarmupSet(currentSession)); setPanel(null); }}
-          onNotes={() => setPanel("notes")}
-          onSubstitute={() => setPanel("substitute")}
+          onClose={() => changePanel(null)}
+          onWarmup={() => runArchiveTransition(() => {
+            updateSession((currentSession) => insertWorkoutWarmupSet(currentSession));
+            setPanel(null);
+          }, { kind: "workout-stage", direction: "forward" })}
+          onNotes={() => changePanel("notes", "forward")}
+          onSubstitute={() => changePanel("substitute", "forward")}
           onSkipSet={() => completeCurrentSet("skipped")}
           onFailSet={() => completeCurrentSet("failed")}
-          onSkipExercise={() => { updateSession((currentSession) => skipWorkoutSessionExercise(currentSession)); setPanel(null); }}
+          onSkipExercise={() => runArchiveTransition(() => {
+            updateSession((currentSession) => skipWorkoutSessionExercise(currentSession));
+            setPanel(null);
+          }, { kind: "workout-stage", direction: "forward" })}
           onExit={openExit}
         />
       )}
       {panel === "exit" && (
         <WorkoutExitSheet
-          onClose={() => setPanel(null)}
-          onLeave={onLeave}
-          onPause={() => { updateSession((currentSession) => pauseWorkoutSession(currentSession)); onLeave(); }}
-          onEnd={() => { updateSession((currentSession) => endWorkoutSessionEarly(currentSession)); setPanel(null); }}
-          onDiscard={() => setPanel("discard")}
+          onClose={() => changePanel(null)}
+          onLeave={leaveWorkoutMode}
+          onPause={() => runArchiveTransition(() => {
+            updateSession((currentSession) => pauseWorkoutSession(currentSession));
+            onLeave();
+          }, { kind: "workout-mode", direction: "close" })}
+          onEnd={() => runArchiveTransition(() => {
+            updateSession((currentSession) => endWorkoutSessionEarly(currentSession));
+            setPanel(null);
+          }, { kind: "workout-stage", direction: "forward" })}
+          onDiscard={() => changePanel("discard", "forward")}
         />
       )}
-      {panel === "discard" && <WorkoutDiscardSheet onClose={() => setPanel(null)} onDiscard={onDiscard} />}
+      {panel === "discard" && (
+        <WorkoutDiscardSheet
+          onClose={() => changePanel(null)}
+          onDiscard={() => runArchiveTransition(onDiscard, { kind: "workout-mode", direction: "close" })}
+        />
+      )}
       {panel === "notes" && current && (
         <WorkoutNotesSheet
           exercise={current.exercise}
-          onClose={() => setPanel(null)}
+          onClose={() => changePanel(null)}
           onChange={(notes) => updateSession((currentSession) => patchWorkoutSessionExercise(currentSession, current.cursor.exerciseIndex, { notes }))}
         />
       )}
@@ -705,19 +794,27 @@ export default function WorkoutMode({ session, exercises, onChange, onLeave, onF
         <WorkoutSubstituteSheet
           currentExercise={current.exercise}
           exercises={exercises}
-          onClose={() => setPanel(null)}
+          onClose={() => changePanel(null)}
           onChoose={(replacement) => {
-            updateSession((currentSession) => substituteWorkoutSessionExercise(currentSession, current.cursor.exerciseIndex, replacement));
-            setPanel(null);
+            runArchiveTransition(() => {
+              updateSession((currentSession) => substituteWorkoutSessionExercise(currentSession, current.cursor.exerciseIndex, replacement));
+              setPanel(null);
+            }, { kind: "workout-stage", direction: "forward" });
           }}
         />
       )}
       {panel === "outline" && (
         <WorkoutOutlineSheet
           session={data}
-          onClose={() => setPanel(null)}
-          onGoToSet={(cursor) => { updateSession((currentSession) => moveWorkoutSessionCursor(currentSession, cursor)); setPanel(null); }}
-          onEditSet={(cursor) => { setEditCursor(cursor); setPanel("edit"); }}
+          onClose={() => changePanel(null)}
+          onGoToSet={(cursor) => runArchiveTransition(() => {
+            updateSession((currentSession) => moveWorkoutSessionCursor(currentSession, cursor));
+            setPanel(null);
+          }, { kind: "workout-stage", direction: "backward" })}
+          onEditSet={(cursor) => runArchiveTransition(() => {
+            setEditCursor(cursor);
+            setPanel("edit");
+          }, { kind: "workout-sheet", direction: "forward" })}
           onAddSet={(exerciseIndex) => updateSession((currentSession) => addWorkoutSessionSet(currentSession, exerciseIndex))}
         />
       )}
@@ -725,7 +822,10 @@ export default function WorkoutMode({ session, exercises, onChange, onLeave, onF
         <WorkoutEditSetSheet
           session={data}
           cursor={editCursor}
-          onClose={() => { setEditCursor(null); setPanel("outline"); }}
+          onClose={() => runArchiveTransition(() => {
+            setEditCursor(null);
+            setPanel("outline");
+          }, { kind: "workout-sheet", direction: "backward" })}
           onPatch={(patch) => updateSession((currentSession) => patchWorkoutSessionSet(currentSession, editCursor, patch))}
         />
       )}

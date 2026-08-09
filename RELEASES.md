@@ -4,6 +4,7 @@ Release APKs are immutable. If a packaged build changes, Archive receives a new 
 
 | Version | Release date | APK | Summary | Source reference |
 | --- | --- | --- | --- | --- |
+| 0.12.0 | 2026-08-09 | `Archive-v0.12.0.apk` | Unified, performance-conscious motion across navigation, pages, disclosures, gestures, charts, and Workout Mode. | `main`, tag `v0.12.0` |
 | 0.11.0 | 2026-08-09 | `Archive-v0.11.0.apk` | Focused, persistent Workout Mode with touch value wheels, automatic rest, safe resume, and concise review. | `main`, tag `v0.11.0` |
 | 0.10.1 | 2026-08-07 | `Archive-v0.10.1.apk` | Centers the standalone Archive A in a cleaner grey-to-pastel launch animation without changing navigation. | `main`, tag `v0.10.1` |
 | 0.10.0 | 2026-08-07 | `Archive-v0.10.0.apk` | Restores the v0.8 hierarchy and introduces launch-gated plus pull-to-refresh Health Connect reconciliation. | `main`, tag `v0.10.0` |
@@ -22,6 +23,22 @@ Release APKs are immutable. If a packaged build changes, Archive receives a new 
 | 0.2.1 | 2026-07-13 | `Archive-v0.2.1.apk` | Restores Archive's signature gradient on compact charts while preserving solid dense-data views. | `main`, tag `v0.2.1` |
 | 0.2.0 | 2026-07-13 | `Archive-v0.2.0.apk` | Archive Design System 2.0 with premium Home, Sleep, Settings, chart, surface, and navigation refinements. | `main`, tag `v0.2.0` |
 | 0.1.0 | 2026-07-13 | `Archive-v0.1.0.apk` | Formal baseline of the current productivity, health, workout, AI coach, and Health Connect experience. | `main`, tag `v0.1.0` |
+
+## 0.12.0 - Unified motion system
+
+- APK filename: `Archive-v0.12.0.apk`
+- Local archive: `releases/v0.12.0/Archive-v0.12.0.apk`
+- Google Drive archive: `Archive Productivity Tracker/Releases/v0.12.0/Archive-v0.12.0.apk`
+- GitHub reference: `main`, tag `v0.12.0`
+- SHA-256: `PENDING-FINAL-BUILD`
+- Summary: Gives every meaningful movement one coherent, calm rhythm while removing the rendering patterns that made scrolling, navigation expansion, sheets, menus, and Workout Mode controls feel choppy.
+- Main UI changes: smoother page and full-screen-flow transitions; a compositor-driven liquid-glass dock with fluid expansion and selection movement; continuous depth-aware workout wheels; reversible menus and settings disclosures; animated habit and module reordering; responsive sheet gestures; and consistent press, hover, chart, and overlay motion.
+- Structural changes: introduces a shared JavaScript motion coordinator, reusable FLIP layout animation, stable mounted disclosure states, animation-frame gesture updates, unified CSS motion tokens, and an automated motion-system regression suite included in the release pipeline.
+- Functional changes: no application hierarchy or data behavior was changed; the same navigation destinations, workout lifecycle, Health Connect launch and pull-to-refresh policy, records, backups, and module controls remain available with smoother feedback.
+- Performance work: keeps the dock's blurred glass raster at a fixed size, shifts frequent wheel and drag updates outside React rendering, favors transform and opacity animation, removes expensive entrance blur, and avoids rebuilding scroll-wheel rows while momentum is active.
+- Accessibility: system reduced-motion preferences disable or greatly shorten nonessential movement; closed mounted controls are inert and hidden from assistive technology; existing touch targets and keyboard behavior are preserved.
+- Validation: motion regression suite; existing health, automatic Health Connect, sleep, and Workout Mode suites; production Vite build; mobile Chromium checks at 412 x 915 with zero horizontal overflow; continuous dock, wheel, disclosure, and sheet-drag frame sampling; Android unit tests, lint, and release assembly through the immutable release pipeline.
+- Known issues: Archive cannot access Apple's private native refraction shaders from a Capacitor WebView; performance can still vary with WebView version, thermal state, and battery-saving settings; supersets/circuits remain linear; and Health Connect remains Android-only.
 
 ## 0.11.0 - Focused Workout Mode
 

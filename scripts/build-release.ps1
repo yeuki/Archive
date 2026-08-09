@@ -109,6 +109,11 @@ try {
     throw "The Workout Mode checks failed with exit code $LASTEXITCODE."
   }
 
+  npm.cmd run test:motion
+  if ($LASTEXITCODE -ne 0) {
+    throw "The motion-system checks failed with exit code $LASTEXITCODE."
+  }
+
   npm.cmd run build
   if ($LASTEXITCODE -ne 0) {
     throw "The web build failed with exit code $LASTEXITCODE."

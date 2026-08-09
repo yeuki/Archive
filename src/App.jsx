@@ -3,6 +3,7 @@ import { Capacitor, registerPlugin } from "@capacitor/core";
 import { renderBodyMapSvg } from "./assets/bodymap.js";
 import pencilIcon from "./assets/pencil-icon.png";
 import WorkoutMode from "./WorkoutMode.jsx";
+import { runArchiveTransition, useFlipLayout } from "./motion.js";
 import {
   createWorkoutSession,
   isWorkoutSetCounted,
@@ -4604,16 +4605,18 @@ function BottomNav({ activePage, onPageChange }) {
     let frameId = 0;
     const positionSelectionLens = () => {
       const selected =
-        nav.querySelector(".nav-page.active") ||
+        nav.querySelector('.nav-page.active[aria-hidden="false"]') ||
         nav.querySelector(".home-logo.active") ||
         nav.querySelector(".nav-category.active");
       if (!selected) return;
 
       const navBounds = nav.getBoundingClientRect();
       const selectedBounds = selected.getBoundingClientRect();
+      const lensBaseSize = 44;
+      const selectionSize = Math.max(selectedBounds.width, 32);
       nav.style.setProperty("--selection-x", `${selectedBounds.left - navBounds.left + selectedBounds.width / 2}px`);
       nav.style.setProperty("--selection-y", `${selectedBounds.top - navBounds.top + selectedBounds.height / 2}px`);
-      nav.style.setProperty("--selection-size", `${Math.max(selectedBounds.width, 32)}px`);
+      nav.style.setProperty("--selection-scale", `${selectionSize / lensBaseSize}`);
     };
     const scheduleSelectionLens = () => {
       cancelAnimationFrame(frameId);
@@ -4657,17 +4660,24 @@ function BottomNav({ activePage, onPageChange }) {
   const toggleGroup = (group) => {
     setExpandedGroup((current) => (current === group ? null : group));
   };
-  const renderPageButton = ({ page, label, icon }) => (
-    <button
-      key={page}
-      className={`nav-icon nav-page ${activePage === page ? "active" : ""}`}
-      aria-label={label}
-      aria-current={activePage === page ? "page" : undefined}
-      onClick={() => selectPage(page)}
-    >
-      <NavIcon type={icon} />
-    </button>
-  );
+  const renderPageButton = ({ page, label, icon }, index) => {
+    const group = pageGroup(page);
+    const visible = expandedGroup === group;
+    return (
+      <button
+        key={page}
+        className={`nav-icon nav-page ${visible ? "is-visible" : "is-hidden"} ${activePage === page ? "active" : ""}`}
+        aria-label={label}
+        aria-current={activePage === page && visible ? "page" : undefined}
+        aria-hidden={visible ? "false" : "true"}
+        tabIndex={visible ? 0 : -1}
+        style={{ "--nav-item-index": index }}
+        onClick={() => selectPage(page)}
+      >
+        <NavIcon type={icon} />
+      </button>
+    );
+  };
 
   return (
     <nav
@@ -4687,7 +4697,7 @@ function BottomNav({ activePage, onPageChange }) {
       </span>
       <span className="nav-selection-lens" aria-hidden="true" />
       <div className={`nav-group productivity ${expandedGroup === "productivity" ? "open" : ""}`}>
-        {expandedGroup === "productivity" && groups.productivity.map(renderPageButton)}
+        {groups.productivity.map(renderPageButton)}
         <button
           className={`nav-icon nav-category ${activeGroup === "productivity" ? "active" : ""}`}
           aria-label="Productivity pages"
@@ -4712,7 +4722,7 @@ function BottomNav({ activePage, onPageChange }) {
         >
           <NavIcon type="health" />
         </button>
-        {expandedGroup === "health" && groups.health.map(renderPageButton)}
+        {groups.health.map(renderPageButton)}
       </div>
     </nav>
   );
@@ -5009,6 +5019,7 @@ function HabitTrackingPanel({ habitNames, trackedHabits, onToggleHabitTracking, 
   const dragOverHabitRef = useRef(null);
   const pressStart = useRef({ x: 0, y: 0 });
   const habitColumns = Array.from({ length: Math.ceil(habitNames.length / 6) }, (_, index) => habitNames.slice(index * 6, index * 6 + 6));
+  const layoutRef = useFlipLayout(habitNames.join("\u001f"), ".tracking-row[data-habit]", "habit");
 
   const clearHabitHold = () => {
     if (holdTimer.current) {
@@ -5067,7 +5078,7 @@ function HabitTrackingPanel({ habitNames, trackedHabits, onToggleHabitTracking, 
   return (
     <div className="panel habit-tracking-panel">
       <SectionTitle title="Habit tracking" meta="future records" />
-      <div className="tracking-columns" style={{ gridTemplateColumns: `repeat(${Math.min(habitColumns.length || 1, 2)}, minmax(0, 1fr))` }}>
+      <div ref={layoutRef} className="tracking-columns" style={{ gridTemplateColumns: `repeat(${Math.min(habitColumns.length || 1, 2)}, minmax(0, 1fr))` }}>
         {habitColumns.map((column, columnIndex) => (
           <div className="tracking-column" key={`habit-column-${columnIndex}`}>
             {column.map((habit) => {
@@ -5876,8 +5887,12 @@ function RoutineBuilder({ routine, routines, exercises, workouts, onSelectRoutin
         >
           {routine.name}
         </button>
-        {routinePickerOpen && (
-          <div className="routine-picker-options" id="routine-picker-options">
+        <div
+          className={`routine-picker-options motion-popover ${routinePickerOpen ? "motion-open" : "motion-closed"}`}
+          id="routine-picker-options"
+          aria-hidden={!routinePickerOpen}
+          inert={!routinePickerOpen ? true : undefined}
+        >
             {routines.map((item) => {
               const active = item.id === routine.id;
               return (
@@ -5892,8 +5907,7 @@ function RoutineBuilder({ routine, routines, exercises, workouts, onSelectRoutin
                 </button>
               );
             })}
-          </div>
-        )}
+        </div>
       </div>
       <label className="goal-field full">
         <span>Routine name</span>
@@ -5949,8 +5963,13 @@ function RoutineBuilder({ routine, routines, exercises, workouts, onSelectRoutin
           >
             {selectedExercise?.name ?? "All exercises added"}
           </button>
-          {exercisePickerOpen && availableExercises.length > 0 && (
-            <div className="exercise-picker-options" id="exercise-picker-options" role="listbox">
+          <div
+            className={`exercise-picker-options motion-popover ${exercisePickerOpen && availableExercises.length > 0 ? "motion-open" : "motion-closed"}`}
+            id="exercise-picker-options"
+            role="listbox"
+            aria-hidden={!exercisePickerOpen || !availableExercises.length}
+            inert={!exercisePickerOpen || !availableExercises.length ? true : undefined}
+          >
               {availableExercises.map((exercise) => {
                 const active = exercise.id === selectedExercise?.id;
                 return (
@@ -5966,8 +5985,7 @@ function RoutineBuilder({ routine, routines, exercises, workouts, onSelectRoutin
                   </button>
                 );
               })}
-            </div>
-          )}
+          </div>
         </div>
         <button className="ghost-btn" onClick={addExercise} disabled={!availableExercises.length}>Add</button>
       </div>
@@ -6559,8 +6577,12 @@ function WorkoutSchedulePanel({ workout, onSetSchedule }) {
               >
                 {selectedRoutine.name}
               </button>
-              {isOpen && (
-                <div className="schedule-options" id={menuId}>
+              <div
+                className={`schedule-options motion-popover ${isOpen ? "motion-open" : "motion-closed"}`}
+                id={menuId}
+                aria-hidden={!isOpen}
+                inert={!isOpen ? true : undefined}
+              >
                   {routineOptions.map((routine) => {
                     const active = routine.id === selectedId;
                     return (
@@ -6575,8 +6597,7 @@ function WorkoutSchedulePanel({ workout, onSetSchedule }) {
                       </button>
                     );
                   })}
-                </div>
-              )}
+              </div>
             </div>
           );
         })}
@@ -6596,8 +6617,11 @@ function WorkoutAestheticPanel({ workout, onSetAesthetic, onSetEquipmentProfile 
     <div className="settings-stack workout-aesthetic-panel">
       <SettingsSection title="Training Profile">
         <SettingsRow label="Build focus" value={analysis.aesthetic.shortName} chevron open={focusOpen} onClick={() => setFocusOpen((current) => !current)} />
-        {focusOpen && (
-          <div className="settings-option-list">
+        <div
+          className={`settings-option-list motion-popover ${focusOpen ? "motion-open" : "motion-closed"}`}
+          aria-hidden={!focusOpen}
+          inert={!focusOpen ? true : undefined}
+        >
           {AESTHETIC_BUILDS.map((build) => {
             const active = build.id === analysis.aesthetic.id;
             return (
@@ -6620,10 +6644,12 @@ function WorkoutAestheticPanel({ workout, onSetAesthetic, onSetEquipmentProfile 
             );
           })}
         </div>
-        )}
         <SettingsRow label="Equipment" value={equipmentProfile.shortName} chevron open={equipmentOpen} onClick={() => setEquipmentOpen((current) => !current)} />
-        {equipmentOpen && (
-          <div className="settings-option-list">
+        <div
+          className={`settings-option-list motion-popover ${equipmentOpen ? "motion-open" : "motion-closed"}`}
+          aria-hidden={!equipmentOpen}
+          inert={!equipmentOpen ? true : undefined}
+        >
           {EQUIPMENT_PROFILES.map((profile) => {
             const active = profile.id === equipmentProfile.id;
             return (
@@ -6646,7 +6672,6 @@ function WorkoutAestheticPanel({ workout, onSetAesthetic, onSetEquipmentProfile 
             );
           })}
         </div>
-        )}
       </SettingsSection>
       <SettingsSection title="Set Targets">
       <div className="aesthetic-targets">
@@ -6811,13 +6836,15 @@ function WorkoutPage({ workout, onWorkoutChange, onAdd, onBackup, modules, modul
       exercises: data.exercises,
       workouts: data.workouts,
     });
-    onWorkoutChange((current) => ({
-      ...current,
-      selectedRoutineId: routine.id,
-      activeSession: session,
-    }));
-    setSettingsOpen(false);
-    setWorkoutModeOpen(true);
+    runArchiveTransition(() => {
+      onWorkoutChange((current) => ({
+        ...current,
+        selectedRoutineId: routine.id,
+        activeSession: session,
+      }));
+      setSettingsOpen(false);
+      setWorkoutModeOpen(true);
+    }, { kind: "workout-mode", direction: "open" });
   };
 
   const workoutActions = {
@@ -6850,7 +6877,7 @@ function WorkoutPage({ workout, onWorkoutChange, onAdd, onBackup, modules, modul
         footValue={activeSession ? activeSession.routineName : equipmentProfile.shortName}
         actionLabel={activeSession ? activeSession.status === "summary" ? "Review" : "Resume" : heroRoutine ? scheduledRoutine ? "Start workout" : "Start next" : undefined}
         onAction={activeSession
-          ? () => setWorkoutModeOpen(true)
+          ? () => runArchiveTransition(() => setWorkoutModeOpen(true), { kind: "workout-mode", direction: "open" })
           : heroRoutine ? () => startWorkout(heroRoutine) : undefined}
         className="workout-canvas-hero"
       >
@@ -6885,7 +6912,7 @@ function WorkoutPage({ workout, onWorkoutChange, onAdd, onBackup, modules, modul
           title="Schedule, routines & exercise library"
           copy={`${focusAnalysis.aesthetic.name} · ${equipmentProfile.shortName}. Keep the week aligned with your equipment and build focus.`}
           actionLabel="Open"
-          onAction={() => setSettingsOpen(true)}
+          onAction={() => runArchiveTransition(() => setSettingsOpen(true), { kind: "overlay", direction: "open" })}
         />
       </PageSection>
 
@@ -6905,7 +6932,7 @@ function WorkoutPage({ workout, onWorkoutChange, onAdd, onBackup, modules, modul
           onSetSchedule={setSchedule}
           onSetAesthetic={setAesthetic}
           onSetEquipmentProfile={setEquipmentProfile}
-          onClose={() => setSettingsOpen(false)}
+          onClose={() => runArchiveTransition(() => setSettingsOpen(false), { kind: "overlay", direction: "close" })}
         />
       )}
       {workoutModeOpen && activeSession && (
@@ -7356,11 +7383,17 @@ function SettingsSection({ title, meta, children, collapsible = false, defaultOp
       ) : (
         <div className="settings-section-head">{headingContent}</div>
       )}
-      {(!collapsible || isOpen) && (
-        <div className="settings-group">
-          {children}
+      <div
+        className="settings-section-reveal"
+        aria-hidden={collapsible && !isOpen ? "true" : undefined}
+        inert={collapsible && !isOpen ? true : undefined}
+      >
+        <div className="settings-section-reveal-inner">
+          <div className="settings-group">
+            {children}
+          </div>
         </div>
-      )}
+      </div>
     </section>
   );
 }
@@ -8350,13 +8383,17 @@ function ModulePanel({ module, context, mode = "page", onAdd, onRemove, onEdit, 
         <ModuleVisual moduleId={module.id} context={context} instanceId={instanceId} settings={settings} />
       </div>
       {mode === "picker" && <p>{module.caption}</p>}
-      {menuOpen && (
-        <div className="module-menu" role="menu" onPointerDown={(event) => event.stopPropagation()}>
+      <div
+        className={`module-menu motion-popover ${menuOpen ? "motion-open" : "motion-closed"}`}
+        role="menu"
+        aria-hidden={!menuOpen}
+        inert={!menuOpen ? true : undefined}
+        onPointerDown={(event) => event.stopPropagation()}
+      >
           <button role="menuitem" onClick={editModule}>Edit panel</button>
           {mode === "page" && <button role="menuitem" onClick={removeModule}>Remove from page</button>}
           {mode === "page" && <button role="menuitem" onClick={() => setMenuOpen(false)}>Cancel</button>}
-        </div>
-      )}
+      </div>
     </article>
   );
 }
@@ -8371,6 +8408,11 @@ function AddedModules({ modules = [], context, onRemoveModule, onEditModule, onR
   const pressStart = useRef({ x: 0, y: 0 });
   const capturedTarget = useRef(null);
   const capturedPointerId = useRef(null);
+  const layoutRef = useFlipLayout(
+    modules.map((module) => module.instanceId).join("\u001f"),
+    ".module-panel[data-module-instance]",
+    "moduleInstance",
+  );
 
   if (!modules.length) return null;
 
@@ -8453,7 +8495,7 @@ function AddedModules({ modules = [], context, onRemoveModule, onEditModule, onR
   };
 
   return (
-    <div className="added-modules">
+    <div ref={layoutRef} className="added-modules">
       {modules.map((moduleInstance, index) => {
         const module = MODULES.find((item) => item.id === moduleInstance.moduleId);
         if (!module) return null;
@@ -8782,15 +8824,20 @@ function DailySheet({ habitNames, trackedHabits, entries, goals, watchData, conn
     initialSleepMode === "manual" && Number(existingEntry?.sleep) > 0 ? String(existingEntry.sleep) : ""
   ));
   const [newHabit, setNewHabit] = useState("");
-  const [dragY, setDragY] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
+  const sheetRef = useRef(null);
   const dragStartY = useRef(0);
   const dragLatestY = useRef(0);
   const dragPointerId = useRef(null);
+  const dragFrame = useRef(0);
 
   useEffect(() => {
     if (hasAuthoritativeSleep) setSleepMode("sync");
   }, [hasAuthoritativeSleep, selectedDate]);
+
+  useEffect(() => () => {
+    if (dragFrame.current) window.cancelAnimationFrame(dragFrame.current);
+  }, []);
 
   const syncDate = (nextDate) => {
     setSelectedDate(nextDate);
@@ -8861,7 +8908,11 @@ function DailySheet({ habitNames, trackedHabits, entries, goals, watchData, conn
   const updateSheetDrag = (clientY) => {
     const nextDragY = Math.max(0, clientY - dragStartY.current);
     dragLatestY.current = nextDragY;
-    setDragY(nextDragY);
+    if (dragFrame.current) return;
+    dragFrame.current = window.requestAnimationFrame(() => {
+      dragFrame.current = 0;
+      sheetRef.current?.style.setProperty("--sheet-drag-y", `${dragLatestY.current}px`);
+    });
   };
 
   const finishSheetDrag = () => {
@@ -8874,7 +8925,11 @@ function DailySheet({ habitNames, trackedHabits, entries, goals, watchData, conn
     }
 
     dragLatestY.current = 0;
-    setDragY(0);
+    if (dragFrame.current) window.cancelAnimationFrame(dragFrame.current);
+    dragFrame.current = window.requestAnimationFrame(() => {
+      dragFrame.current = 0;
+      sheetRef.current?.style.setProperty("--sheet-drag-y", "0px");
+    });
   };
 
   const startMouseSheetDrag = (event) => {
@@ -8934,9 +8989,9 @@ function DailySheet({ habitNames, trackedHabits, entries, goals, watchData, conn
     <div className="sheet-backdrop" role="presentation">
       <div className="sheet-shell">
         <section
+          ref={sheetRef}
           className={`daily-sheet metric-sleep ${isDragging ? "dragging" : ""}`}
           aria-label="Add previous day stats"
-          style={{ transform: `translateY(${dragY}px)` }}
         >
           <div className="sheet-grip-zone" onMouseDown={startMouseSheetDrag} onTouchStart={startTouchSheetDrag}>
             <span
@@ -9262,61 +9317,72 @@ export default function App() {
   }, [activePage]);
 
   const changeActivePage = (nextPage) => {
-    const updatePage = () => {
-      if (activePage === nextPage) {
-        setPageMotion("center");
-        setChromeCompact(false);
-        window.scrollTo({ top: 0, behavior: "smooth" });
-        return;
-      }
+    if (activePage === nextPage) {
+      setPageMotion("center");
+      setChromeCompact(false);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
 
-      const currentOrder = PAGE_MOTION_ORDER[activePage] ?? 0;
-      const nextOrder = PAGE_MOTION_ORDER[nextPage] ?? 0;
-      setPageMotion(nextOrder < currentOrder ? "from-left" : "from-right");
+    const currentOrder = PAGE_MOTION_ORDER[activePage] ?? 0;
+    const nextOrder = PAGE_MOTION_ORDER[nextPage] ?? 0;
+    const nextMotion = nextOrder < currentOrder ? "from-left" : "from-right";
+    const updatePage = () => {
+      setPageMotion(nextMotion);
       setActivePage(nextPage);
     };
-    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-
-    if (!reduceMotion && typeof document.startViewTransition === "function") {
-      document.startViewTransition(updatePage);
-    } else {
-      updatePage();
-    }
+    runArchiveTransition(updatePage, { kind: "page", direction: nextMotion });
   };
 
+  const transitionOverlay = (update, direction = "open") => (
+    runArchiveTransition(update, { kind: "overlay", direction })
+  );
+
   const openAddChoice = () => {
-    setBackupOpen(false);
-    setHistoryOpen(false);
-    setChoiceOpen(true);
+    transitionOverlay(() => {
+      setBackupOpen(false);
+      setHistoryOpen(false);
+      setChoiceOpen(true);
+    });
   };
 
   const openBackupChoice = () => {
-    setChoiceOpen(false);
-    setHistoryOpen(false);
-    setBackupOpen(true);
+    transitionOverlay(() => {
+      setChoiceOpen(false);
+      setHistoryOpen(false);
+      setBackupOpen(true);
+    });
   };
 
   const openHistory = () => {
-    setChoiceOpen(false);
-    setBackupOpen(false);
-    setHistoryOpen(true);
+    transitionOverlay(() => {
+      setChoiceOpen(false);
+      setBackupOpen(false);
+      setHistoryOpen(true);
+    });
   };
 
   const openRecordDay = () => {
-    setChoiceOpen(false);
-    setRecordDate(dateKey(addDays(new Date(), -1)));
-    setSheetOpen(true);
+    transitionOverlay(() => {
+      setChoiceOpen(false);
+      setRecordDate(dateKey(addDays(new Date(), -1)));
+      setSheetOpen(true);
+    });
   };
 
   const openRecordForDate = (date) => {
-    setHistoryOpen(false);
-    setRecordDate(date);
-    setSheetOpen(true);
+    transitionOverlay(() => {
+      setHistoryOpen(false);
+      setRecordDate(date);
+      setSheetOpen(true);
+    });
   };
 
   const openModulePicker = () => {
-    setChoiceOpen(false);
-    setModulePickerOpen(true);
+    transitionOverlay(() => {
+      setChoiceOpen(false);
+      setModulePickerOpen(true);
+    });
   };
 
   const showBackupNotice = (message, type = "success") => {
@@ -9355,18 +9421,22 @@ export default function App() {
   };
 
   const openPageModuleEditor = (moduleInstance) => {
-    setEditingModule({
-      source: "page",
-      page: activePage,
-      instanceId: moduleInstance.instanceId,
-      moduleId: moduleInstance.moduleId,
+    transitionOverlay(() => {
+      setEditingModule({
+        source: "page",
+        page: activePage,
+        instanceId: moduleInstance.instanceId,
+        moduleId: moduleInstance.moduleId,
+      });
     });
   };
 
   const openTemplateModuleEditor = (moduleId) => {
-    setEditingModule({
-      source: "template",
-      moduleId,
+    transitionOverlay(() => {
+      setEditingModule({
+        source: "template",
+        moduleId,
+      });
     });
   };
 
@@ -9417,34 +9487,36 @@ export default function App() {
   const renameHabit = (oldName, nextName) => {
     const trimmed = nextName.trim();
     if (!trimmed || trimmed === oldName) {
-      setEditingHabit(null);
+      transitionOverlay(() => setEditingHabit(null), "close");
       return;
     }
 
-    setTrackerState((current) => {
-      const habitExists = current.habitNames.includes(trimmed);
-      const habitNames = habitExists
-        ? current.habitNames.filter((habit) => habit !== oldName)
-        : current.habitNames.map((habit) => (habit === oldName ? trimmed : habit));
-      const trackedSet = new Set(current.trackedHabits ?? current.habitNames);
-      if (trackedSet.has(oldName)) trackedSet.add(trimmed);
-      trackedSet.delete(oldName);
+    transitionOverlay(() => {
+      setTrackerState((current) => {
+        const habitExists = current.habitNames.includes(trimmed);
+        const habitNames = habitExists
+          ? current.habitNames.filter((habit) => habit !== oldName)
+          : current.habitNames.map((habit) => (habit === oldName ? trimmed : habit));
+        const trackedSet = new Set(current.trackedHabits ?? current.habitNames);
+        if (trackedSet.has(oldName)) trackedSet.add(trimmed);
+        trackedSet.delete(oldName);
 
-      return {
-        ...current,
-        habitNames,
-        trackedHabits: habitNames.filter((habit) => trackedSet.has(habit)),
-        entries: current.entries.map((entry) => {
-          const habits = { ...(entry.habits ?? {}) };
-          if (Object.prototype.hasOwnProperty.call(habits, oldName)) {
-            habits[trimmed] = Boolean(habits[trimmed] || habits[oldName]);
-            delete habits[oldName];
-          }
-          return { ...entry, habits };
-        }),
-      };
+        return {
+          ...current,
+          habitNames,
+          trackedHabits: habitNames.filter((habit) => trackedSet.has(habit)),
+          entries: current.entries.map((entry) => {
+            const habits = { ...(entry.habits ?? {}) };
+            if (Object.prototype.hasOwnProperty.call(habits, oldName)) {
+              habits[trimmed] = Boolean(habits[trimmed] || habits[oldName]);
+              delete habits[oldName];
+            }
+            return { ...entry, habits };
+          }),
+        };
+      });
+      setEditingHabit(null);
     });
-    setEditingHabit(null);
   };
 
   const updateGoals = (patch) => {
@@ -10044,41 +10116,47 @@ export default function App() {
   };
 
   const saveEntry = (entry) => {
-    setTrackerState((current) => {
-      const nextEntry = { ...entry, habits: { ...(entry.habits ?? {}) } };
-      const existing = current.entries.some((item) => item.date === entry.date);
-      const entries = existing
-        ? current.entries.map((item) => (item.date === entry.date ? nextEntry : item))
-        : [...current.entries, nextEntry];
-      return { ...current, entries: entries.sort((a, b) => a.date.localeCompare(b.date)) };
-    });
-    setSheetOpen(false);
+    transitionOverlay(() => {
+      setTrackerState((current) => {
+        const nextEntry = { ...entry, habits: { ...(entry.habits ?? {}) } };
+        const existing = current.entries.some((item) => item.date === entry.date);
+        const entries = existing
+          ? current.entries.map((item) => (item.date === entry.date ? nextEntry : item))
+          : [...current.entries, nextEntry];
+        return { ...current, entries: entries.sort((a, b) => a.date.localeCompare(b.date)) };
+      });
+      setSheetOpen(false);
+    }, "close");
   };
 
   const deleteEntry = (date) => {
-    setTrackerState((current) => ({
-      ...current,
-      entries: current.entries.filter((entry) => entry.date !== date),
-    }));
-    setSheetOpen(false);
+    transitionOverlay(() => {
+      setTrackerState((current) => ({
+        ...current,
+        entries: current.entries.filter((entry) => entry.date !== date),
+      }));
+      setSheetOpen(false);
+    }, "close");
   };
 
   const addModuleToCurrentPage = (moduleId) => {
-    setTrackerState((current) => {
-      const currentModules = normalizePageModules(current.pageModules);
-      const currentTemplates = normalizeModuleTemplates(current.moduleTemplates);
-      const pageList = currentModules[activePage] ?? [];
-      if (pageList.some((module) => module.moduleId === moduleId)) return { ...current, pageModules: currentModules };
-      return {
-        ...current,
-        moduleTemplates: currentTemplates,
-        pageModules: {
-          ...currentModules,
-          [activePage]: [...pageList, createModuleInstance(moduleId, currentTemplates[moduleId])],
-        },
-      };
-    });
-    setModulePickerOpen(false);
+    transitionOverlay(() => {
+      setTrackerState((current) => {
+        const currentModules = normalizePageModules(current.pageModules);
+        const currentTemplates = normalizeModuleTemplates(current.moduleTemplates);
+        const pageList = currentModules[activePage] ?? [];
+        if (pageList.some((module) => module.moduleId === moduleId)) return { ...current, pageModules: currentModules };
+        return {
+          ...current,
+          moduleTemplates: currentTemplates,
+          pageModules: {
+            ...currentModules,
+            [activePage]: [...pageList, createModuleInstance(moduleId, currentTemplates[moduleId])],
+          },
+        };
+      });
+      setModulePickerOpen(false);
+    }, "close");
   };
 
   const removeModuleFromCurrentPage = (instanceId) => {
@@ -10117,46 +10195,48 @@ export default function App() {
   const saveModuleSettings = (settings) => {
     if (!editingModule) return;
 
-    setTrackerState((current) => {
-      const moduleSettings = {
-        ...defaultModuleSettings(editingModule.moduleId),
-        ...(settings ?? {}),
-      };
+    transitionOverlay(() => {
+      setTrackerState((current) => {
+        const moduleSettings = {
+          ...defaultModuleSettings(editingModule.moduleId),
+          ...(settings ?? {}),
+        };
 
-      if (editingModule.source === "template") {
-        const currentTemplates = normalizeModuleTemplates(current.moduleTemplates);
+        if (editingModule.source === "template") {
+          const currentTemplates = normalizeModuleTemplates(current.moduleTemplates);
+          return {
+            ...current,
+            moduleTemplates: {
+              ...currentTemplates,
+              [editingModule.moduleId]: moduleSettings,
+            },
+          };
+        }
+
+        const currentModules = normalizePageModules(current.pageModules);
+        const pageList = currentModules[editingModule.page] ?? [];
         return {
           ...current,
-          moduleTemplates: {
-            ...currentTemplates,
-            [editingModule.moduleId]: moduleSettings,
+          pageModules: {
+            ...currentModules,
+            [editingModule.page]: pageList.map((module) => (
+              module.instanceId === editingModule.instanceId
+                ? { ...module, settings: moduleSettings }
+                : module
+            )),
           },
         };
-      }
+      });
 
-      const currentModules = normalizePageModules(current.pageModules);
-      const pageList = currentModules[editingModule.page] ?? [];
-      return {
-        ...current,
-        pageModules: {
-          ...currentModules,
-          [editingModule.page]: pageList.map((module) => (
-            module.instanceId === editingModule.instanceId
-              ? { ...module, settings: moduleSettings }
-              : module
-          )),
-        },
-      };
-    });
-
-    setEditingModule(null);
+      setEditingModule(null);
+    }, "close");
   };
 
   const pages = {
     workout: <WorkoutPage workout={state.workout} onWorkoutChange={updateWorkoutData} onAdd={openModulePicker} onBackup={openBackupChoice} modules={pageModules.workout} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
     workoutHistory: <WorkoutHistoryPage workout={state.workout} onWorkoutChange={updateWorkoutData} />,
     home: <HomePage weekDays={weekDays} habitNames={trackedHabitNames} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.home} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
-    habit: <HabitPage weekDays={weekDays} habitNames={state.habitNames} trackedHabits={trackedHabitNames} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.habit} moduleContext={moduleContext} onToggleHabitTracking={toggleHabitTracking} onRenameHabit={setEditingHabit} onReorderHabit={reorderHabit} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
+    habit: <HabitPage weekDays={weekDays} habitNames={state.habitNames} trackedHabits={trackedHabitNames} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.habit} moduleContext={moduleContext} onToggleHabitTracking={toggleHabitTracking} onRenameHabit={(habit) => transitionOverlay(() => setEditingHabit(habit))} onReorderHabit={reorderHabit} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
     water: <WaterPage weekDays={weekDays} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.water} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
     sleep: <SleepPage weekDays={weekDays} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.sleep} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
     stats: <StatsPage entries={state.entries} habitNames={trackedHabitNames} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onBackup={openBackupChoice} onHistory={openHistory} onEditDate={openRecordForDate} modules={pageModules.stats} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
@@ -10188,7 +10268,7 @@ export default function App() {
           <AddChoiceSheet
             onRecord={openRecordDay}
             onModules={openModulePicker}
-            onClose={() => setChoiceOpen(false)}
+            onClose={() => transitionOverlay(() => setChoiceOpen(false), "close")}
           />
         )}
         {backupOpen && (
@@ -10196,7 +10276,7 @@ export default function App() {
             onExport={exportBackup}
             onImport={openImportPicker}
             backupNotice={backupNotice}
-            onClose={() => setBackupOpen(false)}
+            onClose={() => transitionOverlay(() => setBackupOpen(false), "close")}
           />
         )}
         {historyOpen && (
@@ -10205,7 +10285,7 @@ export default function App() {
             habitNames={trackedHabitNames}
             goals={goals}
             onEditDate={openRecordForDate}
-            onClose={() => setHistoryOpen(false)}
+            onClose={() => transitionOverlay(() => setHistoryOpen(false), "close")}
           />
         )}
         {sheetOpen && (
@@ -10219,7 +10299,7 @@ export default function App() {
             connectedHealth={connectedHealth}
             initialDate={recordDate}
             title={state.entries.some((entry) => entry.date === recordDate) ? "Edit record" : "Add record"}
-            onClose={() => setSheetOpen(false)}
+            onClose={() => transitionOverlay(() => setSheetOpen(false), "close")}
             onSave={saveEntry}
             onDelete={deleteEntry}
             onAddHabit={addHabit}
@@ -10234,7 +10314,7 @@ export default function App() {
             moduleTemplates={moduleTemplates}
             onAddModule={addModuleToCurrentPage}
             onEditTemplate={openTemplateModuleEditor}
-            onClose={() => setModulePickerOpen(false)}
+            onClose={() => transitionOverlay(() => setModulePickerOpen(false), "close")}
           />
         )}
         {editedModuleDefinition && (
@@ -10242,14 +10322,14 @@ export default function App() {
             module={editedModuleDefinition}
             settings={editedModuleSettings}
             onSave={saveModuleSettings}
-            onClose={() => setEditingModule(null)}
+            onClose={() => transitionOverlay(() => setEditingModule(null), "close")}
           />
         )}
         {editingHabit && (
           <HabitRenameSheet
             habit={editingHabit}
             onSave={renameHabit}
-            onClose={() => setEditingHabit(null)}
+            onClose={() => transitionOverlay(() => setEditingHabit(null), "close")}
           />
         )}
       </main>

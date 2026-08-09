@@ -4,6 +4,42 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-08-09
+
+### Added
+
+- Added a shared Archive motion coordinator for page changes, full-screen flows, overlays, editors, and workout stages, with native View Transition support where available and a graceful fallback everywhere else.
+- Added continuous, touch-first workout value wheels whose visible rows remain stable while scrolling, with centered depth, scale, opacity, and tilt feedback updated directly on animation frames.
+- Added FLIP layout motion for reordered habits and dashboard modules so surrounding content travels to its new position instead of jumping.
+- Added a dedicated motion regression suite that checks the fixed-raster glass dock, continuous wheels, reversible disclosures, compositor-driven sheet drag, view transitions, and reduced-motion fallbacks.
+
+### Changed
+
+- Reworked the liquid-glass dock to keep one stable blurred surface and reveal its expanded width with compositor transforms, avoiding repeated backdrop rasterization while preserving the centered Home button and existing navigation hierarchy.
+- Unified motion timing and easing across buttons, cards, tabs, charts, expandable controls, sheets, dialogs, page transitions, Workout Mode, and navigation selection feedback.
+- Changed the daily-entry sheet drag to update a transform once per animation frame without re-rendering the form during the gesture.
+- Kept expandable settings sections, workout menus, routine controls, and navigation destinations mounted during close transitions so they can animate in both directions without abrupt disappearance.
+- Reduced paint-heavy blur animation in page and chart entrances while retaining the app's established depth, pastel accents, and liquid-glass character.
+
+### Fixed
+
+- Fixed workout wheels rebuilding their option range during scroll, which could cause visible snapping and inconsistent momentum.
+- Fixed the bottom dock animating width and backdrop blur together, a costly combination that could stutter even on capable phones.
+- Fixed abrupt unmounts when closing menus, drawers, settings sections, and full-screen workout layers.
+- Fixed drag interactions performing unnecessary React state updates for every pointer movement.
+- Fixed hidden collapsed navigation controls remaining in the keyboard and accessibility focus order.
+
+### Accessibility
+
+- Respects the system's reduced-motion preference across CSS animations, JavaScript transitions, scrolling behavior, FLIP reordering, and Workout Mode value wheels.
+- Preserves inert and `aria-hidden` states while animated content is visually closed.
+
+### Known issues
+
+- A web-based Android interface cannot reproduce Apple's private system-level optical refraction exactly; Archive uses optimized layered translucency and compositor motion instead.
+- Animation smoothness can still vary with Android WebView version, thermal throttling, battery-saving mode, and unusually heavy data views, although the major app-controlled bottlenecks have been removed.
+- Supersets and circuits remain schema-ready but linear in the current Workout Mode, and Health Connect remains Android-only.
+
 ## [0.11.0] - 2026-08-09
 
 ### Added

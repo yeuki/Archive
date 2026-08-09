@@ -9447,3 +9447,649 @@ body.workout-mode-active .bottom-nav {
     height: 38px;
   }
 }
+
+/* Archive 0.12.0 — unified motion and compositor pass */
+
+:root {
+  --motion-instant: 110ms;
+  --motion-fast: 180ms;
+  --motion-control: 280ms;
+  --motion-layout: 460ms;
+  --motion-page: 520ms;
+  --ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+.screen,
+.module-picker,
+.history-sheet,
+.daily-sheet,
+.workout-mode-content,
+.workout-mode-sheet,
+.exercise-picker-options,
+.workout-substitute-list,
+.coach-thread-panel {
+  -webkit-overflow-scrolling: touch;
+}
+
+.page-stage {
+  view-transition-name: archive-page;
+}
+
+.panel,
+.module-panel,
+.stat-card,
+.guided-highlight,
+.customize-page-card,
+.tracking-row,
+.workout-calendar-day,
+.coach-message,
+.settings-row,
+.choice-actions > button,
+.workout-sheet-actions > button,
+.workout-substitute-list > button,
+.workout-outline-sets > button {
+  transition:
+    transform var(--motion-fast) var(--ease-standard),
+    translate var(--motion-layout) var(--ease-out),
+    opacity var(--motion-control) ease,
+    background-color var(--motion-control) ease,
+    border-color var(--motion-control) ease,
+    box-shadow var(--motion-control) ease;
+}
+
+.icon-btn,
+.ghost-btn,
+.add-habit-btn,
+.habit-toggle,
+.save-report,
+.delete-report,
+.module-add-btn,
+.settings-option,
+.settings-pill-toggle,
+.sleep-source-toggle > button,
+.workout-choice-card,
+.schedule-picker,
+.routine-picker,
+.exercise-picker,
+.schedule-options button,
+.routine-picker-options button,
+.exercise-picker-options button,
+.workout-mode-screen button:not(.nav-icon) {
+  transition:
+    transform var(--motion-fast) var(--ease-standard),
+    opacity var(--motion-fast) ease,
+    color var(--motion-control) ease,
+    background-color var(--motion-control) ease,
+    border-color var(--motion-control) ease,
+    box-shadow var(--motion-control) ease;
+}
+
+input,
+textarea,
+select {
+  transition:
+    color var(--motion-fast) ease,
+    background-color var(--motion-control) ease,
+    border-color var(--motion-control) ease,
+    box-shadow var(--motion-control) ease;
+}
+
+.habit-toggle i,
+.tracking-row .tracking-state,
+.settings-section-chevron,
+.settings-chevron,
+.sleep-sync-state {
+  transition:
+    transform var(--motion-control) var(--ease-out),
+    opacity var(--motion-fast) ease,
+    color var(--motion-control) ease,
+    background-color var(--motion-control) ease;
+}
+
+.habit-toggle.done i {
+  animation: archive-control-pop 360ms var(--ease-out) both;
+}
+
+.sleep-sync-card,
+.sleep-manual-field,
+.new-habit-row,
+.backup-toast {
+  animation: archive-content-reveal 360ms var(--ease-out) both;
+}
+
+.backup-toast {
+  will-change: transform, opacity;
+}
+
+.settings-section-reveal {
+  display: grid;
+  min-height: 0;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition:
+    grid-template-rows var(--motion-layout) var(--ease-out),
+    opacity var(--motion-control) ease;
+}
+
+.settings-section-reveal-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.settings-section.collapsed .settings-section-reveal {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.settings-section.collapsed .settings-section-reveal .settings-group {
+  transform: translateY(-8px);
+}
+
+.settings-section-reveal .settings-group {
+  transform: translateY(0);
+  transition: transform var(--motion-layout) var(--ease-out);
+}
+
+.motion-popover {
+  --motion-popover-max: 720px;
+  max-height: var(--motion-popover-max);
+  visibility: visible;
+  opacity: 1;
+  overflow: hidden;
+  animation: none !important;
+  transform: translate3d(0, 0, 0) scale(1);
+  transform-origin: center top;
+  transition:
+    max-height var(--motion-layout) var(--ease-out),
+    margin var(--motion-control) var(--ease-out),
+    padding var(--motion-control) var(--ease-out),
+    border-width var(--motion-control) var(--ease-out),
+    opacity var(--motion-fast) ease,
+    transform var(--motion-layout) var(--ease-out),
+    visibility 0s linear;
+}
+
+.motion-popover.motion-closed {
+  max-height: 0 !important;
+  visibility: hidden;
+  opacity: 0;
+  margin-top: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-top-width: 0;
+  border-bottom-width: 0;
+  pointer-events: none;
+  transform: translate3d(0, -7px, 0) scale(0.985);
+  transition-delay: 0ms, 0ms, 0ms, 0ms, 0ms, 0ms, var(--motion-layout);
+}
+
+.motion-popover.motion-open {
+  transition-delay: 0ms;
+}
+
+.exercise-picker-options.motion-popover {
+  --motion-popover-max: min(280px, 42vh);
+}
+
+.module-menu.motion-popover {
+  --motion-popover-max: 190px;
+}
+
+.coach-conversation-section .coach-message p {
+  transition:
+    max-height var(--motion-layout) var(--ease-out),
+    opacity var(--motion-control) ease;
+}
+
+.daily-sheet {
+  transform: translate3d(0, var(--sheet-drag-y, 0px), 0);
+  transition: transform var(--motion-layout) var(--ease-out);
+  will-change: transform;
+}
+
+.daily-sheet.dragging {
+  transition: none;
+}
+
+/* The glass vessel keeps one raster size and morphs on the compositor. */
+.bottom-nav {
+  --dock-resting-scale: 0.566;
+  --dock-compact-scale: 0.224;
+  --selection-x: 50vw;
+  --selection-y: 32px;
+  --selection-base-size: 44px;
+  --selection-scale: 1;
+  --selection-press-scale: 1;
+}
+
+.nav-shell,
+.bottom-nav.collapsed .nav-shell {
+  width: var(--dock-expanded-width);
+  transform: translate3d(-50%, 0, 0) scaleX(var(--dock-resting-scale));
+  transition:
+    transform var(--motion-page) var(--ease-out),
+    box-shadow var(--motion-control) ease,
+    opacity var(--motion-fast) ease;
+  transform-origin: center center;
+  will-change: transform;
+  contain: paint;
+}
+
+.bottom-nav.expanded.productivity .nav-shell {
+  width: var(--dock-expanded-width);
+  transform: translate3d(calc(-50% - var(--dock-expanded-shift)), 0, 0) scaleX(1);
+}
+
+.bottom-nav.expanded.health .nav-shell {
+  width: var(--dock-expanded-width);
+  transform: translate3d(calc(-50% + var(--dock-expanded-shift)), 0, 0) scaleX(1);
+}
+
+.chrome-compact .bottom-nav .nav-shell,
+.chrome-compact .bottom-nav.expanded.productivity .nav-shell,
+.chrome-compact .bottom-nav.expanded.health .nav-shell {
+  width: var(--dock-expanded-width) !important;
+  transform: translate3d(-50%, 0, 0) scale3d(var(--dock-compact-scale), 0.94, 1) !important;
+}
+
+.bottom-nav .nav-icon,
+.bottom-nav .home-logo {
+  will-change: transform, opacity;
+}
+
+.nav-page {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  animation: none;
+  transform: translate3d(var(--nav-enter-x, 0), 0, 0) scale(0.72);
+  transition:
+    transform var(--motion-layout) var(--ease-out),
+    opacity var(--motion-control) ease,
+    color var(--motion-control) ease,
+    visibility 0s linear var(--motion-layout);
+}
+
+.nav-group.open .nav-page,
+.nav-page.is-visible {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate3d(0, 0, 0) scale(1);
+  transition-delay:
+    calc(var(--nav-item-index, 0) * 22ms),
+    calc(var(--nav-item-index, 0) * 15ms),
+    0ms,
+    0ms;
+}
+
+.nav-selection-lens {
+  top: 0;
+  left: 0;
+  width: var(--selection-base-size);
+  height: var(--selection-base-size);
+  transform:
+    translate3d(calc(var(--selection-x) - 50%), calc(var(--selection-y) - 50%), 0)
+    scale(var(--selection-scale))
+    scale(var(--selection-press-scale));
+  transition:
+    transform var(--motion-layout) var(--ease-out),
+    opacity var(--motion-fast) ease,
+    background var(--motion-control) ease,
+    box-shadow var(--motion-control) ease;
+  will-change: transform, opacity;
+}
+
+.bottom-nav.is-touching {
+  --selection-press-scale: 0.93;
+}
+
+.bottom-nav.is-touching .nav-selection-lens {
+  transform:
+    translate3d(calc(var(--selection-x) - 50%), calc(var(--selection-y) - 50%), 0)
+    scale(var(--selection-scale))
+    scale(var(--selection-press-scale));
+}
+
+/* Wheel rows move continuously with scroll position without React rerenders. */
+.workout-wheel-window {
+  contain: paint;
+  transform: translateZ(0);
+}
+
+.workout-value-wheel {
+  overscroll-behavior-y: contain;
+  scroll-behavior: auto;
+  touch-action: pan-y;
+  transform: translateZ(0);
+}
+
+.workout-value-wheel > button,
+.workout-value-wheel > button.selected {
+  color: rgba(60, 60, 67, 0.46);
+  opacity: var(--wheel-opacity, 0.4);
+  font-size: 1.18rem;
+  font-weight: 590;
+  transform:
+    perspective(340px)
+    rotateX(var(--wheel-tilt, 0deg))
+    scale(var(--wheel-scale, 0.8));
+  transform-origin: center;
+  transition:
+    color var(--motion-fast) ease,
+    font-weight var(--motion-fast) ease;
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+}
+
+.workout-value-wheel > button.wheel-current {
+  color: var(--workout-ink);
+  font-weight: 710;
+}
+
+.workout-wheel-nudge:active,
+.workout-mode-primary:active,
+.workout-mode-secondary:active,
+.workout-mode-icon:active {
+  transform: scale(0.955);
+}
+
+.workout-mode-screen {
+  view-transition-name: archive-workout-mode;
+  animation: archive-workout-mode-in 420ms var(--ease-out) both;
+}
+
+.workout-mode-stage {
+  view-transition-name: archive-workout-stage;
+}
+
+.workout-mode-sheet {
+  view-transition-name: archive-workout-sheet;
+}
+
+/* Replacements for paint-heavy blur entrances. */
+@keyframes pageIn {
+  from {
+    opacity: 0;
+    transform: translate3d(var(--page-enter-x), var(--page-enter-y), 0) scale(0.994);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes navItemIn {
+  from {
+    opacity: 0;
+    transform: translate3d(var(--nav-enter-x, 4px), 0, 0) scale(0.84);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes sheetLift {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 72px, 0) scale(0.975);
+  }
+  72% {
+    opacity: 1;
+    transform: translate3d(0, -2px, 0) scale(1.002);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes overlayIn {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 22px, 0) scale(0.994);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes archive-content-reveal {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0) scale(0.994);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes archive-control-pop {
+  0% { transform: scale(0.72); }
+  62% { transform: scale(1.08); }
+  100% { transform: scale(1); }
+}
+
+@keyframes archive-workout-mode-in {
+  from { opacity: 0; transform: scale(1.008); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes archive-page-old-left {
+  to { opacity: 0; transform: translate3d(-22px, 0, 0) scale(0.994); }
+}
+
+@keyframes archive-page-new-right {
+  from { opacity: 0; transform: translate3d(28px, 0, 0) scale(0.994); }
+}
+
+@keyframes archive-page-old-right {
+  to { opacity: 0; transform: translate3d(22px, 0, 0) scale(0.994); }
+}
+
+@keyframes archive-page-new-left {
+  from { opacity: 0; transform: translate3d(-28px, 0, 0) scale(0.994); }
+}
+
+@keyframes archive-overlay-old {
+  to { opacity: 0; transform: scale(0.996); }
+}
+
+@keyframes archive-overlay-new {
+  from { opacity: 0; transform: scale(1.004); }
+}
+
+@keyframes archive-sheet-old {
+  to { opacity: 0; transform: translate3d(0, 32px, 0) scale(0.985); }
+}
+
+@keyframes archive-sheet-new {
+  from { opacity: 0; transform: translate3d(0, 38px, 0) scale(0.985); }
+}
+
+@keyframes archive-stage-old-forward {
+  to { opacity: 0; transform: translate3d(-18px, 0, 0) scale(0.99); }
+}
+
+@keyframes archive-stage-new-forward {
+  from { opacity: 0; transform: translate3d(24px, 0, 0) scale(0.99); }
+}
+
+@keyframes archive-stage-old-backward {
+  to { opacity: 0; transform: translate3d(18px, 0, 0) scale(0.99); }
+}
+
+@keyframes archive-stage-new-backward {
+  from { opacity: 0; transform: translate3d(-24px, 0, 0) scale(0.99); }
+}
+
+::view-transition-old(root),
+::view-transition-new(root),
+::view-transition-old(archive-page),
+::view-transition-new(archive-page),
+::view-transition-old(archive-workout-mode),
+::view-transition-new(archive-workout-mode),
+::view-transition-old(archive-workout-stage),
+::view-transition-new(archive-workout-stage),
+::view-transition-old(archive-workout-sheet),
+::view-transition-new(archive-workout-sheet) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+html[data-archive-transition="page"]::view-transition-old(root) {
+  opacity: 0;
+}
+
+html[data-archive-transition="page"]::view-transition-new(root) {
+  opacity: 1;
+}
+
+html[data-archive-transition="page"]::view-transition-group(archive-page),
+html[data-archive-transition="page"]::view-transition-group(archive-hero),
+html[data-archive-transition="page"]::view-transition-group(archive-topbar),
+html[data-archive-transition="page"]::view-transition-group(archive-navigation) {
+  animation-duration: var(--motion-page);
+  animation-timing-function: var(--ease-out);
+}
+
+html[data-archive-transition="page"][data-archive-direction="from-right"]::view-transition-old(archive-page) {
+  animation: archive-page-old-left var(--motion-layout) var(--ease-standard) both;
+}
+
+html[data-archive-transition="page"][data-archive-direction="from-right"]::view-transition-new(archive-page) {
+  animation: archive-page-new-right var(--motion-page) var(--ease-out) both;
+}
+
+html[data-archive-transition="page"][data-archive-direction="from-left"]::view-transition-old(archive-page) {
+  animation: archive-page-old-right var(--motion-layout) var(--ease-standard) both;
+}
+
+html[data-archive-transition="page"][data-archive-direction="from-left"]::view-transition-new(archive-page) {
+  animation: archive-page-new-left var(--motion-page) var(--ease-out) both;
+}
+
+html[data-archive-transition="overlay"]::view-transition-old(root) {
+  animation: archive-overlay-old var(--motion-control) var(--ease-standard) both;
+}
+
+html[data-archive-transition="overlay"]::view-transition-new(root) {
+  animation: archive-overlay-new var(--motion-control) var(--ease-out) both;
+}
+
+html[data-archive-transition="workout-stage"]::view-transition-old(root),
+html[data-archive-transition="workout-sheet"]::view-transition-old(root),
+html[data-archive-transition="workout-mode"]::view-transition-old(root) {
+  opacity: 0;
+}
+
+html[data-archive-transition="workout-stage"]::view-transition-new(root),
+html[data-archive-transition="workout-sheet"]::view-transition-new(root),
+html[data-archive-transition="workout-mode"]::view-transition-new(root) {
+  opacity: 1;
+}
+
+html[data-archive-transition="workout-stage"]::view-transition-group(archive-workout-stage),
+html[data-archive-transition="workout-sheet"]::view-transition-group(archive-workout-sheet),
+html[data-archive-transition="workout-mode"]::view-transition-group(archive-workout-mode) {
+  animation-duration: var(--motion-layout);
+  animation-timing-function: var(--ease-out);
+}
+
+html[data-archive-transition="workout-stage"][data-archive-direction="backward"]::view-transition-old(archive-workout-stage) {
+  animation: archive-stage-old-backward var(--motion-control) var(--ease-standard) both;
+}
+
+html[data-archive-transition="workout-stage"][data-archive-direction="backward"]::view-transition-new(archive-workout-stage) {
+  animation: archive-stage-new-backward var(--motion-layout) var(--ease-out) both;
+}
+
+html[data-archive-transition="workout-stage"]::view-transition-old(archive-workout-stage) {
+  animation: archive-stage-old-forward var(--motion-control) var(--ease-standard) both;
+}
+
+html[data-archive-transition="workout-stage"]::view-transition-new(archive-workout-stage) {
+  animation: archive-stage-new-forward var(--motion-layout) var(--ease-out) both;
+}
+
+html[data-archive-transition="workout-sheet"]::view-transition-old(archive-workout-sheet) {
+  animation: archive-sheet-old var(--motion-control) var(--ease-standard) both;
+}
+
+html[data-archive-transition="workout-sheet"]::view-transition-new(archive-workout-sheet) {
+  animation: archive-sheet-new var(--motion-layout) var(--ease-out) both;
+}
+
+html[data-archive-transition="workout-mode"]::view-transition-old(archive-workout-mode) {
+  animation: archive-overlay-old var(--motion-control) var(--ease-standard) both;
+}
+
+html[data-archive-transition="workout-mode"][data-archive-direction="open"]::view-transition-new(archive-workout-mode) {
+  animation: archive-overlay-new var(--motion-layout) var(--ease-out) both;
+}
+
+@media (max-width: 400px) {
+  .bottom-nav {
+    --dock-resting-scale: 0.575;
+    --dock-compact-scale: 0.233;
+  }
+}
+
+@media (max-width: 380px) {
+  .bottom-nav {
+    --dock-resting-scale: 0.593;
+    --dock-compact-scale: 0.243;
+  }
+}
+
+@media (max-width: 360px) {
+  .bottom-nav {
+    --dock-resting-scale: 0.603;
+    --dock-compact-scale: 0.25;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .settings-section-reveal,
+  .settings-section-reveal .settings-group,
+  .daily-sheet,
+  .nav-shell,
+  .nav-page,
+  .nav-selection-lens,
+  .workout-value-wheel > button {
+    transition: none !important;
+  }
+
+  .workout-value-wheel > button,
+  .workout-value-wheel > button.selected {
+    opacity: 0.58;
+    transform: none;
+  }
+
+  .workout-value-wheel > button.wheel-current {
+    opacity: 1;
+  }
+
+  .habit-toggle.done i,
+  .sleep-sync-card,
+  .sleep-manual-field,
+  .new-habit-row,
+  .backup-toast,
+  .workout-mode-screen {
+    animation: none;
+  }
+}
