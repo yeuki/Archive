@@ -2,6 +2,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import { renderBodyMapSvg } from "./assets/bodymap.js";
 import pencilIcon from "./assets/pencil-icon.png";
+import WorkoutMode from "./WorkoutMode.jsx";
+import {
+  createWorkoutSession,
+  isWorkoutSetCounted,
+  normalizeActiveWorkoutSession,
+  workoutLogFromSession,
+  workoutSessionStats,
+} from "./workoutSession.js";
 
 const DAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"];
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -1804,15 +1812,28 @@ function normalizeWorkoutLog(log = {}, exercises = DEFAULT_EXERCISES, routines =
       const exercise = exerciseMap.get(item.exerciseId);
       const historicalName = String(item.name ?? item.exerciseName ?? item.exerciseId ?? `Exercise ${exerciseIndex + 1}`).trim();
       if (!exercise && !historicalName) return null;
-      const sets = (item.sets ?? []).map((set) => ({
-        weight: Number.isFinite(Number(set.weight)) ? Number(set.weight) : 0,
-        reps: String(set.reps ?? "").trim() || "0",
-        rpe: Number.isFinite(Number(set.rpe)) ? Number(set.rpe) : "",
-        done: set.done !== false,
-      }));
+      const sets = (item.sets ?? []).map((set) => {
+        const status = ["completed", "failed", "skipped", "pending"].includes(set.status)
+          ? set.status
+          : set.done !== false ? "completed" : "skipped";
+        return {
+          weight: Number.isFinite(Number(set.weight)) ? Number(set.weight) : 0,
+          reps: String(set.reps ?? "").trim() || "0",
+          rpe: String(set.rpe ?? "").trim() && Number.isFinite(Number(set.rpe)) ? Number(set.rpe) : "",
+          effort: ["easy", "expected", "hard", "failed"].includes(set.effort) ? set.effort : "",
+          setType: set.setType === "warmup" ? "warmup" : "working",
+          blockId: String(set.blockId ?? ""),
+          round: set.round == null || set.round === "" ? "" : Math.max(1, Math.round(Number(set.round) || 1)),
+          status,
+          completedAt: String(set.completedAt ?? ""),
+          done: status === "completed" || status === "failed",
+        };
+      });
       return {
         exerciseId: exercise?.id ?? makeSlugId(item.exerciseId ?? historicalName, `logged-exercise-${exerciseIndex + 1}`),
         name: exercise?.name ?? historicalName,
+        substitutedForExerciseId: String(item.substitutedForExerciseId ?? ""),
+        substitutedForName: String(item.substitutedForName ?? ""),
         sets: sets.length ? sets : [{ weight: 0, reps: "0", rpe: "", done: true }],
         notes: String(item.notes ?? "").trim(),
       };
@@ -1821,10 +1842,11 @@ function normalizeWorkoutLog(log = {}, exercises = DEFAULT_EXERCISES, routines =
 
   return {
     id: String(log.id ?? `workout-${date}-${index}`),
+    sessionId: String(log.sessionId ?? ""),
     date,
     routineId: log.routineId && routines.some((item) => item.id === log.routineId) ? log.routineId : (routine?.id ?? ""),
     routineName: String(log.routineName ?? routine?.name ?? "Workout").trim(),
-    duration: Math.round(positiveNumber(log.duration, 45, 1, 600)),
+    duration: Math.round(workoutPlanNumber(log.duration, 45, 1)),
     exercises: loggedExercises,
     notes: String(log.notes ?? "").trim(),
   };
@@ -1919,6 +1941,7 @@ function normalizeWorkoutState(workout = {}) {
     selectedAestheticId: normalizeAestheticId(workout.selectedAestheticId),
     equipmentProfileId: normalizeEquipmentProfileId(workout.equipmentProfileId),
     schedule: normalizeWorkoutSchedule(workout.schedule, safeRoutines),
+    activeSession: normalizeActiveWorkoutSession(workout.activeSession),
   };
 }
 
@@ -2325,7 +2348,9 @@ function valueTierForScore(score) {
 
 function parseRepValue(reps) {
   const match = String(reps ?? "0").match(/\d+(\.\d+)?/);
-  return match ? Number(match[0]) : 0;
+  if (!match) return 0;
+  const amount = Number(match[0]);
+  return /\b(?:min|mins|minute|minutes)\b/i.test(String(reps ?? "")) ? amount * 60 : amount;
 }
 
 function setVolume(set) {
@@ -2336,13 +2361,13 @@ function setVolume(set) {
 
 function workoutVolume(workout) {
   return (workout?.exercises ?? []).reduce((total, exercise) => (
-    total + (exercise.sets ?? []).filter((set) => set.done !== false).reduce((sum, set) => sum + setVolume(set), 0)
+    total + (exercise.sets ?? []).filter(isWorkoutSetCounted).reduce((sum, set) => sum + setVolume(set), 0)
   ), 0);
 }
 
 function workoutSetCount(workout) {
   return (workout?.exercises ?? []).reduce((total, exercise) => (
-    total + (exercise.sets ?? []).filter((set) => set.done !== false).length
+    total + (exercise.sets ?? []).filter(isWorkoutSetCounted).length
   ), 0);
 }
 
@@ -2362,7 +2387,7 @@ function muscleLoadFromWorkout(workout, exercises = []) {
   (workout?.exercises ?? []).forEach((loggedExercise) => {
     const exercise = exerciseMap.get(loggedExercise.exerciseId);
     if (!exercise) return;
-    const setCount = (loggedExercise.sets ?? []).filter((set) => set.done !== false).length;
+    const setCount = (loggedExercise.sets ?? []).filter(isWorkoutSetCounted).length;
     exercise.primaryMuscles.forEach((muscle) => addMuscleLoad(load, muscle, setCount));
     exercise.secondaryMuscles.forEach((muscle) => addMuscleLoad(load, muscle, setCount * 0.55));
   });
@@ -4081,14 +4106,16 @@ function previousExerciseSets(workouts = [], targetExercise) {
       b.workout.date.localeCompare(a.workout.date)
       || b.index - a.index
     ))
-    .find(({ workout }) => workout.exercises?.some((exercise) => exerciseMatchesTarget(exercise, target)))
+    .find(({ workout }) => workout.exercises?.some((exercise) => (
+      exerciseMatchesTarget(exercise, target) && exercise.sets?.some(isWorkoutSetCounted)
+    )))
     ?.workout;
   return recent?.exercises?.find((exercise) => exerciseMatchesTarget(exercise, target))?.sets ?? null;
 }
 
 function routinePlanFromPreviousWorkout(workouts = [], targetExercise) {
   const previousSets = previousExerciseSets(workouts, targetExercise)
-    ?.filter((set) => set.done !== false);
+    ?.filter(isWorkoutSetCounted);
   if (!previousSets?.length) return { sets: 3, reps: "8", weight: 0, rest: 90 };
 
   const latestSet = previousSets.at(-1);
@@ -6008,7 +6035,7 @@ function WorkoutLogger({
         </label>
         <label className="quick-field">
           <span>Minutes</span>
-          <input type="number" min="1" max="600" value={draft.duration} onChange={(event) => onChange({ ...draft, duration: Number(event.target.value) })} />
+          <input type="number" min="1" value={draft.duration} onChange={(event) => onChange({ ...draft, duration: Number(event.target.value) })} />
         </label>
       </div>
       {!draft.exercises.length && (
@@ -6020,7 +6047,7 @@ function WorkoutLogger({
       {draft.exercises.map((loggedExercise, exerciseIndex) => {
         const exercise = exerciseMap.get(loggedExercise.exerciseId);
         const previousSets = previousExerciseSets(workouts, exercise ?? loggedExercise);
-        const completedPreviousSets = previousSets?.filter((set) => set.done !== false) ?? [];
+        const completedPreviousSets = previousSets?.filter(isWorkoutSetCounted) ?? [];
         const previousLabel = completedPreviousSets.length
           ? completedPreviousSets.map((set, setIndex) => `${setIndex + 1}: ${set.weight} x ${set.reps}`).join(" / ")
           : "No previous sets";
@@ -6387,14 +6414,20 @@ function WorkoutHistoryPage({ workout, onWorkoutChange }) {
                           <span>Set</span>
                           <span>Weight</span>
                           <span>Reps</span>
-                          <span>RPE</span>
+                          <span>Effort</span>
                         </div>
                         {loggedExercise.sets.map((set, setIndex) => (
-                          <div className="workout-history-set" key={`${loggedExercise.exerciseId}-set-${setIndex}`}>
-                            <b>{setIndex + 1}</b>
+                          <div className={`workout-history-set ${set.setType ?? "working"} ${set.status ?? "completed"}`} key={`${loggedExercise.exerciseId}-set-${setIndex}`}>
+                            <b>{set.setType === "warmup"
+                              ? `W${loggedExercise.sets.slice(0, setIndex + 1).filter((item) => item.setType === "warmup").length}`
+                              : loggedExercise.sets.slice(0, setIndex + 1).filter((item) => item.setType !== "warmup").length}</b>
                             <span>{set.weight}</span>
                             <span>{set.reps}</span>
-                            <span>{set.rpe || "--"}</span>
+                            <span>{set.effort
+                              ? set.effort === "expected" ? "Expected" : set.effort[0].toUpperCase() + set.effort.slice(1)
+                              : set.rpe ? `RPE ${set.rpe}`
+                                : set.status && set.status !== "completed" ? set.status[0].toUpperCase() + set.status.slice(1)
+                                  : "--"}</span>
                           </div>
                         ))}
                         {loggedExercise.notes && <p>{loggedExercise.notes}</p>}
@@ -6436,7 +6469,7 @@ function buildWorkoutDraft(routine, exercises, workouts) {
       const exercise = exerciseMap.get(exerciseId);
       const plan = routine.plan?.[exerciseId] ?? { sets: 3, reps: "8", weight: 0, rest: 90 };
       const previousSets = previousExerciseSets(workouts, exercise ?? { id: exerciseId })
-        ?.filter((set) => set.done !== false);
+        ?.filter(isWorkoutSetCounted);
       return {
         exerciseId,
         name: exercise?.name ?? "Exercise",
@@ -6657,13 +6690,15 @@ function WorkoutSettingsView({ workout, routine, workoutActions, onSetSchedule, 
 function WorkoutPage({ workout, onWorkoutChange, onAdd, onBackup, modules, moduleContext, onRemoveModule, onEditModule, onReorderModule }) {
   const data = normalizeWorkoutState(workout);
   const selectedRoutine = data.routines.find((routine) => routine.id === data.selectedRoutineId) ?? data.routines[0];
-  const [activeWorkout, setActiveWorkout] = useState(null);
+  const activeSession = data.activeSession;
+  const [workoutModeOpen, setWorkoutModeOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const scheduledRoutine = scheduledRoutineForDay(data);
   const nextWorkout = nextScheduledWorkout(data);
   const todayRoutine = scheduledRoutine ?? selectedRoutine;
   const heroRoutine = scheduledRoutine ?? nextWorkout?.routine ?? selectedRoutine;
   const heroScore = heroRoutine ? routineScore(heroRoutine, data.exercises) : null;
+  const activeSessionStats = activeSession ? workoutSessionStats(activeSession) : null;
   const focusAnalysis = buildFocusAnalysis(data);
   const equipmentProfile = EQUIPMENT_PROFILES.find((profile) => profile.id === data.equipmentProfileId) ?? EQUIPMENT_PROFILES[0];
   const heroScheduleLabel = scheduledRoutine
@@ -6671,6 +6706,16 @@ function WorkoutPage({ workout, onWorkoutChange, onAdd, onBackup, modules, modul
     : nextWorkout
       ? `${DAY_NAMES[nextWorkout.dayIndex]} · in ${nextWorkout.offset} day${nextWorkout.offset === 1 ? "" : "s"}`
       : "Open training day";
+  const activeSessionStatus = activeSession
+    ? activeSession.status === "summary" ? "Ready to finish"
+      : activeSession.status === "paused" ? "Paused safely"
+        : activeSession.status === "resting" ? "Rest in progress"
+          : "Saved after every set"
+    : "";
+
+  useEffect(() => {
+    if (!activeSession) setWorkoutModeOpen(false);
+  }, [activeSession?.id]);
 
   const updateRoutine = (nextRoutine) => {
     onWorkoutChange((current) => ({
@@ -6725,18 +6770,54 @@ function WorkoutPage({ workout, onWorkoutChange, onAdd, onBackup, modules, modul
     }));
   };
 
-  const saveWorkout = (draft) => {
+  const updateActiveSession = (updater) => {
     onWorkoutChange((current) => ({
       ...current,
-      workouts: [...current.workouts, normalizeWorkoutLog(draft, current.exercises, current.routines, current.workouts.length)].sort((a, b) => a.date.localeCompare(b.date)),
+      activeSession: normalizeActiveWorkoutSession(
+        typeof updater === "function"
+          ? updater(normalizeActiveWorkoutSession(current.activeSession))
+          : updater,
+      ),
     }));
-    setActiveWorkout(null);
+  };
+
+  const saveWorkout = (session) => {
+    const workoutLog = workoutLogFromSession(session);
+    if (!workoutLog) return;
+    onWorkoutChange((current) => {
+      const duplicate = current.workouts.some((savedWorkout) => (
+        savedWorkout.id === workoutLog.id || savedWorkout.sessionId === workoutLog.sessionId
+      ));
+      const workouts = duplicate
+        ? current.workouts
+        : [
+            ...current.workouts,
+            normalizeWorkoutLog(workoutLog, current.exercises, current.routines, current.workouts.length),
+          ].sort((a, b) => a.date.localeCompare(b.date));
+      return { ...current, workouts, activeSession: null };
+    });
+    setWorkoutModeOpen(false);
+  };
+
+  const discardWorkout = () => {
+    onWorkoutChange((current) => ({ ...current, activeSession: null }));
+    setWorkoutModeOpen(false);
   };
 
   const startWorkout = (routine = todayRoutine) => {
     if (!routine) return;
-    onWorkoutChange((current) => ({ ...current, selectedRoutineId: routine.id }));
-    setActiveWorkout(buildWorkoutDraft(routine, data.exercises, data.workouts));
+    const session = createWorkoutSession({
+      routine,
+      exercises: data.exercises,
+      workouts: data.workouts,
+    });
+    onWorkoutChange((current) => ({
+      ...current,
+      selectedRoutineId: routine.id,
+      activeSession: session,
+    }));
+    setSettingsOpen(false);
+    setWorkoutModeOpen(true);
   };
 
   const workoutActions = {
@@ -6761,43 +6842,28 @@ function WorkoutPage({ workout, onWorkoutChange, onAdd, onBackup, modules, modul
       <CanvasHero
         label="Training"
         meta={DAY_NAMES[workoutDayIndex()]}
-        value={heroScore?.score ?? focusAnalysis.readiness ?? "--"}
-        unit={heroScore ? "plan score" : "readiness"}
-        progress={heroScore?.score ?? focusAnalysis.readiness ?? 0}
-        progressLabel={scheduledRoutine ? "today" : "readiness"}
-        footLabel={heroScheduleLabel}
-        footValue={equipmentProfile.shortName}
-        actionLabel={activeWorkout ? "Resume" : heroRoutine ? scheduledRoutine ? "Start workout" : "Start next" : undefined}
-        onAction={activeWorkout
-          ? () => document.getElementById("active-workout")?.scrollIntoView({ behavior: "smooth", block: "start" })
+        value={activeSession ? Math.round(activeSessionStats.progress) : heroScore?.score ?? focusAnalysis.readiness ?? "--"}
+        unit={activeSession ? "% complete" : heroScore ? "plan score" : "readiness"}
+        progress={activeSession ? activeSessionStats.progress : heroScore?.score ?? focusAnalysis.readiness ?? 0}
+        progressLabel={activeSession ? "session" : scheduledRoutine ? "today" : "readiness"}
+        footLabel={activeSession ? activeSessionStatus : heroScheduleLabel}
+        footValue={activeSession ? activeSession.routineName : equipmentProfile.shortName}
+        actionLabel={activeSession ? activeSession.status === "summary" ? "Review" : "Resume" : heroRoutine ? scheduledRoutine ? "Start workout" : "Start next" : undefined}
+        onAction={activeSession
+          ? () => setWorkoutModeOpen(true)
           : heroRoutine ? () => startWorkout(heroRoutine) : undefined}
         className="workout-canvas-hero"
       >
         <div className="workout-hero-plan">
           <div>
             <small>{scheduledRoutine ? "Today's session" : nextWorkout ? "Up next" : "Selected routine"}</small>
-            <strong>{heroRoutine?.name ?? "No routine yet"}</strong>
+            <strong>{activeSession?.routineName ?? heroRoutine?.name ?? "No routine yet"}</strong>
           </div>
-          <span><small>Exercises</small><b>{heroRoutine?.exerciseIds.length ?? 0}</b></span>
-          <span><small>Sets</small><b>{heroScore?.totalSets ?? 0}</b></span>
-          <span><small>Minutes</small><b>{heroScore?.estimatedMinutes ?? 0}</b></span>
+          <span><small>Exercises</small><b>{activeSession?.exercises.length ?? heroRoutine?.exerciseIds.length ?? 0}</b></span>
+          <span><small>Sets</small><b>{activeSessionStats?.total ?? heroScore?.totalSets ?? 0}</b></span>
+          <span><small>{activeSession ? "Done" : "Minutes"}</small><b>{activeSessionStats?.resolved ?? heroScore?.estimatedMinutes ?? 0}</b></span>
         </div>
       </CanvasHero>
-
-      {activeWorkout && (
-        <PageSection eyebrow="Live" title="Current session" meta={activeWorkout.routineName} className="active-workout-section">
-          <div id="active-workout">
-            <WorkoutLogger
-              draft={activeWorkout}
-              exercises={data.exercises}
-              workouts={data.workouts}
-              onChange={setActiveWorkout}
-              onSave={saveWorkout}
-              onCancel={() => setActiveWorkout(null)}
-            />
-          </div>
-        </PageSection>
-      )}
 
       <PageSection
         eyebrow="Balance"
@@ -6840,6 +6906,16 @@ function WorkoutPage({ workout, onWorkoutChange, onAdd, onBackup, modules, modul
           onSetAesthetic={setAesthetic}
           onSetEquipmentProfile={setEquipmentProfile}
           onClose={() => setSettingsOpen(false)}
+        />
+      )}
+      {workoutModeOpen && activeSession && (
+        <WorkoutMode
+          session={activeSession}
+          exercises={data.exercises}
+          onChange={updateActiveSession}
+          onLeave={() => setWorkoutModeOpen(false)}
+          onFinish={saveWorkout}
+          onDiscard={discardWorkout}
         />
       )}
     </div>
@@ -9873,7 +9949,7 @@ export default function App() {
       const target = event.target instanceof Element ? event.target : null;
       const scrollTop = Math.max(0, window.scrollY || document.documentElement.scrollTop || 0);
       if (!touch || refreshing || pullRefreshBlockedRef.current || scrollTop > 1) return;
-      if (target?.closest(".bottom-nav, input, textarea, select, [data-no-pull-refresh]")) return;
+      if (target?.closest(".bottom-nav, .workout-mode-screen, input, textarea, select, [data-no-pull-refresh]")) return;
       tracking = true;
       armed = false;
       startX = touch.clientX;

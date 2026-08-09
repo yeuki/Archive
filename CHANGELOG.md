@@ -4,6 +4,49 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-08-09
+
+### Added
+
+- Added a dedicated full-screen Workout Mode that guides the user through one exercise and one set at a time while preserving the existing Workout page, history page, routines, weekly schedule, modules, and navigation hierarchy.
+- Added touch-first vertical value wheels for weight, repetitions, and timed holds, with three-to-five visible values, centered emphasis, precise plus/minus controls, keyboard support, and no fixed upper ceiling.
+- Added immediate per-set persistence with an immutable routine and exercise snapshot, exact exercise/set cursor, absolute rest deadline, paused-time accounting, optional notes and effort, and automatic recovery after navigation, reload, or app closure.
+- Added an automatic rest phase after completed or failed sets with pause/resume, plus or minus 15 seconds, skip-rest, next-set preview, and a clear distinction between pausing the timer and pausing the entire workout.
+- Added a compact workout outline for progress review, jumping to a pending set, correcting completed sets, and adding sets without returning to a spreadsheet-style editor.
+- Added warm-up sets, session-only exercise substitutions, skipped sets and exercises, failed-set recording, early completion, zero-exercise routine support, and a concise final summary with the established **Finish workout** action.
+- Added a Workout Mode regression suite covering serialization and resume, previous-workout defaults, set/rest transitions, warm-up analytics, failed/skipped handling, pause accounting, idempotent finalization, zero-exercise routines, and focused UI wiring.
+
+### Changed
+
+- Replaced the live workout's large editable set table with a calm set → rest → summary flow; the table editor remains only where it is useful for historical missed-workout backfill.
+- Changed active value defaults to use the most recent counted working sets while excluding warm-ups and skipped sets from recommendations and working-volume analytics.
+- Made bodyweight and timed exercises adaptive: a zero-weight bodyweight movement shows one duration or repetition wheel plus an optional **Add load** action instead of an unnecessary zero-weight wheel.
+- Replaced mandatory numeric RPE entry during every set with an optional effort note: Easy, As expected, Hard, or Failed. Legacy RPE values remain readable in workout history and historical backfill.
+- Updated workout history normalization and display to preserve set type, outcome, effort, substitution provenance, timestamps, and future superset block/round metadata.
+- Added the workout regression suite to the immutable release builder alongside the existing health, automatic-sync, sleep, web, Android unit, lint, and APK checks.
+
+### Removed
+
+- Removed the full-workout editable table, date field, duration field, visible RPE column, repeated exercise cards, and per-exercise **Add set** buttons from the active workout experience.
+- Removed a duplicate **Add effort note** action from the overflow sheet after phone review; effort remains directly available on the current set screen.
+- Removed the arbitrary 600-minute limit from the retained historical workout duration editor and normalizer.
+
+### Fixed
+
+- Prevented active workout loss when leaving Workout Mode, navigating to another Archive page, reloading the web app, or closing and reopening the Android app.
+- Made workout finalization idempotent by session ID so a repeated finish action cannot create duplicate history entries.
+- Excluded warm-ups, pending sets, and skipped sets from working-set totals, volume, muscle load, and future-set defaults while retaining failed attempts with their actual completed reps.
+- Rendered Workout Mode through the document top layer, hid and inerted the underlying interface, locked document scrolling, and blocked pull-to-refresh conflicts so previously scrolled content cannot appear beneath the workout.
+- Preserved zero horizontal overflow and complete primary-action visibility at 412 × 915 and 360 × 800 phone viewports, with reduced-motion and reduced-transparency fallbacks.
+
+### Known issues and unfinished work
+
+- Superset and circuit block/round fields are preserved in the session and history schemas, but v0.11.0 intentionally presents routines in their existing linear order; a dedicated alternating-round interface is future work.
+- Haptic feedback uses the platform vibration capability as a progressive enhancement and may be unavailable when the WebView or device settings suppress it.
+- Weight remains unit-neutral because Archive does not yet expose a global kilograms/pounds preference.
+- Workout sessions remain local-first with one active session at a time; multi-device handoff requires future backend support.
+- Health Connect remains Android-only, and Samsung Health controls when watch records become available upstream of Archive.
+
 ## [0.10.1] - 2026-08-07
 
 ### Changed

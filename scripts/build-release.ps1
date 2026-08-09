@@ -104,6 +104,11 @@ try {
     throw "The sleep-policy checks failed with exit code $LASTEXITCODE."
   }
 
+  npm.cmd run test:workout
+  if ($LASTEXITCODE -ne 0) {
+    throw "The Workout Mode checks failed with exit code $LASTEXITCODE."
+  }
+
   npm.cmd run build
   if ($LASTEXITCODE -ne 0) {
     throw "The web build failed with exit code $LASTEXITCODE."

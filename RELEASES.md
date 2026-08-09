@@ -4,6 +4,7 @@ Release APKs are immutable. If a packaged build changes, Archive receives a new 
 
 | Version | Release date | APK | Summary | Source reference |
 | --- | --- | --- | --- | --- |
+| 0.11.0 | 2026-08-09 | `Archive-v0.11.0.apk` | Focused, persistent Workout Mode with touch value wheels, automatic rest, safe resume, and concise review. | `main`, tag `v0.11.0` |
 | 0.10.1 | 2026-08-07 | `Archive-v0.10.1.apk` | Centers the standalone Archive A in a cleaner grey-to-pastel launch animation without changing navigation. | `main`, tag `v0.10.1` |
 | 0.10.0 | 2026-08-07 | `Archive-v0.10.0.apk` | Restores the v0.8 hierarchy and introduces launch-gated plus pull-to-refresh Health Connect reconciliation. | `main`, tag `v0.10.0` |
 | 0.9.0 | 2026-08-07 | `Archive-v0.9.0.apk` | Four focused destinations, a slimmer dock, and one battery-conscious Health Connect refresh behind a branded startup screen. | `main`, tag `v0.9.0` |
@@ -21,6 +22,21 @@ Release APKs are immutable. If a packaged build changes, Archive receives a new 
 | 0.2.1 | 2026-07-13 | `Archive-v0.2.1.apk` | Restores Archive's signature gradient on compact charts while preserving solid dense-data views. | `main`, tag `v0.2.1` |
 | 0.2.0 | 2026-07-13 | `Archive-v0.2.0.apk` | Archive Design System 2.0 with premium Home, Sleep, Settings, chart, surface, and navigation refinements. | `main`, tag `v0.2.0` |
 | 0.1.0 | 2026-07-13 | `Archive-v0.1.0.apk` | Formal baseline of the current productivity, health, workout, AI coach, and Health Connect experience. | `main`, tag `v0.1.0` |
+
+## 0.11.0 - Focused Workout Mode
+
+- APK filename: `Archive-v0.11.0.apk`
+- Local archive: `releases/v0.11.0/Archive-v0.11.0.apk`
+- Google Drive archive: `Archive Productivity Tracker/Releases/v0.11.0/Archive-v0.11.0.apk`
+- GitHub reference: `main`, tag `v0.11.0`
+- SHA-256: `PENDING-FINAL-BUILD`
+- Summary: Replaces the overwhelming live workout table with a calm, full-screen set, rest, and review flow that saves every meaningful action and resumes exactly where the user stopped.
+- Main UI changes: one current exercise and set at a time; vertical touch wheels for weight, reps, and duration; adaptive bodyweight controls; automatic rest timer; compact progress outline; optional effort; progressive-disclosure exception actions; and a concise completion summary.
+- Structural changes: introduces a normalized active-session schema, immutable routine/exercise snapshots, absolute rest deadlines, pause accounting, idempotent history conversion, top-layer portal rendering, future superset metadata, and a dedicated Workout Mode component and regression suite.
+- Functional changes: previous working sets become sensible defaults; warm-ups, substitutions, failed/skipped outcomes, per-exercise rest, set corrections, early ending, zero-exercise routines, leave/resume, reload recovery, and one-active-session protection are supported; working analytics exclude warm-up, skipped, and pending sets.
+- Preserved behavior: the v0.10.1 navigation and page hierarchy, Archive Canvas Workout page, routine editor, exercise library, weekly schedule, dedicated Workout History page, missed-workout backfill table, local backups, Health Connect launch/pull policy, and all existing health data handling remain intact.
+- Validation: focused session-model regression suite; existing health, automatic Health Connect, and sleep policy suites; production Vite build; 412 × 915 and 360 × 800 browser interaction checks; zero horizontal overflow; Android unit tests, lint, and release assembly through the release pipeline.
+- Known issues: supersets/circuits are schema-ready but remain linear in v0.11.0; haptics are best effort; weight units are not yet configurable; multi-device resume requires future backend support; and Health Connect remains Android-only.
 
 ## 0.10.1 - Centered A launch mark
 
