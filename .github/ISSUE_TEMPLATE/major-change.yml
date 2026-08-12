@@ -1,0 +1,63 @@
+name: Major change specification
+description: Capture a significant Archive UI, behavior, data, native, or structural change before implementation.
+title: "[Major change] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Keep this issue concise. The repository specification in `docs/specs/` remains the approved implementation contract.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and user outcome
+      description: What is difficult now, and what should be true for the user afterward?
+    validations:
+      required: true
+  - type: textarea
+    id: direction
+    attributes:
+      label: Proposed direction
+      description: Describe the intended interaction or technical approach and why it fits Archive.
+    validations:
+      required: true
+  - type: textarea
+    id: preserve
+    attributes:
+      label: Preserve
+      description: Which behavior, data, hierarchy, and visual identity must remain unchanged?
+    validations:
+      required: true
+  - type: textarea
+    id: non_goals
+    attributes:
+      label: Non-goals
+      description: Which adjacent ideas are deliberately outside this change?
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Provide observable, testable criteria using a checklist.
+      placeholder: "- [ ] ..."
+    validations:
+      required: true
+  - type: textarea
+    id: references
+    attributes:
+      label: References and affected areas
+      description: Link approved mockups/reference screens and name affected pages, data, or native boundaries.
+  - type: dropdown
+    id: target
+    attributes:
+      label: Release status
+      options:
+        - Unreleased / decide after acceptance
+        - Version explicitly designated by user
+    validations:
+      required: true
+  - type: checkboxes
+    id: approval
+    attributes:
+      label: Direction gate
+      options:
+        - label: The direction is ready for explicit user approval before implementation.
+          required: true

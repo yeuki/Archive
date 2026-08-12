@@ -18,6 +18,7 @@ Before working:
 - Read `VERSION` and inspect the current Git status and relevant implementation.
 - For substantial UI or navigation work, read `docs/PRODUCT.md`, `docs/DESIGN_SYSTEM.md`, and `docs/DECISIONS.md` when those files exist.
 - For persistence, backups, Health Connect, workout state, or native Android work, read `docs/ARCHITECTURE.md` when it exists.
+- For a major change, follow `docs/DEVELOPMENT_WORKFLOW.md` and start from `docs/specs/TEMPLATE.md`.
 - Before any release, read `docs/RELEASE_PROCESS.md`, `MULTI_COMPUTER_SETUP.md`, `CHANGELOG.md`, and `RELEASES.md`.
 
 ## Product and navigation invariants

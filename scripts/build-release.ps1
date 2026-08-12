@@ -89,34 +89,9 @@ if ($ExistingRemoteTag.Count) {
 
 Push-Location $ProjectRoot
 try {
-  npm.cmd run test:health
+  npm.cmd run verify
   if ($LASTEXITCODE -ne 0) {
-    throw "The health-system checks failed with exit code $LASTEXITCODE."
-  }
-
-  npm.cmd run test:auto-health
-  if ($LASTEXITCODE -ne 0) {
-    throw "The automatic-health checks failed with exit code $LASTEXITCODE."
-  }
-
-  npm.cmd run test:sleep
-  if ($LASTEXITCODE -ne 0) {
-    throw "The sleep-policy checks failed with exit code $LASTEXITCODE."
-  }
-
-  npm.cmd run test:workout
-  if ($LASTEXITCODE -ne 0) {
-    throw "The Workout Mode checks failed with exit code $LASTEXITCODE."
-  }
-
-  npm.cmd run test:motion
-  if ($LASTEXITCODE -ne 0) {
-    throw "The motion-system checks failed with exit code $LASTEXITCODE."
-  }
-
-  npm.cmd run build
-  if ($LASTEXITCODE -ne 0) {
-    throw "The web build failed with exit code $LASTEXITCODE."
+    throw "Archive verification failed with exit code $LASTEXITCODE."
   }
 
   npx.cmd cap sync android

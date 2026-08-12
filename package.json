@@ -11,6 +11,8 @@
     "test:sleep": "node ./scripts/verify-sleep-policy.mjs",
     "test:workout": "node ./scripts/verify-workout-mode.mjs",
     "test:motion": "node ./scripts/verify-motion-system.mjs",
+    "test:workspace": "node ./scripts/verify-workspace.mjs",
+    "verify": "node ./scripts/verify-all.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "cap:sync": "cap sync android",
     "android:build": "cd android && gradlew.bat assembleDebug",

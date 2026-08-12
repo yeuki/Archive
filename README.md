@@ -49,8 +49,10 @@ Vite prints the local development URL in the terminal.
 ## Build the web app
 
 ```powershell
-npm run build
+npm run verify
 ```
+
+`npm run verify` checks the repository contract, health/sleep synchronization rules, Workout Mode, motion safeguards, and the production web build. Pull requests and pushes to `main` run the same gate plus Android tests, lint, and debug assembly through GitHub Actions.
 
 ## Build the Android APKs
 
@@ -80,6 +82,18 @@ npm run release:build
 ```
 
 The release script refuses to overwrite an existing version. Release notes and APK locations are indexed in [`RELEASES.md`](RELEASES.md), while user-facing changes are maintained in [`CHANGELOG.md`](CHANGELOG.md).
+
+## Product and development references
+
+- [`docs/PRODUCT.md`](docs/PRODUCT.md) — current product contract and page hierarchy
+- [`docs/DESIGN_SYSTEM.md`](docs/DESIGN_SYSTEM.md) — Archive Canvas visual and motion language
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — data, native, persistence, and build boundaries
+- [`docs/DECISIONS.md`](docs/DECISIONS.md) — accepted and rejected directions
+- [`docs/DEVELOPMENT_WORKFLOW.md`](docs/DEVELOPMENT_WORKFLOW.md) — concise branch and approval flow
+- [`docs/specs/TEMPLATE.md`](docs/specs/TEMPLATE.md) — major-change specification template
+- [`docs/reference/README.md`](docs/reference/README.md) — curated visual baseline
+
+The canonical repository is [github.com/yeuki/Archive](https://github.com/yeuki/Archive).
 
 ## Data model
 

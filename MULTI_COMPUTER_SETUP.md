@@ -9,8 +9,8 @@ Install GitHub CLI or use Git Credential Manager, then authenticate before cloni
 ```powershell
 gh auth status
 gh auth login
-git clone https://github.com/yeuki/archive-productivity-tracker.git
-cd archive-productivity-tracker
+git clone https://github.com/yeuki/Archive.git
+cd Archive
 git config pull.ff only
 npm ci
 ```
@@ -64,10 +64,7 @@ From the repository root:
 
 ```powershell
 npm ci
-npm run test:health
-npm run test:auto-health
-npm run test:sleep
-npm run build
+npm run verify
 npm run cap:sync
 cd android
 .\gradlew.bat test
