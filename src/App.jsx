@@ -2,8 +2,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import { renderBodyMapSvg } from "./assets/bodymap.js";
 import pencilIcon from "./assets/pencil-icon.png";
+import HabitHoldDeck from "./HabitHoldDeck.jsx";
 import WorkoutMode from "./WorkoutMode.jsx";
 import { runArchiveTransition, useFlipLayout } from "./motion.js";
+import {
+  hasAnyDailyField,
+  isDailyFieldRecorded,
+  normalizeRecordedFields,
+  setDailyFieldRecorded,
+  setHabitCompletionInEntries,
+} from "./dailyRecords.js";
 import {
   createWorkoutSession,
   isWorkoutSetCounted,
@@ -81,7 +89,7 @@ const DEFAULT_GOALS = {
 };
 const STORAGE_KEY = "archive-productivity-tracker";
 const GEMINI_KEY_STORAGE_KEY = "archive-productivity-tracker-gemini-key";
-const BACKUP_VERSION = 2;
+const BACKUP_VERSION = 3;
 const ConnectedHealthNative = registerPlugin("ConnectedHealth");
 const DEFAULT_AI_SETTINGS = {
   useGemini: false,
@@ -1623,7 +1631,7 @@ function mergeWatchSleepIntoEntries(entries = [], incomingData = {}, habitNames 
     byDate.forEach((existing, date) => {
       if (!dateFallsWithin(date, healthSystem.syncWindow.sleepDateStart, healthSystem.syncWindow.sleepDateEnd)) return;
       if (sleepByDate.has(date) || existing.sleepSource !== "sync") return;
-      byDate.set(date, {
+      byDate.set(date, setDailyFieldRecorded({
         ...existing,
         sleep: 0,
         sleepSource: "sync",
@@ -1631,7 +1639,7 @@ function mergeWatchSleepIntoEntries(entries = [], incomingData = {}, habitNames 
         sleepSessionIds: [],
         sleepProvider: "healthConnect",
         sleepOrigin: DEFAULT_CONNECTED_HEALTH.sourceName,
-      });
+      }, "sleep", false));
     });
   }
 
@@ -1646,12 +1654,12 @@ function mergeWatchSleepIntoEntries(entries = [], incomingData = {}, habitNames 
     const wasSynced = existing.sleepSource === "sync"
       || (!existing.sleepSource && sleepValuesMatch(existing.sleep, supersededSleepHours));
     if (!wasSynced) return;
-    byDate.set(supersededDate, {
+    byDate.set(supersededDate, setDailyFieldRecorded({
       ...existing,
       sleep: 0,
       sleepSource: "sync",
       sleepSessionIds: [],
-    });
+    }, "sleep", false));
   });
 
   sleepByDate.forEach((sleepHours, date) => {
@@ -1667,7 +1675,7 @@ function mergeWatchSleepIntoEntries(entries = [], incomingData = {}, habitNames 
     };
 
     if (existing) {
-      byDate.set(date, { ...existing, sleep: sleepHours, ...syncMetadata });
+      byDate.set(date, setDailyFieldRecorded({ ...existing, sleep: sleepHours, ...syncMetadata }, "sleep", true));
       return;
     }
 
@@ -1676,6 +1684,11 @@ function mergeWatchSleepIntoEntries(entries = [], incomingData = {}, habitNames 
       habits: habitMap([], habitNames),
       water: 0,
       sleep: sleepHours,
+      recordedFields: {
+        habits: false,
+        water: false,
+        sleep: true,
+      },
       ...syncMetadata,
     });
   });
@@ -1734,6 +1747,7 @@ function normalizeEntries(entries = [], habitNames = DEFAULT_HABITS, waterScale 
         habits,
         water: Number.isFinite(Number(entry.water)) ? Number(entry.water) * waterScale : 0,
         sleep: Number.isFinite(Number(entry.sleep)) ? Number(entry.sleep) : 0,
+        recordedFields: normalizeRecordedFields(entry),
         ...(sleepSource ? { sleepSource } : {}),
         ...(sleepSyncedAt ? { sleepSyncedAt } : {}),
         ...(sleepSessionIds.length ? { sleepSessionIds } : {}),
@@ -1741,6 +1755,7 @@ function normalizeEntries(entries = [], habitNames = DEFAULT_HABITS, waterScale 
         ...(sleepOrigin ? { sleepOrigin } : {}),
       };
     })
+    .filter(hasAnyDailyField)
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
@@ -2219,25 +2234,25 @@ function formatSleepClock(timestamp) {
 }
 
 function habitPercent(entry, habitNames) {
-  if (!entry || !habitNames.length) return null;
+  if (!entry || !habitNames.length || !isDailyFieldRecorded(entry, "habits")) return null;
   const done = habitNames.filter((habit) => entry.habits?.[habit]).length;
   return Math.round((done / habitNames.length) * 100);
 }
 
 function waterPercent(entry, goals = DEFAULT_GOALS) {
-  if (!entry) return null;
+  if (!entry || !isDailyFieldRecorded(entry, "water")) return null;
   const normalizedGoals = normalizeGoals(goals);
   return Math.round(clamp(entry.water / normalizedGoals.waterTarget, 0, 1) * 100);
 }
 
 function sleepPercent(entry, goals = DEFAULT_GOALS) {
-  if (!entry) return null;
+  if (!entry || !isDailyFieldRecorded(entry, "sleep")) return null;
   const normalizedGoals = normalizeGoals(goals);
   return Math.round(clamp(entry.sleep / normalizedGoals.sleepMax, 0, 1) * 100);
 }
 
 function sleepScore(entry, goals = DEFAULT_GOALS) {
-  if (!entry) return null;
+  if (!entry || !isDailyFieldRecorded(entry, "sleep")) return null;
   const normalizedGoals = normalizeGoals(goals);
   const distance = entry.sleep < normalizedGoals.sleepMin
     ? normalizedGoals.sleepMin - entry.sleep
@@ -2246,14 +2261,18 @@ function sleepScore(entry, goals = DEFAULT_GOALS) {
 }
 
 function entryScore(entry, habitNames, goals = DEFAULT_GOALS) {
-  if (!entry) return null;
+  if (!entry || !hasAnyDailyField(entry)) return null;
   const normalizedGoals = normalizeGoals(goals);
   const weights = normalizedGoals.weights;
-  const totalWeight = Math.max(1, weights.habits + weights.water + weights.sleep);
-  const habit = habitPercent(entry, habitNames) ?? 0;
-  const water = waterPercent(entry, normalizedGoals) ?? 0;
-  const sleep = sleepScore(entry, normalizedGoals) ?? 0;
-  return Math.round(((habit * weights.habits) + (water * weights.water) + (sleep * weights.sleep)) / totalWeight);
+  const values = [
+    [habitPercent(entry, habitNames), weights.habits],
+    [waterPercent(entry, normalizedGoals), weights.water],
+    [sleepScore(entry, normalizedGoals), weights.sleep],
+  ].filter(([value]) => Number.isFinite(value));
+  if (!values.length) return null;
+  const totalWeight = values.reduce((sum, [, weight]) => sum + weight, 0);
+  if (totalWeight <= 0) return 0;
+  return Math.round(values.reduce((sum, [value, weight]) => sum + value * weight, 0) / totalWeight);
 }
 
 const METRIC_TONE_PALETTES = {
@@ -2635,7 +2654,8 @@ function previousEntriesByDays(entries = [], days = 7) {
 }
 
 function metricAverage(entries = [], getter) {
-  return average(entries.map(getter).filter(Number.isFinite));
+  const values = entries.map(getter).filter(Number.isFinite);
+  return values.length ? average(values) : null;
 }
 
 function buildCoachAnalytics(state = {}) {
@@ -2652,22 +2672,32 @@ function buildCoachAnalytics(state = {}) {
   const entryScores = entries.map((entry) => [entry, entryScore(entry, habitNames, goals)]).filter(([, score]) => Number.isFinite(score));
   const recentScores = recent7.map((entry) => entryScore(entry, habitNames, goals)).filter(Number.isFinite);
   const previousScores = previous7.map((entry) => entryScore(entry, habitNames, goals)).filter(Number.isFinite);
-  const scoreAverage7 = Math.round(average(recentScores));
-  const scoreAveragePrevious = Math.round(average(previousScores));
-  const sleepAverage7 = metricAverage(recent7, (entry) => entry.sleep);
-  const waterAverage7 = metricAverage(recent7, (entry) => entry.water);
+  const scoreAverage7 = recentScores.length ? Math.round(average(recentScores)) : null;
+  const scoreAveragePrevious = previousScores.length ? Math.round(average(previousScores)) : null;
+  const sleepAverage7 = metricAverage(recent7, (entry) => (
+    isDailyFieldRecorded(entry, "sleep") ? entry.sleep : null
+  ));
+  const waterAverage7 = metricAverage(recent7, (entry) => (
+    isDailyFieldRecorded(entry, "water") ? entry.water : null
+  ));
   const habitAverage7 = metricAverage(recent7, (entry) => habitPercent(entry, habitNames));
   const waterPercentAverage7 = metricAverage(recent7, (entry) => waterPercent(entry, goals));
   const sleepScoreAverage7 = metricAverage(recent7, (entry) => sleepScore(entry, goals));
-  const sleepScorePairs = entryScores.map(([entry, score]) => [entry.sleep, score]);
-  const waterScorePairs = entryScores.map(([entry, score]) => [waterPercent(entry, goals), score]);
-  const habitScorePairs = entryScores.map(([entry, score]) => [habitPercent(entry, habitNames), score]);
+  const sleepScorePairs = entryScores
+    .map(([entry, score]) => [isDailyFieldRecorded(entry, "sleep") ? entry.sleep : null, score])
+    .filter(([value]) => Number.isFinite(value));
+  const waterScorePairs = entryScores
+    .map(([entry, score]) => [waterPercent(entry, goals), score])
+    .filter(([value]) => Number.isFinite(value));
+  const habitScorePairs = entryScores
+    .map(([entry, score]) => [habitPercent(entry, habitNames), score])
+    .filter(([value]) => Number.isFinite(value));
   const workoutEntriesByDate = new Map(entries.map((entry) => [entry.date, entry]));
   const workoutLogs = [...workout.workouts].sort((a, b) => a.date.localeCompare(b.date));
   const workoutSleepPairs = workoutLogs
     .map((log) => {
       const entry = workoutEntriesByDate.get(log.date);
-      if (!entry) return null;
+      if (!entry || !isDailyFieldRecorded(entry, "sleep")) return null;
       return {
         sleep: entry.sleep,
         volume: workoutVolume(log),
@@ -2708,7 +2738,9 @@ function buildCoachAnalytics(state = {}) {
       recorded7: recent7.length,
       recorded30: recent30.length,
       scoreAverage7,
-      scoreDelta7: scoreAverage7 - scoreAveragePrevious,
+      scoreDelta7: Number.isFinite(scoreAverage7) && Number.isFinite(scoreAveragePrevious)
+        ? scoreAverage7 - scoreAveragePrevious
+        : 0,
       habitAverage7,
       waterAverage7,
       waterPercentAverage7,
@@ -3136,10 +3168,14 @@ function createCasualCoachReply(message, analytics, intent) {
   }
 
   if (intent.sharesState) {
-    const sleep = analytics.daily.sleepAverage7 ? `${trimNumber(analytics.daily.sleepAverage7, 1)}h` : "not much recent sleep data";
-    const water = `${Math.round(analytics.daily.waterPercentAverage7 || 0)}%`;
+    const sleep = Number.isFinite(analytics.daily.sleepAverage7)
+      ? `Recent sleep is around ${trimNumber(analytics.daily.sleepAverage7, 1)}h`
+      : "There is not enough recent sleep data";
+    const water = Number.isFinite(analytics.daily.waterPercentAverage7)
+      ? `water is about ${Math.round(analytics.daily.waterPercentAverage7)}% of target`
+      : "there is not enough recent water data";
     return {
-      text: `That makes sense. We can keep this light. Recent sleep is around ${sleep}, and water is about ${water} of target, so if today feels low-energy I’d bias toward maintenance, a short walk, or a reduced workout instead of forcing a heroic day.`,
+      text: `That makes sense. We can keep this light. ${sleep}, and ${water}, so if today feels low-energy I’d bias toward maintenance, a short walk, or a reduced workout instead of forcing a heroic day.`,
       proposal: null,
     };
   }
@@ -3179,26 +3215,44 @@ function createCoachReply(message, analytics) {
     : null;
 
   if (lower.includes("sleep") || lower.includes("correlation") || lower.includes("pattern")) {
+    if (!Number.isFinite(daily.sleepAverage7)) {
+      return {
+        text: "There are not enough recorded sleep sessions in the last 7 days to calculate a truthful average or pattern yet. A watch sync or manual sleep entry will start that comparison without treating missing nights as zero.",
+        proposal,
+      };
+    }
     const sleepCorrelation = coachCorrelationLabel(analytics.correlations.sleepScore);
     const workoutLine = analytics.correlations.workoutPairs >= 3
       ? ` On workout days, sleep and volume currently show a ${coachCorrelationLabel(analytics.correlations.workoutSleepVolume)} relationship.`
       : " I need more logged workout days matched with sleep records before judging workout impact confidently.";
     return {
-      text: `Sleep is averaging ${trimNumber(daily.sleepAverage7 || 0, 1)}h over the last 7 days against your ${goalsText(analytics.goals.sleepTarget, "h")} target. Its relationship with daily score is ${sleepCorrelation}.${workoutLine}`,
+      text: `Sleep is averaging ${trimNumber(daily.sleepAverage7, 1)}h over the last 7 days against your ${goalsText(analytics.goals.sleepTarget, "h")} target. Its relationship with daily score is ${sleepCorrelation}.${workoutLine}`,
       proposal,
     };
   }
 
   if (lower.includes("water") || lower.includes("hydration")) {
+    if (!Number.isFinite(daily.waterAverage7) || !Number.isFinite(daily.waterPercentAverage7)) {
+      return {
+        text: "There are not enough recorded water entries in the last 7 days to calculate a truthful hydration average yet. Missing hydration remains unrecorded rather than being counted as zero.",
+        proposal,
+      };
+    }
     return {
-      text: `Water is averaging ${formatWaterVolume(daily.waterAverage7 || 0, analytics.goals)}, about ${Math.round(daily.waterPercentAverage7 || 0)}% of target. Its current score relationship is ${coachCorrelationLabel(analytics.correlations.waterScore)}, so I would keep tracking it but avoid overreacting until more records build up.`,
+      text: `Water is averaging ${formatWaterVolume(daily.waterAverage7, analytics.goals)}, about ${Math.round(daily.waterPercentAverage7)}% of target. Its current score relationship is ${coachCorrelationLabel(analytics.correlations.waterScore)}, so I would keep tracking it but avoid overreacting until more records build up.`,
       proposal,
     };
   }
 
   if (lower.includes("habit") || lower.includes("productive") || lower.includes("productivity")) {
+    if (!Number.isFinite(daily.habitAverage7)) {
+      return {
+        text: "There are not enough recorded habit check-ins in the last 7 days to calculate a truthful completion average yet. Complete a habit from the Habit page whenever it happens and Archive will build the pattern gradually.",
+        proposal,
+      };
+    }
     return {
-      text: `Your 7-day daily value is ${daily.scoreAverage7 || "--"}, ${daily.scoreDelta7 >= 0 ? "up" : "down"} ${Math.abs(daily.scoreDelta7 || 0)} from the previous 7-day window. Habits are averaging ${Math.round(daily.habitAverage7 || 0)}%, and their score relationship is ${coachCorrelationLabel(analytics.correlations.habitScore)}.`,
+      text: `Your 7-day daily value is ${Number.isFinite(daily.scoreAverage7) ? daily.scoreAverage7 : "--"}, ${daily.scoreDelta7 >= 0 ? "up" : "down"} ${Math.abs(daily.scoreDelta7 || 0)} from the previous 7-day window. Habits are averaging ${Math.round(daily.habitAverage7)}%, and their score relationship is ${coachCorrelationLabel(analytics.correlations.habitScore)}.`,
       proposal,
     };
   }
@@ -3216,8 +3270,15 @@ function createCoachReply(message, analytics) {
   const flags = analytics.flags.length
     ? analytics.flags.slice(0, 3).join(" ")
     : "No major warnings stand out yet.";
+  const scoreText = Number.isFinite(daily.scoreAverage7) ? daily.scoreAverage7 : "--";
+  const sleepText = Number.isFinite(daily.sleepAverage7)
+    ? `${trimNumber(daily.sleepAverage7, 1)}h`
+    : "not sufficiently recorded";
+  const waterText = Number.isFinite(daily.waterPercentAverage7)
+    ? `${Math.round(daily.waterPercentAverage7)}% of target`
+    : "not sufficiently recorded";
   return {
-    text: `Here is the current read: your 7-day score is ${daily.scoreAverage7 || "--"}, sleep is ${trimNumber(daily.sleepAverage7 || 0, 1)}h, water is ${Math.round(daily.waterPercentAverage7 || 0)}% of target, and ${analysis.aesthetic.shortName} readiness is ${analysis.readiness}. ${flags}`,
+    text: `Here is the current read: your 7-day score is ${scoreText}, sleep is ${sleepText}, water is ${waterText}, and ${analysis.aesthetic.shortName} readiness is ${analysis.readiness}. ${flags}`,
     proposal,
   };
 }
@@ -3290,9 +3351,13 @@ function compactRecentRecords(analytics, limit = 7) {
   return analytics.recent7.slice(-limit).map((entry) => ({
     date: entry.date,
     score: entryScore(entry, analytics.habitNames, analytics.goals),
-    habits: Math.round(habitPercent(entry, analytics.habitNames) || 0),
-    waterPercent: Math.round(waterPercent(entry, analytics.goals) || 0),
-    sleep: trimNumber(entry.sleep || 0, 1),
+    habits: Number.isFinite(habitPercent(entry, analytics.habitNames))
+      ? Math.round(habitPercent(entry, analytics.habitNames))
+      : null,
+    waterPercent: Number.isFinite(waterPercent(entry, analytics.goals))
+      ? Math.round(waterPercent(entry, analytics.goals))
+      : null,
+    sleep: isDailyFieldRecorded(entry, "sleep") ? trimNumber(entry.sleep || 0, 1) : null,
   }));
 }
 
@@ -3315,9 +3380,9 @@ function compactCoachSnapshot(analytics, profile = "analysis") {
       recorded30: analytics.daily.recorded30,
       scoreAverage7: analytics.daily.scoreAverage7,
       scoreDelta7: analytics.daily.scoreDelta7,
-      habitAverage7: Math.round(analytics.daily.habitAverage7 || 0),
-      waterPercentAverage7: Math.round(analytics.daily.waterPercentAverage7 || 0),
-      sleepAverage7: trimNumber(analytics.daily.sleepAverage7 || 0, 1),
+      habitAverage7: Number.isFinite(analytics.daily.habitAverage7) ? Math.round(analytics.daily.habitAverage7) : null,
+      waterPercentAverage7: Number.isFinite(analytics.daily.waterPercentAverage7) ? Math.round(analytics.daily.waterPercentAverage7) : null,
+      sleepAverage7: Number.isFinite(analytics.daily.sleepAverage7) ? trimNumber(analytics.daily.sleepAverage7, 1) : null,
     },
     flags: analytics.flags.slice(0, 4),
     goals: {
@@ -4750,10 +4815,12 @@ function TopBar({ title, actionLabel, onAdd, historyLabel = "Open record history
 function MetricBalance({ weekDays, habitNames, goals }) {
   const entries = weekDays.map((day) => day.entry).filter(Boolean);
   const metrics = [
-    ["Habits", average(entries.map((entry) => habitPercent(entry, habitNames)))],
-    ["Sleep", average(entries.map((entry) => sleepScore(entry, goals)))],
-    ["Water", average(entries.map((entry) => waterPercent(entry, goals)))],
-    ["Move", average(entries.map((entry) => (entry.habits?.Workout ? 100 : 0)))],
+    ["Habits", metricAverage(entries, (entry) => habitPercent(entry, habitNames))],
+    ["Sleep", metricAverage(entries, (entry) => sleepScore(entry, goals))],
+    ["Water", metricAverage(entries, (entry) => waterPercent(entry, goals))],
+    ["Move", metricAverage(entries, (entry) => (
+      isDailyFieldRecorded(entry, "habits") ? (entry.habits?.Workout ? 100 : 0) : null
+    ))],
   ];
 
   return (
@@ -4763,9 +4830,9 @@ function MetricBalance({ weekDays, habitNames, goals }) {
         <div className="compare-row" key={label}>
           <span>{label}</span>
           <span className="track">
-            <i className="fill" style={{ width: `${Math.round(value)}%`, background: `linear-gradient(to right, #ffffff, ${toneForScore(value, metricTypeForLabel(label))})` }} />
+            <i className="fill" style={{ width: `${Number.isFinite(value) ? Math.round(value) : 0}%`, background: `linear-gradient(to right, #ffffff, ${toneForScore(value ?? 0, metricTypeForLabel(label))})` }} />
           </span>
-          <b>{Math.round(value)}%</b>
+          <b>{Number.isFinite(value) ? `${Math.round(value)}%` : "--"}</b>
         </div>
       ))}
     </div>
@@ -4784,6 +4851,10 @@ function HomePage({ weekDays, habitNames, goals, onAdd, onCustomize, onBackup, o
   const todayEntry = weekDays.find((day) => day.date === todayKey)?.entry;
   const todayScore = entryScore(todayEntry, habitNames, goals);
   const hasTodayScore = Number.isFinite(todayScore);
+  const todayHasHabits = isDailyFieldRecorded(todayEntry, "habits");
+  const todayHasWater = isDailyFieldRecorded(todayEntry, "water");
+  const todayHasSleep = isDailyFieldRecorded(todayEntry, "sleep");
+  const todayIsComplete = todayHasHabits && todayHasWater && todayHasSleep;
   const heroScore = hasTodayScore ? Math.round(todayScore) : 0;
   const dateLabel = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
   const insightCopy = !recordedScores.length
@@ -4791,21 +4862,35 @@ function HomePage({ weekDays, habitNames, goals, onAdd, onCustomize, onBackup, o
     : averageValue >= 75
       ? "Your week is trending strongly. Protect the routines that are keeping sleep, hydration, and habits in balance."
       : "A complete record today will make your weekly patterns clearer and help Archive surface more useful signals.";
-  const attention = !todayEntry
+  const attention = !todayEntry || !hasAnyDailyField(todayEntry)
     ? {
         title: "Today's record is ready",
         copy: "A complete entry keeps your habits, sleep, hydration, and movement timeline connected.",
         actionLabel: "Record",
         status: "active",
       }
-    : todayEntry.water < goals.waterTarget
+    : !todayHasWater
+      ? {
+          title: "Hydration is still unrecorded",
+          copy: "Your habit progress is safe. Add water whenever it is convenient.",
+          actionLabel: "Continue",
+          status: "active",
+        }
+      : todayEntry.water < goals.waterTarget
       ? {
           title: "Hydration is still below target",
           copy: `${formatWaterVolume(todayEntry.water, goals)} recorded toward ${formatWaterVolume(goals.waterTarget, goals)}.`,
           actionLabel: "Update",
           status: "attention",
         }
-      : todayEntry.sleep < goals.sleepTarget
+      : !todayHasSleep
+        ? {
+            title: "Sleep is still unrecorded",
+            copy: "Your saved habits and hydration remain complete while sleep waits for watch sync or manual entry.",
+            actionLabel: "Continue",
+            status: "active",
+          }
+        : todayEntry.sleep < goals.sleepTarget
         ? {
             title: "Sleep is below your target",
             copy: `${formatSleepHours(todayEntry.sleep)} recorded against a ${formatSleepHours(goals.sleepTarget)} target.`,
@@ -4831,14 +4916,14 @@ function HomePage({ weekDays, habitNames, goals, onAdd, onCustomize, onBackup, o
         progressLabel={hasTodayScore ? "today" : "unlogged"}
         footLabel={recordedScores.length ? `Weekly average ${averageValue}` : "Your baseline begins with one record"}
         footValue={recordedScores.length ? `Best ${bestDay}` : "No data yet"}
-        actionLabel={hasTodayScore ? "Review today" : "Record today"}
+        actionLabel={todayIsComplete ? "Review today" : hasTodayScore ? "Continue today" : "Record today"}
         onAction={onAdd}
         className="home-canvas-hero"
       >
         <BarChart values={scores} labels={DAY_LABELS} metricType="home" />
       </CanvasHero>
 
-      <PageSection eyebrow="Today" title="For you" meta={hasTodayScore ? "Up to date" : "1 item"} className="for-you-section">
+      <PageSection eyebrow="Today" title="For you" meta={todayIsComplete ? "Up to date" : "1 item"} className="for-you-section">
         <GuidedHighlight
           eyebrow={hasTodayScore ? "Daily guidance" : "Needs attention"}
           title={attention.title}
@@ -4923,6 +5008,7 @@ function WeeklyMetricPage({
   heroProgress,
   heroFootLabel,
   heroFootValue,
+  primaryPanel,
   onRemoveModule,
   onEditModule,
   onReorderModule,
@@ -4931,12 +5017,14 @@ function WeeklyMetricPage({
   targetLabel = "",
 }) {
   const pageModuleContext = { ...moduleContext, metricType: type };
-  const recordedDays = weekDays.filter((day) => day.entry).length;
+  const recordedDays = weekDays.filter((day) => Number.isFinite(getValue(day.entry))).length;
   const chartValueSuffix = type === "habit" || type === "water" ? "%" : "";
 
   return (
     <div className={`screen canvas-screen metric-story-screen ${type}-screen`}>
       <TopBar title={title} actionLabel={`Add ${type} action`} onAdd={onAdd} onBackup={onBackup} onHistory={onHistory} />
+
+      {primaryPanel}
 
       <CanvasHero
         label={heroLabel}
@@ -5112,9 +5200,15 @@ function HabitTrackingPanel({ habitNames, trackedHabits, onToggleHabitTracking, 
   );
 }
 
-function HabitPage({ weekDays, habitNames, trackedHabits, goals, onAdd, onCustomize, onBackup, onHistory, modules, moduleContext, onToggleHabitTracking, onRenameHabit, onReorderHabit, onRemoveModule, onEditModule, onReorderModule }) {
-  const entries = weekDays.map((day) => day.entry).filter(Boolean);
-  const values = entries.map((entry) => habitPercent(entry, trackedHabits));
+function HabitPage({ weekDays, habitNames, trackedHabits, goals, onAdd, onCustomize, onBackup, onHistory, modules, moduleContext, onSetHabitCompletion, onToggleHabitTracking, onRenameHabit, onReorderHabit, onRemoveModule, onEditModule, onReorderModule }) {
+  const today = dateKey(new Date());
+  const todayEntry = weekDays.find((day) => day.date === today)?.entry ?? null;
+  const entries = trackedHabits.length
+    ? weekDays
+      .map((day) => day.entry)
+      .filter((entry) => isDailyFieldRecorded(entry, "habits"))
+    : [];
+  const values = entries.map((entry) => habitPercent(entry, trackedHabits)).filter(Number.isFinite);
   const habitCounts = trackedHabits.map((habit) => [habit, entries.filter((entry) => entry.habits?.[habit]).length]);
   const weekAverage = Math.round(average(values));
   const strongestHabit = [...habitCounts].sort((a, b) => b[1] - a[1])[0];
@@ -5137,6 +5231,14 @@ function HabitPage({ weekDays, habitNames, trackedHabits, goals, onAdd, onCustom
       heroProgress={weekAverage}
       heroFootLabel={`${entries.length} of 7 days recorded`}
       heroFootValue={entries.length ? `${Math.max(...values, 0)}% best` : "No data"}
+      primaryPanel={(
+        <HabitHoldDeck
+          date={today}
+          habits={trackedHabits}
+          entry={todayEntry}
+          onSetCompletion={onSetHabitCompletion}
+        />
+      )}
       insightTitle={hasHabitSignal ? `${strongestHabit[0]} is leading` : "Your routine starts here"}
       insightCopy={hasHabitSignal
         ? `${strongestHabit[0]} was completed on ${strongestHabit[1]} of ${entries.length} recorded days. Consistency matters more than a perfect week.`
@@ -5169,7 +5271,9 @@ function HabitPage({ weekDays, habitNames, trackedHabits, goals, onAdd, onCustom
 }
 
 function WaterPage({ weekDays, goals, onAdd, onCustomize, onBackup, onHistory, modules, moduleContext, onRemoveModule, onEditModule, onReorderModule }) {
-  const entries = weekDays.map((day) => day.entry).filter(Boolean);
+  const entries = weekDays
+    .map((day) => day.entry)
+    .filter((entry) => isDailyFieldRecorded(entry, "water"));
   const waters = entries.map((entry) => entry.water);
   const averageWater = average(waters);
   const targetProgress = goals.waterTarget ? clamp((averageWater / goals.waterTarget) * 100, 0, 100) : 0;
@@ -5217,7 +5321,9 @@ function WaterPage({ weekDays, goals, onAdd, onCustomize, onBackup, onHistory, m
 }
 
 function SleepPage({ weekDays, goals, onAdd, onCustomize, onBackup, onHistory, modules, moduleContext, onRemoveModule, onEditModule, onReorderModule }) {
-  const entries = weekDays.map((day) => day.entry).filter(Boolean);
+  const entries = weekDays
+    .map((day) => day.entry)
+    .filter((entry) => isDailyFieldRecorded(entry, "sleep"));
   const sleeps = entries.map((entry) => entry.sleep);
   const averageSleep = average(sleeps);
   const best = sleeps.length ? Math.max(...sleeps) : 0;
@@ -5248,7 +5354,7 @@ function SleepPage({ weekDays, goals, onAdd, onCustomize, onBackup, onHistory, m
       >
         <AreaChart
           days={weekDays}
-          getValue={(entry) => entry?.sleep ?? null}
+          getValue={(entry) => (isDailyFieldRecorded(entry, "sleep") ? entry.sleep : null)}
           gradientId="sleepGradient"
           label="Sleep duration this week"
           maxValue={sleepChartMax}
@@ -7491,9 +7597,9 @@ function CoachSnapshotPanel({ analytics }) {
     <div className="panel coach-snapshot">
       <SectionTitle title="Coach snapshot" meta="live data" />
       <div className="coach-snapshot-grid">
-        <StatCard label="7-day score" value={daily.scoreAverage7 || "--"} />
-        <StatCard label="Sleep" value={daily.sleepAverage7 ? `${trimNumber(daily.sleepAverage7, 1)}h` : "--"} />
-        <StatCard label="Water" value={`${Math.round(daily.waterPercentAverage7 || 0)}%`} />
+        <StatCard label="7-day score" value={Number.isFinite(daily.scoreAverage7) ? daily.scoreAverage7 : "--"} />
+        <StatCard label="Sleep" value={Number.isFinite(daily.sleepAverage7) ? `${trimNumber(daily.sleepAverage7, 1)}h` : "--"} />
+        <StatCard label="Water" value={Number.isFinite(daily.waterPercentAverage7) ? `${Math.round(daily.waterPercentAverage7)}%` : "--"} />
         <StatCard label="Build" value={build.readiness || "--"} />
       </div>
       <p>{analytics.flags[0] ?? "Enough structure is in place for the coach to review your current plan."}</p>
@@ -7729,8 +7835,8 @@ function CoachPage({ analytics, workout, aiSettings, geminiApiKey, coachMessages
         className="coach-canvas-hero"
       >
         <div className="coach-hero-signals">
-          <span><small>Sleep</small><strong>{dailySnapshot.sleepAverage7 ? `${trimNumber(dailySnapshot.sleepAverage7, 1)}h` : "--"}</strong></span>
-          <span><small>Water</small><strong>{Math.round(dailySnapshot.waterPercentAverage7 || 0)}%</strong></span>
+          <span><small>Sleep</small><strong>{Number.isFinite(dailySnapshot.sleepAverage7) ? `${trimNumber(dailySnapshot.sleepAverage7, 1)}h` : "--"}</strong></span>
+          <span><small>Water</small><strong>{Number.isFinite(dailySnapshot.waterPercentAverage7) ? `${Math.round(dailySnapshot.waterPercentAverage7)}%` : "--"}</strong></span>
           <span><small>Build</small><strong>{buildSnapshot.readiness || "--"}</strong></span>
         </div>
       </CanvasHero>
@@ -8098,10 +8204,12 @@ function ModuleDistribution({ metricType = "sleep" }) {
 function ModuleStack({ context }) {
   const entries = context.weekDays.map((day) => day.entry).filter(Boolean);
   const rows = [
-    ["Habits", average(entries.map((entry) => habitPercent(entry, context.habitNames)))],
-    ["Water", average(entries.map((entry) => waterPercent(entry, context.goals)))],
-    ["Sleep", average(entries.map((entry) => sleepScore(entry, context.goals)))],
-    ["Move", average(entries.map((entry) => (entry.habits?.Workout ? 100 : 0)))],
+    ["Habits", metricAverage(entries, (entry) => habitPercent(entry, context.habitNames))],
+    ["Water", metricAverage(entries, (entry) => waterPercent(entry, context.goals))],
+    ["Sleep", metricAverage(entries, (entry) => sleepScore(entry, context.goals))],
+    ["Move", metricAverage(entries, (entry) => (
+      isDailyFieldRecorded(entry, "habits") ? (entry.habits?.Workout ? 100 : 0) : null
+    ))],
     ["Energy", 69],
   ];
 
@@ -8110,8 +8218,8 @@ function ModuleStack({ context }) {
       {rows.map(([label, value]) => (
         <div className="module-stack-row" key={label}>
           <span>{label}</span>
-          <i><b style={{ width: `${Math.round(value)}%`, background: `linear-gradient(to right, #ffffff, ${toneForScore(value, metricTypeForLabel(label))})` }} /></i>
-          <strong>{Math.round(value)}</strong>
+          <i><b style={{ width: `${Number.isFinite(value) ? Math.round(value) : 0}%`, background: `linear-gradient(to right, #ffffff, ${toneForScore(value ?? 0, metricTypeForLabel(label))})` }} /></i>
+          <strong>{Number.isFinite(value) ? Math.round(value) : "--"}</strong>
         </div>
       ))}
     </div>
@@ -8200,7 +8308,9 @@ function moduleAreaSeries(recentDays, context) {
 
   if (context.metricType === "sleep") {
     const fallbackSleep = [6.5, 7.2, 6.8, 8, 7.6, 8.3, 7.8, 8.1, 7.4, 8.2];
-    const values = recentDays.map((day, index) => day.entry?.sleep ?? fallbackSleep[index % fallbackSleep.length]);
+    const values = recentDays.map((day, index) => (
+      isDailyFieldRecorded(day.entry, "sleep") ? day.entry.sleep : fallbackSleep[index % fallbackSleep.length]
+    ));
     const maxValue = Math.max(10, Math.ceil(Math.max(...values, normalizedGoals.sleepTarget, normalizedGoals.sleepMax)));
     return {
       values,
@@ -8811,17 +8921,23 @@ function DailySheet({ habitNames, trackedHabits, entries, goals, watchData, conn
     map[habit] = existingEntry?.habits?.[habit] ?? false;
     return map;
   }, {}));
-  const [water, setWater] = useState(() => waterInputValue(existingEntry?.water ?? defaultWater, normalizedGoals));
-  const storedSyncedSleep = existingEntry?.sleepSource === "sync" && Number(existingEntry.sleep) > 0
+  const [water, setWater] = useState(() => waterInputValue(
+    isDailyFieldRecorded(existingEntry, "water") ? existingEntry.water : defaultWater,
+    normalizedGoals,
+  ));
+  const storedSyncedSleep = isDailyFieldRecorded(existingEntry, "sleep")
+    && existingEntry?.sleepSource === "sync" && Number(existingEntry.sleep) > 0
     ? Number(existingEntry.sleep)
     : 0;
   const hasAuthoritativeSleep = watchSleep.available || storedSyncedSleep > 0;
   const initialSleepMode = hasAuthoritativeSleep
     ? "sync"
-    : Number(existingEntry?.sleep) > 0 ? "manual" : "sync";
+    : isDailyFieldRecorded(existingEntry, "sleep") && Number(existingEntry?.sleep) > 0 ? "manual" : "sync";
   const [sleepMode, setSleepMode] = useState(initialSleepMode);
   const [manualSleep, setManualSleep] = useState(() => (
-    initialSleepMode === "manual" && Number(existingEntry?.sleep) > 0 ? String(existingEntry.sleep) : ""
+    initialSleepMode === "manual" && isDailyFieldRecorded(existingEntry, "sleep") && Number(existingEntry?.sleep) > 0
+      ? String(existingEntry.sleep)
+      : ""
   ));
   const [newHabit, setNewHabit] = useState("");
   const [isDragging, setIsDragging] = useState(false);
@@ -8844,19 +8960,23 @@ function DailySheet({ habitNames, trackedHabits, entries, goals, watchData, conn
     const entry = entries.find((item) => item.date === nextDate);
     const nextWatchSleep = watchSleepRecordForDate(watchData, nextDate);
     const nextHasAuthoritativeSleep = nextWatchSleep.available
-      || (entry?.sleepSource === "sync" && Number(entry.sleep) > 0);
+      || (isDailyFieldRecorded(entry, "sleep") && entry?.sleepSource === "sync" && Number(entry.sleep) > 0);
     const nextSleepMode = nextHasAuthoritativeSleep
       ? "sync"
-      : Number(entry?.sleep) > 0 ? "manual" : "sync";
+      : isDailyFieldRecorded(entry, "sleep") && Number(entry?.sleep) > 0 ? "manual" : "sync";
     const existingHabits = entry?.habits ? Object.keys(entry.habits) : [];
     const nextVisibleHabits = habitNames.filter((habit) => trackedHabits.includes(habit) || existingHabits.includes(habit));
     setHabitDraft(nextVisibleHabits.reduce((map, habit) => {
       map[habit] = entry?.habits?.[habit] ?? false;
       return map;
     }, {}));
-    setWater(waterInputValue(entry?.water ?? defaultWater, normalizedGoals));
+    setWater(waterInputValue(isDailyFieldRecorded(entry, "water") ? entry.water : defaultWater, normalizedGoals));
     setSleepMode(nextSleepMode);
-    setManualSleep(nextSleepMode === "manual" && Number(entry?.sleep) > 0 ? String(entry.sleep) : "");
+    setManualSleep(
+      nextSleepMode === "manual" && isDailyFieldRecorded(entry, "sleep") && Number(entry?.sleep) > 0
+        ? String(entry.sleep)
+        : "",
+    );
   };
 
   const addHabit = () => {
@@ -8894,13 +9014,23 @@ function DailySheet({ habitNames, trackedHabits, entries, goals, watchData, conn
         map[habit] = Boolean(habitDraft[habit]);
         return map;
       }, {}),
+      recordedFields: {
+        habits: true,
+        water: true,
+        sleep: true,
+      },
     });
   };
 
   const selectManualSleep = () => {
     if (hasAuthoritativeSleep) return;
     setSleepMode("manual");
-    if (!manualSleep && existingEntry?.sleepSource !== "sync" && Number(existingEntry?.sleep) > 0) {
+    if (
+      !manualSleep
+      && isDailyFieldRecorded(existingEntry, "sleep")
+      && existingEntry?.sleepSource !== "sync"
+      && Number(existingEntry?.sleep) > 0
+    ) {
       setManualSleep(String(existingEntry.sleep));
     }
   };
@@ -10115,6 +10245,18 @@ export default function App() {
     }));
   };
 
+  const setHabitCompletion = (date, habit, completed, restore = null) => {
+    setTrackerState((current) => ({
+      ...current,
+      entries: setHabitCompletionInEntries(current.entries, {
+        date,
+        habit,
+        completed,
+        restore,
+      }),
+    }));
+  };
+
   const saveEntry = (entry) => {
     transitionOverlay(() => {
       setTrackerState((current) => {
@@ -10236,7 +10378,7 @@ export default function App() {
     workout: <WorkoutPage workout={state.workout} onWorkoutChange={updateWorkoutData} onAdd={openModulePicker} onBackup={openBackupChoice} modules={pageModules.workout} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
     workoutHistory: <WorkoutHistoryPage workout={state.workout} onWorkoutChange={updateWorkoutData} />,
     home: <HomePage weekDays={weekDays} habitNames={trackedHabitNames} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.home} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
-    habit: <HabitPage weekDays={weekDays} habitNames={state.habitNames} trackedHabits={trackedHabitNames} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.habit} moduleContext={moduleContext} onToggleHabitTracking={toggleHabitTracking} onRenameHabit={(habit) => transitionOverlay(() => setEditingHabit(habit))} onReorderHabit={reorderHabit} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
+    habit: <HabitPage weekDays={weekDays} habitNames={state.habitNames} trackedHabits={trackedHabitNames} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.habit} moduleContext={moduleContext} onSetHabitCompletion={setHabitCompletion} onToggleHabitTracking={toggleHabitTracking} onRenameHabit={(habit) => transitionOverlay(() => setEditingHabit(habit))} onReorderHabit={reorderHabit} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
     water: <WaterPage weekDays={weekDays} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.water} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
     sleep: <SleepPage weekDays={weekDays} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.sleep} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
     stats: <StatsPage entries={state.entries} habitNames={trackedHabitNames} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onBackup={openBackupChoice} onHistory={openHistory} onEditDate={openRecordForDate} modules={pageModules.stats} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
