@@ -4,6 +4,8 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-08-13
+
 ### Added
 
 - Added a focused Habit Hold Deck that presents one tracked habit at a time, completes through a short deliberate hold, advances through the configured order, and keeps the existing Habit analytics and modules available below it.

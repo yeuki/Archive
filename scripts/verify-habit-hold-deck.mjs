@@ -110,7 +110,7 @@ assert.ok(deck.includes("data-no-pull-refresh"), "The hold target must not confl
 assert.ok(css.includes(".habit-hold-control.holding .habit-hold-progress"), "The hold progress treatment is missing.");
 assert.ok(css.includes("@keyframes habit-liquid-ripple"), "The confirmed liquid-glass ripple is missing.");
 assert.ok(css.includes("@keyframes habit-card-color-bloom"), "The semantic card bloom is missing.");
-assert.ok(css.includes(".habit-liquid-ripple {\n    display: none;"), "Reduced motion must remove the expanding ripple.");
+assert.match(css, /\.habit-liquid-ripple\s*\{\s*display:\s*none;/, "Reduced motion must remove the expanding ripple.");
 assert.ok(css.includes("@media (prefers-reduced-motion: reduce)"), "The deck needs a reduced-motion fallback.");
 
 console.log("Habit Hold Deck checks passed: partial records, exact undo, persistence-confirmed ripple feedback, gesture isolation, and accessibility fallbacks.");

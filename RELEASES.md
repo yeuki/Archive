@@ -4,6 +4,7 @@ Release APKs are immutable. If a packaged build changes, Archive receives a new 
 
 | Version | Release date | APK | Summary | Source reference |
 | --- | --- | --- | --- | --- |
+| 0.13.0 | 2026-08-13 | `Archive-v0.13.0.apk` | Focused hold-to-complete habits, independently recorded daily metrics, and persistence-confirmed glass feedback in the restored capsule dock. | `main`, tag `v0.13.0` |
 | 0.12.0 | 2026-08-09 | `Archive-v0.12.0.apk` | Unified, performance-conscious motion across navigation, pages, disclosures, gestures, charts, and Workout Mode. | `main`, tag `v0.12.0` |
 | 0.11.0 | 2026-08-09 | `Archive-v0.11.0.apk` | Focused, persistent Workout Mode with touch value wheels, automatic rest, safe resume, and concise review. | `main`, tag `v0.11.0` |
 | 0.10.1 | 2026-08-07 | `Archive-v0.10.1.apk` | Centers the standalone Archive A in a cleaner grey-to-pastel launch animation without changing navigation. | `main`, tag `v0.10.1` |
@@ -23,6 +24,22 @@ Release APKs are immutable. If a packaged build changes, Archive receives a new 
 | 0.2.1 | 2026-07-13 | `Archive-v0.2.1.apk` | Restores Archive's signature gradient on compact charts while preserving solid dense-data views. | `main`, tag `v0.2.1` |
 | 0.2.0 | 2026-07-13 | `Archive-v0.2.0.apk` | Archive Design System 2.0 with premium Home, Sleep, Settings, chart, surface, and navigation refinements. | `main`, tag `v0.2.0` |
 | 0.1.0 | 2026-07-13 | `Archive-v0.1.0.apk` | Formal baseline of the current productivity, health, workout, AI coach, and Health Connect experience. | `main`, tag `v0.1.0` |
+
+## 0.13.0 - Habit Hold Deck and partial-day records
+
+- APK filename: `Archive-v0.13.0.apk`
+- Local archive: `releases/v0.13.0/Archive-v0.13.0.apk`
+- Google Drive archive: `Archive Productivity Tracker/Releases/v0.13.0/Archive-v0.13.0.apk`
+- GitHub reference: `main`, tag `v0.13.0`
+- SHA-256: `PENDING-FINAL-BUILD`
+- Summary: Makes habit logging an effortless throughout-the-day interaction while preserving Archive's existing page hierarchy, local-first data model, and full-report workflow.
+- Main UI changes: adds a calm one-habit-at-a-time Focus Deck, a deliberate hold-to-complete control, ordered progress, an **All habits** chooser, direct correction and exact undo, layered Archive glass, persistence-confirmed semantic bloom and liquid ripples, and a restored true-capsule bottom dock with circular end caps.
+- Structural changes: introduces a dedicated Habit Hold Deck component, explicit daily-field presence metadata, centralized daily-record normalization helpers, and focused regression coverage integrated into `npm run verify`.
+- Functional changes: habit completion saves immediately without requiring water or sleep; partial daily records no longer treat unrecorded metrics as zero; legacy records and backups normalize compatibly; watch-created sleep records mark only sleep as present; duplicate, cancelled, and rejected hold gestures cannot report false success.
+- Preserved behavior: existing Habit analytics and modules, historical editing, combined daily sheet, habit configuration and ordering, Health Connect policy, Workout Mode, navigation destinations, centered Home control, and all other Archive pages remain available.
+- Accessibility: includes keyboard and assistive activation, descriptive status, large touch targets, non-color completion feedback, reduced-motion and reduced-transparency fallbacks, and phone-width overflow protection.
+- Validation: habit, motion, health, automatic Health Connect, sleep, Workout Mode, workspace, and production-build suites; mobile Chromium interaction checks at 360 x 800 and 412 x 915; Android unit tests, lint, certificate validation, and release assembly through the immutable release pipeline.
+- Known issues: hold duration, haptic feel, card proportions, and success wording may benefit from later physical-use tuning; vibration remains best effort when Android or WebView settings suppress it; Health Connect remains Android-only; and supersets/circuits remain linear in Workout Mode.
 
 ## 0.12.0 - Unified motion system
 
