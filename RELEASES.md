@@ -31,7 +31,7 @@ Release APKs are immutable. If a packaged build changes, Archive receives a new 
 - Local archive: `releases/v0.13.0/Archive-v0.13.0.apk`
 - Google Drive archive: `Archive Productivity Tracker/Releases/v0.13.0/Archive-v0.13.0.apk`
 - GitHub reference: `main`, tag `v0.13.0`
-- SHA-256: `PENDING-FINAL-BUILD`
+- SHA-256: `9328636fac71fb58dc233440ca76dd7fff488f4273128fad8d288d065e9edf3a`
 - Summary: Makes habit logging an effortless throughout-the-day interaction while preserving Archive's existing page hierarchy, local-first data model, and full-report workflow.
 - Main UI changes: adds a calm one-habit-at-a-time Focus Deck, a deliberate hold-to-complete control, ordered progress, an **All habits** chooser, direct correction and exact undo, layered Archive glass, persistence-confirmed semantic bloom and liquid ripples, and a restored true-capsule bottom dock with circular end caps.
 - Structural changes: introduces a dedicated Habit Hold Deck component, explicit daily-field presence metadata, centralized daily-record normalization helpers, and focused regression coverage integrated into `npm run verify`.
