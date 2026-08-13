@@ -4,6 +4,30 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 
 ## [Unreleased]
 
+### Added
+
+- Added a focused Habit Hold Deck that presents one tracked habit at a time, completes through a short deliberate hold, advances through the configured order, and keeps the existing Habit analytics and modules available below it.
+- Added an **All habits** chooser for out-of-order completion and review, plus immediate **Mark incomplete** and time-limited exact undo paths.
+- Added explicit `recordedFields` metadata for habits, water, and sleep so a user can build a day gradually without submitting every metric at once.
+- Added deterministic regression coverage for partial daily records, exact undo, gesture isolation, accessibility fallbacks, and the focused Habit wiring.
+
+### Changed
+
+- Changed today's habit completion to persist immediately from the Habit page while preserving the combined daily sheet for full reports and historical editing.
+- Changed daily scores, page summaries, weekly metric counts, charts, and coach context to exclude unrecorded metrics instead of treating them as zero.
+- Changed watch-created sleep records to mark only sleep as present, preserving authoritative Health Connect behavior without implying habit or hydration data.
+
+### Fixed
+
+- Prevented undoing the only habit completion in a newly created habit-only day from leaving a false empty daily record.
+- Prevented the Habit hold gesture from competing with Archive's pull-to-refresh gesture, and added keyboard, assistive-activation, reduced-motion, high-contrast, and reduced-transparency behavior.
+- Preserved zero horizontal overflow for the Hold Deck and habit chooser at 360 x 800 and 412 x 915 phone viewports.
+
+### Known issues and unfinished work
+
+- Hold duration, haptic feel, card proportions, and final success wording remain candidates for tuning after physical-phone review.
+- Vibration is a progressive enhancement and may be unavailable when device or WebView settings suppress it.
+
 ## [0.12.0] - 2026-08-09
 
 ### Added

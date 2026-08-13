@@ -11,6 +11,7 @@
     "test:sleep": "node ./scripts/verify-sleep-policy.mjs",
     "test:workout": "node ./scripts/verify-workout-mode.mjs",
     "test:motion": "node ./scripts/verify-motion-system.mjs",
+    "test:habit": "node ./scripts/verify-habit-hold-deck.mjs",
     "test:workspace": "node ./scripts/verify-workspace.mjs",
     "verify": "node ./scripts/verify-all.mjs",
     "preview": "vite preview --host 127.0.0.1",

@@ -37,6 +37,8 @@ The center Home control is surrounded by two expandable navigation groups. These
 ### Record a day
 
 - The user can record or edit habits, hydration, and sleep for a selected date.
+- Today's habits can be completed independently from the Habit page throughout the day; recording a habit does not require submitting hydration or sleep at the same time.
+- A metric that has not been recorded is treated as missing, not as a zero value, until the user or an authoritative connected source supplies it.
 - Sleep offers watch sync as the primary path and manual entry as a fallback.
 - A synced sleep record supersedes a conflicting manual record.
 - A sleep session is attributed to the calendar day before its wake date, independent of the clock hour.

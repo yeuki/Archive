@@ -78,3 +78,10 @@ This is a compact record of accepted and rejected product/technical directions. 
 - **Decision:** Animate purposefully with transform/opacity, stable rendering, bounded effects, and reduced-motion support.
 - **Rationale:** Perceived polish depends more on continuity and response than on expensive refraction, blur, or repeated entrance effects.
 - **Consequence:** Performance regressions are design regressions even when the static frame looks more elaborate.
+
+## D-012 — Permit partial daily records and focused habit completion
+
+- **Status:** Accepted
+- **Decision:** Allow habits, water, and sleep to be persisted independently. Today's habits use a focused hold-to-complete deck on the existing Habit page, with immediate save, ordered or direct selection, review, and exact undo.
+- **Rationale:** Habits are completed throughout the day, so requiring the user to submit hydration and sleep at the same time creates friction and can turn missing data into misleading zeroes.
+- **Consequence:** Every daily metric consumer must respect explicit field-presence metadata. The combined daily sheet remains available for full entry and historical editing, while habit completion no longer depends on it.

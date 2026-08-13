@@ -35,6 +35,8 @@ There is no application backend or account service. GitHub stores source and rel
 | --- | --- |
 | `src/main.jsx` | React entry point |
 | `src/App.jsx` | Application shell, page routing, state normalization/persistence, records, modules, health orchestration, and coach integration |
+| `src/HabitHoldDeck.jsx` | Focused, hold-to-complete habit interaction, chooser, completion feedback, and undo |
+| `src/dailyRecords.js` | Daily field-presence normalization and exact partial-record habit updates |
 | `src/WorkoutMode.jsx` | Focused live-workout experience and set/rest progression |
 | `src/workoutSession.js` | Active-session normalization, defaults, progression, and persistence helpers |
 | `src/motion.js` | Motion capability and reduced-motion helpers |
@@ -61,6 +63,8 @@ coach message history and reviewable proposals
 ```
 
 State is normalized on load and import so supported older shapes remain usable. New fields require a default and a normalization path. Deleting or renaming a persisted field requires a migration and a recovery/backup consideration.
+
+Daily records carry `recordedFields.habits`, `recordedFields.water`, and `recordedFields.sleep`. These booleans distinguish an explicitly recorded zero from a metric the user has not supplied yet. Legacy records without this metadata normalize as fully recorded, while new habit-only or watch-sleep-only writes mark only the field they actually contain. Derived scores, averages, pages, and coach context must exclude missing fields rather than converting them to zero.
 
 The optional Gemini key uses a separate local-storage entry and is excluded from normal JSON backups. No secret, personal export, or browser profile may enter Git.
 
