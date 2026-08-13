@@ -2,12 +2,12 @@
 
 ## Control
 
-- **Status:** Candidate
+- **Status:** Accepted
 - **Owner:** Kyle / Codex
 - **Created:** 2026-08-12
 - **Baseline:** v0.12.0 / `f8f8002`
 - **Working branch:** `feature/habit-hold-deck`
-- **Target release:** Unreleased
+- **Target release:** v0.13.0
 - **Related issue / task:** Habit-completion redesign approved in the current Codex task
 
 ## Problem and user outcome
@@ -20,11 +20,14 @@ Add an Archive-styled Focus Deck near the top of the existing Habit page. It pre
 
 Daily records gain explicit field-presence metadata so habits, water, and sleep can be persisted independently. Legacy records continue to mean that all of their existing fields were recorded.
 
+The approved visual revision restores the navigation vessel to the accepted real-width capsule geometry with circular end caps, while retaining the v0.12 icon and selection continuity. It also deepens the Hold card material and adds a brief liquid-glass ripple and semantic bloom only after the canonical completion record confirms success.
+
 ## Preserve
 
 - Existing Habit navigation, page destination, analytics, modules, tracking preferences, history, and habit ordering.
 - Existing habit names, binary completion semantics, ignored-habit history, and JSON backup/import behavior.
 - Existing Home, Water, Sleep, Stats, Workout, Coach, Settings, and bottom-navigation hierarchy.
+- Centered Home, existing destinations, icon placement, selected states, safe-area position, and liquid-glass expansion behavior.
 - Local-first and offline operation with no new dependency or native service.
 
 ## Non-goals
@@ -50,8 +53,9 @@ Daily records gain explicit field-presence metadata so habits, water, and sleep 
 - Touch or pointer input completes after a roughly 600 ms hold. Releasing, scrolling, moving beyond the cancellation threshold, or losing the pointer before completion changes nothing.
 - Keyboard and assistive activation complete through a conventional immediate button action.
 - Successful completion persists before the card advances, produces a restrained check transition, and may use one light vibration when available.
+- Confirmed completion produces one or two short refractive ripples and a Habit color bloom beneath the glass; no ripple, bloom, check, or haptic fires before the canonical record reflects success.
 - Motion uses transform/opacity and a localized SVG stroke; no animated blur or broad page transition occurs for each completion.
-- Reduced motion removes travel, scale, and flourish while preserving the hold timer, state change, and visible status.
+- Reduced motion removes travel, scale, ripple, and flourish while preserving the hold timer, immediate color change, and visible check/status.
 
 ## Data, persistence, and compatibility
 
@@ -73,8 +77,8 @@ Daily records gain explicit field-presence metadata so habits, water, and sleep 
 ## Acceptance criteria
 
 - [x] Any tracked habit can be completed in any order from the Habit page.
-- [ ] Releasing or scrolling before the hold threshold never changes data. (Implementation and regression wiring pass; physical touch review remains.)
-- [ ] A successful hold persists exactly once and survives reload. (Persistence passes; physical hold review remains.)
+- [ ] Releasing or scrolling before the hold threshold never changes data. (Early browser release and regression wiring pass; physical touch review remains.)
+- [ ] A successful hold persists exactly once and survives reload. (Persistence, confirmation gating, and duplicate resistance pass; physical hold review remains.)
 - [x] Undo is available through one normal tap and does not create a false empty daily record.
 - [x] Habit-only records do not count missing water or sleep as zero in pages, scores, or coach analytics.
 - [x] Legacy records and JSON backups normalize without losing existing values or historical habit keys.
@@ -84,6 +88,12 @@ Daily records gain explicit field-presence metadata so habits, water, and sleep 
 - [x] Existing navigation, tracking preferences, daily-sheet editing, Health Connect, and Workout Mode remain intact.
 - [x] Relevant deterministic, web-build, and phone-size checks pass.
 - [x] Durable documentation and `[Unreleased]` notes are updated.
+- [x] Bottom navigation uses real capsule widths with circular end caps at rest and while expanded.
+- [x] Centered Home, all destinations, selected states, expansion, touch targets, and safe-area spacing remain intact.
+- [x] Hold cards show layered Archive glass depth with clear text and control separation.
+- [x] Early release returns cleanly without ripple, bloom, check, haptic, or persistence.
+- [x] Confirmed completion produces a bounded liquid ripple and semantic bloom exactly once through the verified activation path.
+- [x] Reduced-motion removes expanding effects and reduced-transparency preserves opaque hierarchy.
 
 ## Verification plan
 
@@ -100,6 +110,7 @@ Daily records gain explicit field-presence metadata so habits, water, and sleep 
 - Approved directional Focus Deck illustration attached in the current Codex task.
 - `docs/DESIGN_SYSTEM.md`
 - `docs/reference/home.png`
+- `docs/reference/navigation-productivity.png`
 - `docs/reference/workout-mode.png`
 - `src/App.jsx`
 - `src/styles.css`
@@ -113,3 +124,5 @@ Daily records gain explicit field-presence metadata so habits, water, and sleep 
 | Date | Decision / revision | Approved by |
 | --- | --- | --- |
 | 2026-08-12 | Use the Focus Deck interaction, permit partial-day records, target today, and prioritize the functional first pass. | Kyle |
+| 2026-08-12 | Restore the accepted capsule dock and upgrade Hold cards with persistence-confirmed glass ripples and semantic bloom. | Kyle |
+| 2026-08-13 | Accept the revised candidate and authorize the v0.13.0 GitHub, local, Google Drive, APK, and phone release workflow. | Kyle |

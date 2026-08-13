@@ -40,12 +40,14 @@ check(workout.includes("kind: \"workout-sheet\""), "Workout sheets need reversib
 
 check(motionCss.includes("--motion-page: 520ms"), "The shared motion token set is missing.");
 check(motionCss.includes("view-transition-name: archive-page"), "Page snapshots are not isolated for view transitions.");
-check(motionCss.includes("scaleX(var(--dock-resting-scale))"), "The liquid-glass dock must morph through a fixed compositor surface.");
-check(motionCss.includes("width: var(--dock-expanded-width)"), "The dock raster must keep one fixed width while moving.");
+check(motionCss.includes("width: var(--dock-collapsed-width)"), "The collapsed dock must use its accepted real capsule width.");
+check(motionCss.includes("border-radius: 999px"), "The dock must preserve fully circular capsule end caps.");
+check(motionCss.includes("width var(--motion-page)"), "The capsule must expand through the shared navigation motion timing.");
+check(!motionCss.includes("scaleX(var(--dock-resting-scale))"), "Non-uniform shell scaling would distort the accepted capsule silhouette.");
 check(motionCss.includes(".workout-value-wheel > button.wheel-current"), "Centered wheel styling is missing.");
 check(motionCss.includes(".settings-section.collapsed .settings-section-reveal"), "Settings collapse animation is missing.");
 check(motionCss.includes(".motion-popover.motion-closed"), "Popover exit animation is missing.");
 check(motionCss.includes("@media (prefers-reduced-motion: reduce)"), "The motion system needs a reduced-motion fallback.");
 check(!motionCss.includes("filter: blur("), "The v0.12 motion layer must not animate paint-heavy blur filters.");
 
-console.log("Motion system checks passed: fixed-raster glass, continuous wheels, FLIP reordering, reversible disclosure, sheet drag compositing, view transitions, and reduced-motion fallbacks.");
+console.log("Motion system checks passed: true-capsule glass navigation, continuous wheels, FLIP reordering, reversible disclosure, sheet drag compositing, view transitions, and reduced-motion fallbacks.");

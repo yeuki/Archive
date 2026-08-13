@@ -100,10 +100,17 @@ assert.ok(!app.includes("daily.waterAverage7 || 0"), "Missing water must not be 
 assert.ok(!app.includes("daily.sleepAverage7 || 0"), "Missing sleep must not be described to the coach as zero.");
 assert.ok(deck.includes("const HOLD_DURATION_MS = 620"), "The touch hold duration is missing.");
 assert.ok(deck.includes("completionLockRef.current"), "Completion needs an immediate duplicate-input lock.");
+assert.ok(deck.includes("if (!pendingCompletion || !completionMap[pendingCompletion.habit]) return;"), "Success feedback must wait for the canonical completion record.");
+assert.ok(deck.includes("{successHabit && ("), "Liquid success effects must render only after confirmed completion.");
+assert.ok(deck.includes("PERSISTENCE_CONFIRM_TIMEOUT_MS"), "A rejected persistence update must release the completion lock.");
+assert.ok(deck.includes("&& !reviewingCompleted"), "All-complete review must reopen a completed habit for correction.");
 assert.ok(deck.includes("event.detail === 0"), "Keyboard and assistive activation need a conventional click path.");
 assert.ok(deck.includes("activateWithKeyboard"), "The hold control needs an explicit keyboard activation path.");
 assert.ok(deck.includes("data-no-pull-refresh"), "The hold target must not conflict with pull-to-refresh.");
 assert.ok(css.includes(".habit-hold-control.holding .habit-hold-progress"), "The hold progress treatment is missing.");
+assert.ok(css.includes("@keyframes habit-liquid-ripple"), "The confirmed liquid-glass ripple is missing.");
+assert.ok(css.includes("@keyframes habit-card-color-bloom"), "The semantic card bloom is missing.");
+assert.ok(css.includes(".habit-liquid-ripple {\n    display: none;"), "Reduced motion must remove the expanding ripple.");
 assert.ok(css.includes("@media (prefers-reduced-motion: reduce)"), "The deck needs a reduced-motion fallback.");
 
-console.log("Habit Hold Deck checks passed: partial records, exact undo, focused completion wiring, gesture isolation, and accessibility fallbacks.");
+console.log("Habit Hold Deck checks passed: partial records, exact undo, persistence-confirmed ripple feedback, gesture isolation, and accessibility fallbacks.");

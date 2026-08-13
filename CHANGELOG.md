@@ -9,6 +9,7 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 - Added a focused Habit Hold Deck that presents one tracked habit at a time, completes through a short deliberate hold, advances through the configured order, and keeps the existing Habit analytics and modules available below it.
 - Added an **All habits** chooser for out-of-order completion and review, plus immediate **Mark incomplete** and time-limited exact undo paths.
 - Added explicit `recordedFields` metadata for habits, water, and sleep so a user can build a day gradually without submitting every metric at once.
+- Added persistence-confirmed liquid-glass completion feedback with restrained refractive ripples, a semantic Habit color bloom, and a crisp resolved check state.
 - Added deterministic regression coverage for partial daily records, exact undo, gesture isolation, accessibility fallbacks, and the focused Habit wiring.
 
 ### Changed
@@ -16,11 +17,16 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 - Changed today's habit completion to persist immediately from the Habit page while preserving the combined daily sheet for full reports and historical editing.
 - Changed daily scores, page summaries, weekly metric counts, charts, and coach context to exclude unrecorded metrics instead of treating them as zero.
 - Changed watch-created sleep records to mark only sleep as present, preserving authoritative Health Connect behavior without implying habit or hydration data.
+- Restored the bottom navigation's accepted real-width capsule silhouette with circular end caps while preserving its centered Home control, liquid-glass material, expansion, selected states, destinations, and safe-area position.
+- Refined Archive Hold cards with layered translucent depth, edge highlights, internal elevation, stronger control separation, and a more physical held state.
 
 ### Fixed
 
 - Prevented undoing the only habit completion in a newly created habit-only day from leaving a false empty daily record.
 - Prevented the Habit hold gesture from competing with Archive's pull-to-refresh gesture, and added keyboard, assistive-activation, reduced-motion, high-contrast, and reduced-transparency behavior.
+- Prevented completion ripples and haptics from appearing before the canonical habit record confirms the completed value, with a bounded recovery path if persistence is rejected.
+- Fixed all-complete review so selecting a completed habit exposes its existing **Mark incomplete** correction action.
+- Removed the non-uniform collapsed navigation-shell scaling that distorted the dock's circular end caps.
 - Preserved zero horizontal overflow for the Hold Deck and habit chooser at 360 x 800 and 412 x 915 phone viewports.
 
 ### Known issues and unfinished work

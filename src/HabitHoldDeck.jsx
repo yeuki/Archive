@@ -3,7 +3,8 @@ import { isDailyFieldRecorded } from "./dailyRecords.js";
 
 const HOLD_DURATION_MS = 620;
 const HOLD_CANCEL_DISTANCE = 14;
-const SUCCESS_PAUSE_MS = 520;
+const SUCCESS_PAUSE_MS = 680;
+const PERSISTENCE_CONFIRM_TIMEOUT_MS = 1800;
 const UNDO_NOTICE_MS = 5200;
 
 function localDateLabel(date) {
@@ -80,10 +81,13 @@ export default function HabitHoldDeck({ date, habits = [], entry, onSetCompletio
   const [reviewingCompleted, setReviewingCompleted] = useState(false);
   const [chooserOpen, setChooserOpen] = useState(false);
   const [holding, setHolding] = useState(false);
+  const [pendingCompletion, setPendingCompletion] = useState(null);
   const [successHabit, setSuccessHabit] = useState("");
+  const [successSequence, setSuccessSequence] = useState(0);
   const [notice, setNotice] = useState(null);
   const holdRef = useRef(null);
   const completionLockRef = useRef(false);
+  const persistenceTimerRef = useRef(0);
   const successTimerRef = useRef(0);
   const noticeTimerRef = useRef(0);
   const suppressPointerClickRef = useRef(false);
@@ -103,48 +107,33 @@ export default function HabitHoldDeck({ date, habits = [], entry, onSetCompletio
 
     if (
       !successHabit
+      && !pendingCompletion
       && !reviewingCompleted
       && completionMap[focusedHabit]
       && pendingHabits.length
     ) {
       setFocusedHabit(pendingHabits[0]);
     }
-  }, [completionMap, focusedHabit, habits, pendingHabits, reviewingCompleted, successHabit]);
+  }, [completionMap, focusedHabit, habits, pendingCompletion, pendingHabits, reviewingCompleted, successHabit]);
 
   useEffect(() => () => {
     window.clearTimeout(holdRef.current?.timer);
+    window.clearTimeout(persistenceTimerRef.current);
     window.clearTimeout(successTimerRef.current);
     window.clearTimeout(noticeTimerRef.current);
   }, []);
 
-  const cancelHold = () => {
-    if (holdRef.current?.timer) window.clearTimeout(holdRef.current.timer);
-    holdRef.current = null;
-    setHolding(false);
-  };
+  useEffect(() => {
+    if (!pendingCompletion || !completionMap[pendingCompletion.habit]) return;
 
-  const scheduleNoticeClear = () => {
-    window.clearTimeout(noticeTimerRef.current);
-    noticeTimerRef.current = window.setTimeout(() => setNotice(null), UNDO_NOTICE_MS);
-  };
-
-  const completeFocusedHabit = () => {
-    const habit = focusedHabit;
-    if (!habit || completionMapRef.current[habit] || successHabit || completionLockRef.current) return;
-
-    completionLockRef.current = true;
-    cancelHold();
+    const { habit, restore } = pendingCompletion;
+    window.clearTimeout(persistenceTimerRef.current);
+    setPendingCompletion(null);
     setSuccessHabit(habit);
-    setNotice({
-      habit,
-      restore: {
-        habitsRecorded: isDailyFieldRecorded(entry, "habits"),
-        habitPresent: Boolean(entry?.habits && Object.prototype.hasOwnProperty.call(entry.habits, habit)),
-        habitValue: Boolean(entry?.habits?.[habit]),
-      },
-    });
+    setSuccessSequence((current) => current + 1);
+    setNotice({ habit, restore });
     setReviewingCompleted(false);
-    onSetCompletion?.(date, habit, true);
+
     if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
       navigator.vibrate(12);
     }
@@ -160,10 +149,68 @@ export default function HabitHoldDeck({ date, habits = [], entry, onSetCompletio
       setReviewingCompleted(false);
       completionLockRef.current = false;
     }, SUCCESS_PAUSE_MS);
+  }, [completionMap, habits, pendingCompletion]);
+
+  const cancelHold = () => {
+    if (holdRef.current?.timer) window.clearTimeout(holdRef.current.timer);
+    holdRef.current = null;
+    setHolding(false);
+  };
+
+  const scheduleNoticeClear = () => {
+    window.clearTimeout(noticeTimerRef.current);
+    noticeTimerRef.current = window.setTimeout(() => setNotice(null), UNDO_NOTICE_MS);
+  };
+
+  const completeFocusedHabit = () => {
+    const habit = focusedHabit;
+    if (!habit || completionMapRef.current[habit] || pendingCompletion || successHabit || completionLockRef.current) return;
+
+    completionLockRef.current = true;
+    cancelHold();
+    const completionRequest = {
+      habit,
+      restore: {
+        habitsRecorded: isDailyFieldRecorded(entry, "habits"),
+        habitPresent: Boolean(entry?.habits && Object.prototype.hasOwnProperty.call(entry.habits, habit)),
+        habitValue: Boolean(entry?.habits?.[habit]),
+      },
+    };
+    setPendingCompletion(completionRequest);
+    setReviewingCompleted(false);
+
+    if (typeof onSetCompletion !== "function") {
+      setPendingCompletion(null);
+      completionLockRef.current = false;
+      return;
+    }
+
+    try {
+      const result = onSetCompletion(date, habit, true);
+      if (result && typeof result.catch === "function") {
+        result.catch(() => {
+          setPendingCompletion((current) => (current?.habit === habit ? null : current));
+          completionLockRef.current = false;
+        });
+      }
+    } catch {
+      setPendingCompletion(null);
+      completionLockRef.current = false;
+      return;
+    }
+
+    window.clearTimeout(persistenceTimerRef.current);
+    persistenceTimerRef.current = window.setTimeout(() => {
+      setPendingCompletion((current) => {
+        if (current?.habit !== habit) return current;
+        completionLockRef.current = false;
+        return null;
+      });
+    }, PERSISTENCE_CONFIRM_TIMEOUT_MS);
   };
 
   const startHold = (event) => {
-    if (!focusedHabit || completionMap[focusedHabit] || successHabit || completionLockRef.current) return;
+    if (!focusedHabit || completionMap[focusedHabit] || pendingCompletion || successHabit || completionLockRef.current) return;
     if (event.pointerType === "mouse" && event.button !== 0) return;
 
     suppressPointerClickRef.current = false;
@@ -224,8 +271,10 @@ export default function HabitHoldDeck({ date, habits = [], entry, onSetCompletio
 
   const markIncomplete = (habit, restore = null) => {
     if (!habit) return;
+    window.clearTimeout(persistenceTimerRef.current);
     window.clearTimeout(successTimerRef.current);
     window.clearTimeout(noticeTimerRef.current);
+    setPendingCompletion(null);
     setSuccessHabit("");
     completionLockRef.current = false;
     setNotice(null);
@@ -234,12 +283,19 @@ export default function HabitHoldDeck({ date, habits = [], entry, onSetCompletio
     onSetCompletion?.(date, habit, false, restore);
   };
 
-  const isAllComplete = Boolean(habits.length && pendingHabits.length === 0 && !successHabit);
+  const isAllComplete = Boolean(
+    habits.length
+    && pendingHabits.length === 0
+    && !reviewingCompleted
+    && !pendingCompletion
+    && !successHabit
+  );
   const focusedComplete = Boolean(completionMap[focusedHabit]);
   const focusedIndex = Math.max(0, habits.indexOf(focusedHabit));
   const nextPendingHabit = pendingHabits.find((habit) => habit !== focusedHabit) ?? "";
-  const shownHabit = successHabit || focusedHabit;
-  const shownComplete = Boolean(successHabit || focusedComplete);
+  const shownHabit = successHabit || pendingCompletion?.habit || focusedHabit;
+  const isPersisting = Boolean(pendingCompletion?.habit === shownHabit);
+  const shownComplete = Boolean(successHabit || (focusedComplete && !isPersisting));
 
   return (
     <section className="habit-focus-section" aria-labelledby="habit-focus-title" data-no-pull-refresh>
@@ -252,7 +308,7 @@ export default function HabitHoldDeck({ date, habits = [], entry, onSetCompletio
         <button
           className="habit-all-button"
           onClick={() => setChooserOpen(true)}
-          disabled={!habits.length}
+          disabled={!habits.length || isPersisting}
           aria-haspopup="dialog"
         >
           <span>All habits</span>
@@ -276,7 +332,7 @@ export default function HabitHoldDeck({ date, habits = [], entry, onSetCompletio
         </div>
       ) : (
         <>
-          <article className={`habit-focus-card ${successHabit ? "success" : ""} ${reviewingCompleted ? "reviewing" : ""}`}>
+          <article className={`habit-focus-card ${successHabit ? "success" : ""} ${isPersisting ? "persisting" : ""} ${reviewingCompleted ? "reviewing" : ""}`}>
             <div className="habit-focus-card-meta">
               <span>{shownComplete ? "Completed" : "Current habit"}</span>
               <strong>{focusedIndex + 1} of {habits.length}</strong>
@@ -284,12 +340,13 @@ export default function HabitHoldDeck({ date, habits = [], entry, onSetCompletio
             <h3>{shownHabit}</h3>
 
             <button
-              className={`habit-hold-control ${holding ? "holding" : ""} ${shownComplete ? "complete" : ""}`}
+              className={`habit-hold-control ${holding ? "holding" : ""} ${isPersisting ? "persisting" : ""} ${shownComplete ? "complete" : ""}`}
               type="button"
-              aria-label={shownComplete ? `${shownHabit} completed` : `Hold to complete ${shownHabit}`}
+              aria-label={shownComplete ? `${shownHabit} completed` : isPersisting ? `Saving ${shownHabit}` : `Hold to complete ${shownHabit}`}
               aria-describedby="habit-hold-instructions"
               aria-pressed={shownComplete}
-              disabled={shownComplete}
+              aria-busy={isPersisting}
+              disabled={shownComplete || isPersisting}
               style={{ "--habit-hold-duration": `${HOLD_DURATION_MS}ms` }}
               onPointerDown={startHold}
               onPointerMove={moveHold}
@@ -300,12 +357,19 @@ export default function HabitHoldDeck({ date, habits = [], entry, onSetCompletio
               onKeyDown={activateWithKeyboard}
               onContextMenu={(event) => event.preventDefault()}
             >
+              {successHabit && (
+                <span className="habit-success-effects" key={`${successHabit}-${successSequence}`} aria-hidden="true">
+                  <i className="habit-color-bloom" />
+                  <i className="habit-liquid-ripple habit-liquid-ripple-one" />
+                  <i className="habit-liquid-ripple habit-liquid-ripple-two" />
+                </span>
+              )}
               <svg viewBox="0 0 120 120" aria-hidden="true">
                 <circle className="habit-hold-track" cx="60" cy="60" r="54" pathLength="1" />
                 <circle className="habit-hold-progress" cx="60" cy="60" r="54" pathLength="1" />
               </svg>
               <span className="habit-hold-label" aria-hidden="true">
-                {shownComplete ? <b className="habit-hold-check">✓</b> : holding ? "Keep holding" : <>Hold to<br />complete</>}
+                {shownComplete ? <b className="habit-hold-check">✓</b> : isPersisting ? "Saving" : holding ? "Keep holding" : <>Hold to<br />complete</>}
               </span>
             </button>
             <span id="habit-hold-instructions" className="sr-only">
@@ -319,7 +383,7 @@ export default function HabitHoldDeck({ date, habits = [], entry, onSetCompletio
             )}
           </article>
 
-          {!successHabit && nextPendingHabit && (
+          {!pendingCompletion && !successHabit && nextPendingHabit && (
             <button className="habit-focus-peek" onClick={() => selectHabit(nextPendingHabit)}>
               <span><small>Up next</small><strong>{nextPendingHabit}</strong></span>
               <i aria-hidden="true">›</i>

@@ -85,3 +85,10 @@ This is a compact record of accepted and rejected product/technical directions. 
 - **Decision:** Allow habits, water, and sleep to be persisted independently. Today's habits use a focused hold-to-complete deck on the existing Habit page, with immediate save, ordered or direct selection, review, and exact undo.
 - **Rationale:** Habits are completed throughout the day, so requiring the user to submit hydration and sleep at the same time creates friction and can turn missing data into misleading zeroes.
 - **Consequence:** Every daily metric consumer must respect explicit field-presence metadata. The combined daily sheet remains available for full entry and historical editing, while habit completion no longer depends on it.
+
+## D-013 — Preserve true capsule geometry for bottom navigation
+
+- **Status:** Accepted
+- **Decision:** The liquid-glass navigation vessel uses real collapsed and expanded widths with fully circular end caps. Keep the centered Home control and existing expansion behavior, but do not non-uniformly scale one wide shell when that distorts its outer silhouette.
+- **Rationale:** The accepted pre-v0.12 dock and curated navigation references read as a calm floating capsule; horizontally compressing the wide raster made its ends elliptical and could appear scalloped or cradled.
+- **Consequence:** Navigation motion may animate the fixed floating vessel's width and position because preserving the recognized silhouette takes precedence over the later fixed-raster optimization. Icon and selection motion remain compositor-based.

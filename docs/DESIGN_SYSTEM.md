@@ -80,6 +80,7 @@ Do not repeat the same metric as a large hero, card headline, and navigation bad
 ### Navigation
 
 - Preserve the centered Home control and expanding Productivity/Health sides.
+- Preserve a true capsule outer vessel with fully circular end caps in collapsed and expanded states; do not non-uniformly scale the shell in a way that turns the end caps elliptical or introduces a cradle/scallop silhouette.
 - The bottom bar floats above content, respects safe areas, and uses a readable liquid-glass treatment.
 - Expansion, selection, and collapse share a smooth spring-like motion without shifting the underlying page layout.
 - Navigation actions remain reachable with one hand and cannot be hidden by the device gesture area.
