@@ -1,10 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Capacitor, registerPlugin } from "@capacitor/core";
-import { renderBodyMapSvg } from "./assets/bodymap.js";
 import pencilIcon from "./assets/pencil-icon.png";
 import HabitHoldDeck from "./HabitHoldDeck.jsx";
-import WorkoutMode from "./WorkoutMode.jsx";
 import { runArchiveTransition, useFlipLayout } from "./motion.js";
+import {
+  chartRevealKey,
+  createStatePersistence,
+  useChartReveal,
+  useEventCallback,
+} from "./runtimePerformance.js";
 import {
   hasAnyDailyField,
   isDailyFieldRecorded,
@@ -19,6 +23,11 @@ import {
   workoutLogFromSession,
   workoutSessionStats,
 } from "./workoutSession.js";
+
+const loadWorkoutMode = () => import("./WorkoutMode.jsx");
+const loadBodyMapVisual = () => import("./BodyMapVisual.jsx");
+const WorkoutMode = lazy(loadWorkoutMode);
+const BodyMapVisual = lazy(loadBodyMapVisual);
 
 const DAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"];
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -2367,14 +2376,6 @@ function loadInitialState() {
   };
 }
 
-function saveState(nextState) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(nextState));
-  } catch {
-    // The app can still run without persistence.
-  }
-}
-
 function loadGeminiApiKey() {
   try {
     return localStorage.getItem(GEMINI_KEY_STORAGE_KEY) ?? "";
@@ -4485,14 +4486,25 @@ function buildRecentDays(entries, count) {
 
 function useTrackerState() {
   const [state, setState] = useState(loadInitialState);
+  const stateRef = useRef(state);
+  const persistenceRef = useRef(null);
+  if (!persistenceRef.current) {
+    persistenceRef.current = createStatePersistence({ storageKey: STORAGE_KEY });
+  }
+  stateRef.current = state;
 
-  const updateState = (updater) => {
-    setState((current) => {
-      const next = typeof updater === "function" ? updater(current) : updater;
-      saveState(next);
-      return next;
-    });
-  };
+  useEffect(() => persistenceRef.current.attachLifecycle(), []);
+
+  const updateState = useCallback((updater, options = {}) => {
+    const current = stateRef.current;
+    const next = typeof updater === "function" ? updater(current) : updater;
+    if (Object.is(next, current)) return current;
+
+    stateRef.current = next;
+    setState(next);
+    persistenceRef.current.schedule(next, options);
+    return next;
+  }, []);
 
   return [state, updateState];
 }
@@ -4536,7 +4548,7 @@ function chartPoints(days, getValue, maxValue = 100) {
 }
 
 function AreaChart({ days, getValue, gradientId, label, maxValue = 100, targetValue = null, targetLabel = "", metricType = "neutral", valueSuffix = "" }) {
-  const points = chartPoints(days, getValue, maxValue);
+  const points = useMemo(() => chartPoints(days, getValue, maxValue), [days, getValue, maxValue]);
   const [activePointIndex, setActivePointIndex] = useState(null);
   const linePath = buildSmoothPath(points);
   const areaPath = points.length
@@ -4544,6 +4556,11 @@ function AreaChart({ days, getValue, gradientId, label, maxValue = 100, targetVa
     : "";
   const targetY = Number.isFinite(targetValue) ? chartY(targetValue, maxValue, 22, 170) : null;
   const activePoint = Number.isInteger(activePointIndex) ? points[activePointIndex] : null;
+  const revealChart = useChartReveal(chartRevealKey(
+    `area:${gradientId}`,
+    points.map((point) => point.value),
+    points.map((point) => point.day),
+  ));
   const selectNearestPoint = (event) => {
     if (!points.length) return;
     const bounds = event.currentTarget.getBoundingClientRect();
@@ -4561,7 +4578,7 @@ function AreaChart({ days, getValue, gradientId, label, maxValue = 100, targetVa
   return (
     <>
       <svg
-        className={`area-chart ${activePoint ? "is-scrubbing" : ""}`}
+        className={`area-chart ${revealChart ? "chart-reveal" : "chart-static"} ${activePoint ? "is-scrubbing" : ""}`}
         viewBox="0 0 320 190"
         role="img"
         aria-label={label}
@@ -4601,7 +4618,7 @@ function AreaChart({ days, getValue, gradientId, label, maxValue = 100, targetVa
           </>
         )}
         {linePath && <path className="line" d={linePath} pathLength="1" />}
-        {linePath && points.length > 1 && (
+        {revealChart && linePath && points.length > 1 && (
           <circle className="line-runner" r="4.5" aria-hidden="true">
             <animateMotion path={linePath} begin="80ms" dur="620ms" fill="freeze" />
             <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.12;0.82;1" begin="80ms" dur="700ms" fill="freeze" />
@@ -4639,8 +4656,9 @@ function AreaChart({ days, getValue, gradientId, label, maxValue = 100, targetVa
 }
 
 function BarChart({ values, labels, className = "bar-chart", metricType = "neutral" }) {
+  const revealChart = useChartReveal(chartRevealKey(`bars:${className}:${metricType}`, values, labels));
   return (
-    <div className={className}>
+    <div className={`${className} ${revealChart ? "chart-reveal" : "chart-static"}`}>
       {values.map((score, index) => {
         const realScore = Number.isFinite(score) ? Math.round(score) : null;
         const height = realScore ? clamp(realScore, 16, 96) : 16;
@@ -4870,7 +4888,11 @@ function BottomNav({ activePage, onPageChange }) {
     return null;
   };
   const [expandedGroup, setExpandedGroup] = useState(() => pageGroup(activePage));
+  const chromeRef = useRef(null);
   const navRef = useRef(null);
+  const navMotionTimerRef = useRef(0);
+  const glassFrameRef = useRef(0);
+  const glassPointRef = useRef({ x: 0, y: 0 });
   const groups = {
     productivity: [
       { page: "workout", label: "Workout", icon: "workout" },
@@ -4886,6 +4908,62 @@ function BottomNav({ activePage, onPageChange }) {
     ],
   };
   const activeGroup = pageGroup(activePage);
+
+  useEffect(() => {
+    const chrome = chromeRef.current;
+    if (!chrome) return undefined;
+    const shell = chrome.closest(".app-shell");
+    let frameId = 0;
+    let scrollSettleTimer = 0;
+    let lastPosition = Math.max(0, window.scrollY || document.documentElement.scrollTop || 0);
+
+    const updateChrome = () => {
+      frameId = 0;
+      const currentPosition = Math.max(0, window.scrollY || document.documentElement.scrollTop || 0);
+      const movement = currentPosition - lastPosition;
+      chrome.classList.add("is-scrolling");
+      if (currentPosition < 44 || movement < -8) {
+        chrome.classList.remove("chrome-compact");
+        shell?.classList.remove("chrome-compact");
+      }
+      if (currentPosition >= 44 && movement > 8) {
+        chrome.classList.add("chrome-compact");
+        shell?.classList.add("chrome-compact");
+      }
+      lastPosition = currentPosition;
+
+      window.clearTimeout(scrollSettleTimer);
+      scrollSettleTimer = window.setTimeout(() => chrome.classList.remove("is-scrolling"), 150);
+    };
+
+    const handleScroll = () => {
+      if (!frameId) frameId = window.requestAnimationFrame(updateChrome);
+    };
+
+    chrome.classList.remove("chrome-compact", "is-scrolling");
+    shell?.classList.remove("chrome-compact");
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      if (frameId) window.cancelAnimationFrame(frameId);
+      window.clearTimeout(scrollSettleTimer);
+      shell?.classList.remove("chrome-compact");
+    };
+  }, [activePage]);
+
+  useEffect(() => () => {
+    window.clearTimeout(navMotionTimerRef.current);
+    if (glassFrameRef.current) window.cancelAnimationFrame(glassFrameRef.current);
+  }, []);
+
+  const markNavMoving = () => {
+    const chrome = chromeRef.current;
+    if (!chrome) return;
+    chrome.classList.add("nav-moving");
+    window.clearTimeout(navMotionTimerRef.current);
+    navMotionTimerRef.current = window.setTimeout(() => chrome.classList.remove("nav-moving"), 560);
+  };
+
   useEffect(() => {
     const nav = navRef.current;
     if (!nav) return undefined;
@@ -4922,17 +5000,24 @@ function BottomNav({ activePage, onPageChange }) {
   }, [activePage, expandedGroup]);
 
   const updateGlassLight = (event) => {
-    const nav = navRef.current;
-    if (!nav) return;
-    const bounds = nav.querySelector(".nav-shell")?.getBoundingClientRect() || nav.getBoundingClientRect();
-    const x = Math.max(0, Math.min(100, ((event.clientX - bounds.left) / bounds.width) * 100));
-    const y = Math.max(0, Math.min(100, ((event.clientY - bounds.top) / bounds.height) * 100));
-    nav.style.setProperty("--glass-light-x", `${x}%`);
-    nav.style.setProperty("--glass-light-y", `${y}%`);
+    glassPointRef.current = { x: event.clientX, y: event.clientY };
+    if (glassFrameRef.current) return;
+    glassFrameRef.current = window.requestAnimationFrame(() => {
+      glassFrameRef.current = 0;
+      const nav = navRef.current;
+      if (!nav) return;
+      const bounds = nav.querySelector(".nav-shell")?.getBoundingClientRect() || nav.getBoundingClientRect();
+      const x = Math.max(0, Math.min(100, ((glassPointRef.current.x - bounds.left) / bounds.width) * 100));
+      const y = Math.max(0, Math.min(100, ((glassPointRef.current.y - bounds.top) / bounds.height) * 100));
+      nav.style.setProperty("--glass-light-x", `${x}%`);
+      nav.style.setProperty("--glass-light-y", `${y}%`);
+    });
   };
   const settleGlassLight = () => {
     const nav = navRef.current;
     if (!nav) return;
+    if (glassFrameRef.current) window.cancelAnimationFrame(glassFrameRef.current);
+    glassFrameRef.current = 0;
     nav.classList.remove("is-touching");
     nav.style.removeProperty("--glass-light-x");
     nav.style.removeProperty("--glass-light-y");
@@ -4942,10 +5027,12 @@ function BottomNav({ activePage, onPageChange }) {
     navRef.current?.classList.add("is-touching");
   };
   const selectPage = (page) => {
+    markNavMoving();
     setExpandedGroup(pageGroup(page));
     onPageChange(page);
   };
   const toggleGroup = (group) => {
+    markNavMoving();
     setExpandedGroup((current) => (current === group ? null : group));
   };
   const renderPageButton = ({ page, label, icon }, index) => {
@@ -4968,51 +5055,53 @@ function BottomNav({ activePage, onPageChange }) {
   };
 
   return (
-    <nav
-      ref={navRef}
-      className={`bottom-nav metric-${activePage} ${expandedGroup ? `expanded ${expandedGroup}` : "collapsed"}`}
-      aria-label="Primary"
-      onPointerMove={updateGlassLight}
-      onPointerDown={pressGlass}
-      onPointerUp={settleGlassLight}
-      onPointerCancel={settleGlassLight}
-      onPointerLeave={settleGlassLight}
-    >
-      <span className="nav-shell" aria-hidden="true">
-        <span className="nav-refraction" />
-        <span className="nav-specular" />
-        <span className="nav-caustic" />
-      </span>
-      <span className="nav-selection-lens" aria-hidden="true" />
-      <div className={`nav-group productivity ${expandedGroup === "productivity" ? "open" : ""}`}>
-        {groups.productivity.map(renderPageButton)}
+    <div ref={chromeRef} className="navigation-chrome">
+      <nav
+        ref={navRef}
+        className={`bottom-nav metric-${activePage} ${expandedGroup ? `expanded ${expandedGroup}` : "collapsed"}`}
+        aria-label="Primary"
+        onPointerMove={updateGlassLight}
+        onPointerDown={pressGlass}
+        onPointerUp={settleGlassLight}
+        onPointerCancel={settleGlassLight}
+        onPointerLeave={settleGlassLight}
+      >
+        <span className="nav-shell" aria-hidden="true">
+          <span className="nav-refraction" />
+          <span className="nav-specular" />
+          <span className="nav-caustic" />
+        </span>
+        <span className="nav-selection-lens" aria-hidden="true" />
+        <div className={`nav-group productivity ${expandedGroup === "productivity" ? "open" : ""}`}>
+          {groups.productivity.map(renderPageButton)}
+          <button
+            className={`nav-icon nav-category ${activeGroup === "productivity" ? "active" : ""}`}
+            aria-label="Productivity pages"
+            aria-expanded={expandedGroup === "productivity"}
+            onClick={() => toggleGroup("productivity")}
+          >
+            <NavIcon type="workout" />
+          </button>
+        </div>
         <button
-          className={`nav-icon nav-category ${activeGroup === "productivity" ? "active" : ""}`}
-          aria-label="Productivity pages"
-          aria-expanded={expandedGroup === "productivity"}
-          onClick={() => toggleGroup("productivity")}
-        >
-          <NavIcon type="workout" />
-        </button>
-      </div>
-      <button
-        className={`home-logo ${activePage === "home" ? "active" : ""}`}
-        aria-label="Home"
-        aria-current={activePage === "home" ? "page" : undefined}
-        onClick={() => selectPage("home")}
-      />
-      <div className={`nav-group health ${expandedGroup === "health" ? "open" : ""}`}>
-        <button
-          className={`nav-icon nav-category ${activeGroup === "health" ? "active" : ""}`}
-          aria-label="Health pages"
-          aria-expanded={expandedGroup === "health"}
-          onClick={() => toggleGroup("health")}
-        >
-          <NavIcon type="health" />
-        </button>
-        {groups.health.map(renderPageButton)}
-      </div>
-    </nav>
+          className={`home-logo ${activePage === "home" ? "active" : ""}`}
+          aria-label="Home"
+          aria-current={activePage === "home" ? "page" : undefined}
+          onClick={() => selectPage("home")}
+        />
+        <div className={`nav-group health ${expandedGroup === "health" ? "open" : ""}`}>
+          <button
+            className={`nav-icon nav-category ${activeGroup === "health" ? "active" : ""}`}
+            aria-label="Health pages"
+            aria-expanded={expandedGroup === "health"}
+            onClick={() => toggleGroup("health")}
+          >
+            <NavIcon type="health" />
+          </button>
+          {groups.health.map(renderPageButton)}
+        </div>
+      </nav>
+    </div>
   );
 }
 
@@ -6010,15 +6099,14 @@ function BodyMapPanel({ workout }) {
   const analysis = buildFocusAnalysis(workout);
   const values = bodyMapValuesFromAnalysis(analysis);
   const priorityRows = analysis.rows.slice(0, 4);
-  const svg = renderBodyMapSvg({
-    values,
-    title: `${analysis.aesthetic.shortName} muscle diagram`,
-  });
+  const title = `${analysis.aesthetic.shortName} muscle diagram`;
 
   return (
     <div className="panel bodymap-panel">
       <SectionTitle title="Muscle diagram" meta={analysis.aesthetic.shortName} />
-      <div className="bodymap-shell" dangerouslySetInnerHTML={{ __html: svg }} />
+      <Suspense fallback={<div className="bodymap-shell bodymap-loading" role="status" aria-label="Loading muscle diagram" />}>
+        <BodyMapVisual values={values} title={title} />
+      </Suspense>
       <div className="bodymap-legend">
         {priorityRows.map((row) => (
           <span key={row.muscle}>
@@ -6724,10 +6812,10 @@ function ExternalWorkoutHistorySession({ workout, workoutIndex, totalWorkouts })
 
 function WorkoutHistoryPanel({ workouts, connectedWorkouts = [] }) {
   const [query, setQuery] = useState("");
-  const historyWorkouts = combinedWorkoutHistory(workouts, connectedWorkouts);
-  const filteredWorkouts = [...historyWorkouts]
+  const historyWorkouts = useMemo(() => combinedWorkoutHistory(workouts, connectedWorkouts), [connectedWorkouts, workouts]);
+  const filteredWorkouts = useMemo(() => [...historyWorkouts]
     .sort((a, b) => b.date.localeCompare(a.date))
-    .filter((workout) => `${historyWorkoutTitle(workout)} ${workout.notes} ${workout.date} ${workout.source}`.toLowerCase().includes(query.trim().toLowerCase()));
+    .filter((workout) => `${historyWorkoutTitle(workout)} ${workout.notes} ${workout.date} ${workout.source}`.toLowerCase().includes(query.trim().toLowerCase())), [historyWorkouts, query]);
 
   return (
     <div className="panel workout-history-panel">
@@ -6754,10 +6842,12 @@ function WorkoutHistoryPanel({ workouts, connectedWorkouts = [] }) {
 }
 
 function WorkoutHistoryPage({ workout, watchData, onWorkoutChange }) {
-  const data = normalizeWorkoutState(workout);
-  const connectedWorkouts = normalizeWatchData(watchData).workouts;
-  const historyWorkouts = combinedWorkoutHistory(data.workouts, connectedWorkouts);
-  const sortedWorkouts = [...historyWorkouts].sort((a, b) => b.date.localeCompare(a.date));
+  const data = workout;
+  const connectedWorkouts = useMemo(() => normalizeWatchData(watchData).workouts, [watchData]);
+  const sortedWorkouts = useMemo(() => (
+    combinedWorkoutHistory(data.workouts, connectedWorkouts).sort((a, b) => b.date.localeCompare(a.date))
+  ), [connectedWorkouts, data.workouts]);
+  const historyWorkouts = sortedWorkouts;
   const latestWorkout = sortedWorkouts[0] ?? null;
   const now = new Date();
   const today = dateKey(now);
@@ -7272,18 +7362,30 @@ function WorkoutSettingsView({ workout, routine, workoutActions, onSetSchedule, 
 }
 
 function WorkoutPage({ workout, onWorkoutChange, onAdd, onBackup, modules, moduleContext, onRemoveModule, onEditModule, onReorderModule }) {
-  const data = normalizeWorkoutState(workout);
-  const selectedRoutine = data.routines.find((routine) => routine.id === data.selectedRoutineId) ?? data.routines[0];
+  const data = workout;
+  const selectedRoutine = useMemo(() => (
+    data.routines.find((routine) => routine.id === data.selectedRoutineId) ?? data.routines[0]
+  ), [data.routines, data.selectedRoutineId]);
   const activeSession = data.activeSession;
   const [workoutModeOpen, setWorkoutModeOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const scheduledRoutine = scheduledRoutineForDay(data);
-  const nextWorkout = nextScheduledWorkout(data);
+  const scheduledRoutine = useMemo(() => scheduledRoutineForDay(data), [data.routines, data.schedule]);
+  const nextWorkout = useMemo(() => nextScheduledWorkout(data), [data.routines, data.schedule]);
   const todayRoutine = scheduledRoutine ?? selectedRoutine;
   const heroRoutine = scheduledRoutine ?? nextWorkout?.routine ?? selectedRoutine;
-  const heroScore = heroRoutine ? routineScore(heroRoutine, data.exercises) : null;
+  const heroScore = useMemo(() => (
+    heroRoutine ? routineScore(heroRoutine, data.exercises) : null
+  ), [data.exercises, heroRoutine]);
   const activeSessionStats = activeSession ? workoutSessionStats(activeSession) : null;
-  const focusAnalysis = buildFocusAnalysis(data);
+  const focusAnalysis = useMemo(() => buildFocusAnalysis(data), [
+    data.equipmentProfileId,
+    data.exercises,
+    data.routines,
+    data.schedule,
+    data.selectedAestheticId,
+    data.selectedRoutineId,
+    data.workouts,
+  ]);
   const equipmentProfile = EQUIPMENT_PROFILES.find((profile) => profile.id === data.equipmentProfileId) ?? EQUIPMENT_PROFILES[0];
   const heroScheduleLabel = scheduledRoutine
     ? "Scheduled today"
@@ -7300,6 +7402,19 @@ function WorkoutPage({ workout, onWorkoutChange, onAdd, onBackup, modules, modul
   useEffect(() => {
     if (!activeSession) setWorkoutModeOpen(false);
   }, [activeSession?.id]);
+
+  useEffect(() => {
+    const preload = () => {
+      loadWorkoutMode();
+      if (modules.some((module) => module.moduleId === "workout-muscle-diagram")) loadBodyMapVisual();
+    };
+    if (typeof window.requestIdleCallback === "function") {
+      const handle = window.requestIdleCallback(preload, { timeout: 900 });
+      return () => window.cancelIdleCallback(handle);
+    }
+    const handle = window.setTimeout(preload, 180);
+    return () => window.clearTimeout(handle);
+  }, [modules]);
 
   const updateRoutine = (nextRoutine) => {
     onWorkoutChange((current) => ({
@@ -7354,7 +7469,7 @@ function WorkoutPage({ workout, onWorkoutChange, onAdd, onBackup, modules, modul
     }));
   };
 
-  const updateActiveSession = (updater) => {
+  const updateActiveSession = (updater, options = {}) => {
     onWorkoutChange((current) => ({
       ...current,
       activeSession: normalizeActiveWorkoutSession(
@@ -7362,7 +7477,10 @@ function WorkoutPage({ workout, onWorkoutChange, onAdd, onBackup, modules, modul
           ? updater(normalizeActiveWorkoutSession(current.activeSession))
           : updater,
       ),
-    }));
+    }), {
+      activeSessionOnly: true,
+      immediate: options.immediate !== false,
+    });
   };
 
   const saveWorkout = (session) => {
@@ -7379,12 +7497,12 @@ function WorkoutPage({ workout, onWorkoutChange, onAdd, onBackup, modules, modul
             normalizeWorkoutLog(workoutLog, current.exercises, current.routines, current.workouts.length),
           ].sort((a, b) => a.date.localeCompare(b.date));
       return { ...current, workouts, activeSession: null };
-    });
+    }, { immediate: true });
     setWorkoutModeOpen(false);
   };
 
   const discardWorkout = () => {
-    onWorkoutChange((current) => ({ ...current, activeSession: null }));
+    onWorkoutChange((current) => ({ ...current, activeSession: null }), { immediate: true });
     setWorkoutModeOpen(false);
   };
 
@@ -7400,20 +7518,31 @@ function WorkoutPage({ workout, onWorkoutChange, onAdd, onBackup, modules, modul
         ...current,
         selectedRoutineId: routine.id,
         activeSession: session,
-      }));
+      }), { immediate: true });
       setSettingsOpen(false);
       setWorkoutModeOpen(true);
     }, { kind: "workout-mode", direction: "open" });
   };
 
-  const workoutActions = {
-    selectRoutine,
-    updateRoutine,
-    createRoutine,
-    addExercise,
-    setAesthetic,
-    setEquipmentProfile,
-  };
+  const selectRoutineAction = useEventCallback(selectRoutine);
+  const updateRoutineAction = useEventCallback(updateRoutine);
+  const createRoutineAction = useEventCallback(createRoutine);
+  const addExerciseAction = useEventCallback(addExercise);
+  const setScheduleAction = useEventCallback(setSchedule);
+  const setAestheticAction = useEventCallback(setAesthetic);
+  const setEquipmentProfileAction = useEventCallback(setEquipmentProfile);
+  const workoutActions = useMemo(() => ({
+    selectRoutine: selectRoutineAction,
+    updateRoutine: updateRoutineAction,
+    createRoutine: createRoutineAction,
+    addExercise: addExerciseAction,
+    setAesthetic: setAestheticAction,
+    setEquipmentProfile: setEquipmentProfileAction,
+  }), [addExerciseAction, createRoutineAction, selectRoutineAction, setAestheticAction, setEquipmentProfileAction, updateRoutineAction]);
+  const workoutModuleContext = useMemo(() => ({
+    ...moduleContext,
+    workoutActions,
+  }), [moduleContext, workoutActions]);
 
   return (
     <div className="screen canvas-screen workout-canvas-screen">
@@ -7457,7 +7586,7 @@ function WorkoutPage({ workout, onWorkoutChange, onAdd, onBackup, modules, modul
         meta={focusAnalysis.aesthetic.shortName}
         className="workout-focus-section"
       >
-        <BuildFocusPanel workout={data} showHeading={false} />
+        <MemoBuildFocusPanel workout={moduleContext.workout} showHeading={false} />
       </PageSection>
 
       <PageSection
@@ -7475,9 +7604,9 @@ function WorkoutPage({ workout, onWorkoutChange, onAdd, onBackup, modules, modul
         />
       </PageSection>
 
-      <PinnedModulesSection
+      <MemoPinnedModulesSection
         modules={modules}
-        context={{ ...moduleContext, workout: data, workoutActions }}
+        context={workoutModuleContext}
         onCustomize={onAdd}
         onRemoveModule={onRemoveModule}
         onEditModule={onEditModule}
@@ -7488,21 +7617,23 @@ function WorkoutPage({ workout, onWorkoutChange, onAdd, onBackup, modules, modul
           workout={data}
           routine={selectedRoutine}
           workoutActions={workoutActions}
-          onSetSchedule={setSchedule}
-          onSetAesthetic={setAesthetic}
-          onSetEquipmentProfile={setEquipmentProfile}
+          onSetSchedule={setScheduleAction}
+          onSetAesthetic={setAestheticAction}
+          onSetEquipmentProfile={setEquipmentProfileAction}
           onClose={() => runArchiveTransition(() => setSettingsOpen(false), { kind: "overlay", direction: "close" })}
         />
       )}
       {workoutModeOpen && activeSession && (
-        <WorkoutMode
-          session={activeSession}
-          exercises={data.exercises}
-          onChange={updateActiveSession}
-          onLeave={() => setWorkoutModeOpen(false)}
-          onFinish={saveWorkout}
-          onDiscard={discardWorkout}
-        />
+        <Suspense fallback={<div className="workout-mode-loading" role="status" aria-label="Opening Workout Mode" />}>
+          <WorkoutMode
+            session={activeSession}
+            exercises={data.exercises}
+            onChange={updateActiveSession}
+            onLeave={() => setWorkoutModeOpen(false)}
+            onFinish={saveWorkout}
+            onDiscard={discardWorkout}
+          />
+        </Suspense>
       )}
     </div>
   );
@@ -7603,9 +7734,9 @@ function SettingsPage({
   onUpdateAISettings,
   onUpdateGeminiApiKey,
 }) {
-  const normalizedGoals = normalizeGoals(goals);
-  const normalizedHealth = normalizeConnectedHealth(connectedHealth);
-  const normalizedAI = normalizeAISettings(aiSettings);
+  const normalizedGoals = useMemo(() => normalizeGoals(goals), [goals]);
+  const normalizedHealth = useMemo(() => normalizeConnectedHealth(connectedHealth), [connectedHealth]);
+  const normalizedAI = useMemo(() => normalizeAISettings(aiSettings), [aiSettings]);
   const healthStatus = connectedHealthStatusLabel(normalizedHealth);
 
   return (
@@ -7686,8 +7817,8 @@ function ConnectedHealthPanel({
   onRequestPermissions,
 }) {
   const [busyAction, setBusyAction] = useState("");
-  const settings = normalizeConnectedHealth(connectedHealth);
-  const data = normalizeWatchData(watchData);
+  const settings = useMemo(() => normalizeConnectedHealth(connectedHealth), [connectedHealth]);
+  const data = useMemo(() => normalizeWatchData(watchData), [watchData]);
   const enabledMetrics = WATCH_METRIC_DEFINITIONS.filter((metric) => settings.metrics[metric.id]);
   const statusLabel = connectedHealthStatusLabel(settings);
   const requestedPermissionCount = settings.requestedPermissions.length || WATCH_METRIC_DEFINITIONS.length;
@@ -8578,8 +8709,9 @@ const MODULES = [
 ];
 
 function ModuleBars({ values, labels, metricType = "neutral" }) {
+  const revealChart = useChartReveal(chartRevealKey(`module-bars:${metricType}`, values, labels));
   return (
-    <div className="module-bars" style={{ gridTemplateColumns: `repeat(${values.length}, 1fr)` }}>
+    <div className={`module-bars ${revealChart ? "chart-reveal" : "chart-static"}`} style={{ gridTemplateColumns: `repeat(${values.length}, 1fr)` }}>
       {values.map((value, index) => {
         const score = Number.isFinite(value) ? Math.round(value) : 0;
         return (
@@ -8614,10 +8746,11 @@ function VariableAreaChart({ values, labels, gradientId, label, maxValue = 100, 
     ? `${linePath} L${points[points.length - 1].x} ${bottom} L${points[0].x} ${bottom} Z`
     : "";
   const targetY = Number.isFinite(targetValue) ? chartY(targetValue, scaleMax, top, bottom) : null;
+  const revealChart = useChartReveal(chartRevealKey(`variable-area:${gradientId}`, values, labels));
 
   return (
     <>
-      <svg className="area-chart" viewBox="0 0 320 170" role="img" aria-label={label}>
+      <svg className={`area-chart ${revealChart ? "chart-reveal" : "chart-static"}`} viewBox="0 0 320 170" role="img" aria-label={label}>
         <defs>
           <linearGradient id={gradientId} x1="0" y1={bottom} x2="0" y2={top} gradientUnits="userSpaceOnUse">
             <stop offset="0" stopColor="#ffffff" />
@@ -8636,7 +8769,7 @@ function VariableAreaChart({ values, labels, gradientId, label, maxValue = 100, 
           </>
         )}
         {linePath && <path className="line" d={linePath} pathLength="1" />}
-        {linePath && points.length > 1 && (
+        {revealChart && linePath && points.length > 1 && (
           <circle className="line-runner" r="4.5" aria-hidden="true">
             <animateMotion path={linePath} begin="80ms" dur="620ms" fill="freeze" />
             <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.12;0.82;1" begin="80ms" dur="700ms" fill="freeze" />
@@ -9816,6 +9949,20 @@ function PullRefreshIndicator({ state, message }) {
   );
 }
 
+const MemoBottomNav = memo(BottomNav);
+const MemoBuildFocusPanel = memo(BuildFocusPanel);
+const MemoPinnedModulesSection = memo(PinnedModulesSection);
+const MemoHomePage = memo(HomePage);
+const MemoWorkoutPage = memo(WorkoutPage);
+const MemoWorkoutHistoryPage = memo(WorkoutHistoryPage);
+const MemoHabitPage = memo(HabitPage);
+const MemoWaterPage = memo(WaterPage);
+const MemoSleepPage = memo(SleepPage);
+const MemoStatsPage = memo(StatsPage);
+const MemoCoachPage = memo(CoachPage);
+const MemoSettingsPage = memo(SettingsPage);
+const MemoPullRefreshIndicator = memo(PullRefreshIndicator);
+
 export {
   applyCoachActionsToWorkout,
   buildFocusAnalysis,
@@ -9837,7 +9984,6 @@ export default function App() {
   const [state, setTrackerState] = useTrackerState();
   const [activePage, setActivePage] = useState("home");
   const [pageMotion, setPageMotion] = useState("center");
-  const [chromeCompact, setChromeCompact] = useState(false);
   const [choiceOpen, setChoiceOpen] = useState(false);
   const [backupOpen, setBackupOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -9855,12 +10001,12 @@ export default function App() {
   const importInputRef = useRef(null);
   const appShellRef = useRef(null);
   const launchScreenRef = useRef(null);
-  const lastScrollPosition = useRef(0);
   const latestStateRef = useRef(state);
   const healthSyncInFlightRef = useRef(null);
   const launchSyncPromiseRef = useRef(null);
   const pullRefreshActionRef = useRef(null);
   const pullRefreshBlockedRef = useRef(true);
+  const usesNativePageMotion = typeof document !== "undefined" && typeof document.startViewTransition === "function";
   latestStateRef.current = state;
   pullRefreshBlockedRef.current = launchPhase !== "ready"
     || choiceOpen
@@ -9871,18 +10017,44 @@ export default function App() {
     || Boolean(editingModule)
     || Boolean(editingHabit);
   const weekDays = useMemo(() => buildWeek(state.entries), [state.entries]);
-  const trackedHabitNames = (state.trackedHabits ?? state.habitNames).filter((habit) => state.habitNames.includes(habit));
-  const goals = normalizeGoals(state.goals);
-  const aiSettings = normalizeAISettings(state.aiSettings);
-  const connectedHealth = normalizeConnectedHealth(state.connectedHealth);
-  const watchData = normalizeWatchData(state.watchData);
-  const pageModules = normalizePageModules(state.pageModules);
-  const moduleTemplates = normalizeModuleTemplates(state.moduleTemplates);
-  const coachAnalytics = useMemo(() => buildCoachAnalytics(state), [state]);
-  const editedModuleDefinition = editingModule ? MODULES.find((module) => module.id === editingModule.moduleId) : null;
-  const editedModuleSettings = editingModule?.source === "template"
-    ? moduleTemplates[editingModule.moduleId]
-    : (pageModules[editingModule?.page] ?? []).find((module) => module.instanceId === editingModule?.instanceId)?.settings;
+  const trackedHabitNames = useMemo(() => (
+    (state.trackedHabits ?? state.habitNames).filter((habit) => state.habitNames.includes(habit))
+  ), [state.habitNames, state.trackedHabits]);
+  const goals = useMemo(() => normalizeGoals(state.goals), [state.goals]);
+  const aiSettings = useMemo(() => normalizeAISettings(state.aiSettings), [state.aiSettings]);
+  const connectedHealth = useMemo(() => normalizeConnectedHealth(state.connectedHealth), [state.connectedHealth]);
+  const watchData = useMemo(() => normalizeWatchData(state.watchData), [state.watchData]);
+  const pageModules = useMemo(() => normalizePageModules(state.pageModules), [state.pageModules]);
+  const moduleTemplates = useMemo(() => normalizeModuleTemplates(state.moduleTemplates), [state.moduleTemplates]);
+  const analyticalWorkout = useMemo(() => ({
+    ...state.workout,
+    activeSession: null,
+  }), [
+    state.workout.equipmentProfileId,
+    state.workout.exercises,
+    state.workout.routines,
+    state.workout.schedule,
+    state.workout.selectedAestheticId,
+    state.workout.selectedRoutineId,
+    state.workout.workouts,
+  ]);
+  const coachAnalytics = useMemo(() => buildCoachAnalytics({
+    entries: state.entries,
+    habitNames: state.habitNames,
+    trackedHabits: state.trackedHabits,
+    goals,
+    workout: analyticalWorkout,
+    connectedHealth,
+    watchData,
+  }), [state.entries, state.habitNames, state.trackedHabits, goals, analyticalWorkout, connectedHealth, watchData]);
+  const editedModuleDefinition = useMemo(() => (
+    editingModule ? MODULES.find((module) => module.id === editingModule.moduleId) : null
+  ), [editingModule]);
+  const editedModuleSettings = useMemo(() => (
+    editingModule?.source === "template"
+      ? moduleTemplates[editingModule.moduleId]
+      : (pageModules[editingModule?.page] ?? []).find((module) => module.instanceId === editingModule?.instanceId)?.settings
+  ), [editingModule, moduleTemplates, pageModules]);
   const moduleContext = useMemo(() => ({
     entries: state.entries,
     habitNames: trackedHabitNames,
@@ -9890,52 +10062,18 @@ export default function App() {
     trackedHabits: trackedHabitNames,
     goals,
     weekDays,
-    workout: state.workout,
+    workout: analyticalWorkout,
     connectedHealth,
     watchData,
-  }), [state.entries, state.habitNames, trackedHabitNames, goals, weekDays, state.workout, connectedHealth, watchData]);
+  }), [state.entries, state.habitNames, trackedHabitNames, goals, weekDays, analyticalWorkout, connectedHealth, watchData]);
 
   useEffect(() => {
-    let frameId = 0;
-
-    const updateChrome = () => {
-      frameId = 0;
-      const currentPosition = Math.max(0, window.scrollY || document.documentElement.scrollTop || 0);
-      const movement = currentPosition - lastScrollPosition.current;
-
-      if (currentPosition < 44) {
-        setChromeCompact(false);
-      } else if (movement > 8) {
-        setChromeCompact(true);
-      } else if (movement < -8) {
-        setChromeCompact(false);
-      }
-
-      lastScrollPosition.current = currentPosition;
-    };
-
-    const handleScroll = () => {
-      if (!frameId) frameId = window.requestAnimationFrame(updateChrome);
-    };
-
-    lastScrollPosition.current = Math.max(0, window.scrollY || 0);
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => {
-      window.removeEventListener("scroll", handleScroll);
-      if (frameId) window.cancelAnimationFrame(frameId);
-    };
-  }, []);
-
-  useEffect(() => {
-    setChromeCompact(false);
-    lastScrollPosition.current = 0;
     window.scrollTo({ top: 0, behavior: "auto" });
   }, [activePage]);
 
   const changeActivePage = (nextPage) => {
     if (activePage === nextPage) {
       setPageMotion("center");
-      setChromeCompact(false);
       window.scrollTo({ top: 0, behavior: "smooth" });
       return;
     }
@@ -10027,7 +10165,7 @@ export default function App() {
     try {
       const text = await file.text();
       const importedState = parseBackupPayload(JSON.parse(text));
-      setTrackerState(importedState);
+      setTrackerState(importedState, { immediate: true });
       setChoiceOpen(false);
       setBackupOpen(false);
       showBackupNotice("Backup imported.");
@@ -10754,15 +10892,22 @@ export default function App() {
     saveGeminiApiKey(nextKey);
   };
 
-  const updateWorkoutData = (updater) => {
+  const updateWorkoutData = (updater, options = {}) => {
     setTrackerState((current) => {
-      const currentWorkout = normalizeWorkoutState(current.workout);
+      const currentWorkout = options.activeSessionOnly
+        ? current.workout
+        : normalizeWorkoutState(current.workout);
       const nextWorkout = typeof updater === "function" ? updater(currentWorkout) : updater;
       return {
         ...current,
-        workout: normalizeWorkoutState(nextWorkout),
+        workout: options.activeSessionOnly
+          ? {
+              ...nextWorkout,
+              activeSession: normalizeActiveWorkoutSession(nextWorkout.activeSession),
+            }
+          : normalizeWorkoutState(nextWorkout),
       };
-    });
+    }, { immediate: Boolean(options.immediate) });
   };
 
   const applyCoachProposal = (proposal) => {
@@ -10908,30 +11053,54 @@ export default function App() {
     }, "close");
   };
 
+  const navigatePage = useEventCallback(changeActivePage);
+  const addChoiceAction = useEventCallback(openAddChoice);
+  const modulePickerAction = useEventCallback(openModulePicker);
+  const backupAction = useEventCallback(openBackupChoice);
+  const historyAction = useEventCallback(openHistory);
+  const recordDateAction = useEventCallback(openRecordForDate);
+  const editPageModuleAction = useEventCallback(openPageModuleEditor);
+  const removePageModuleAction = useEventCallback(removeModuleFromCurrentPage);
+  const reorderPageModuleAction = useEventCallback(reorderModuleOnCurrentPage);
+  const workoutChangeAction = useEventCallback(updateWorkoutData);
+  const habitCompletionAction = useEventCallback(setHabitCompletion);
+  const toggleHabitAction = useEventCallback(toggleHabitTracking);
+  const renameHabitAction = useEventCallback((habit) => transitionOverlay(() => setEditingHabit(habit)));
+  const reorderHabitAction = useEventCallback(reorderHabit);
+  const coachMessagesAction = useEventCallback(saveCoachMessages);
+  const coachProposalAction = useEventCallback(applyCoachProposal);
+  const goalsAction = useEventCallback(updateGoals);
+  const aiSettingsAction = useEventCallback(updateAISettings);
+  const geminiKeyAction = useEventCallback(updateGeminiApiKey);
+  const connectedHealthAction = useEventCallback(updateConnectedHealth);
+  const checkConnectedHealthAction = useEventCallback(checkConnectedHealth);
+  const openConnectedHealthAction = useEventCallback(openConnectedHealthSettings);
+  const requestConnectedHealthAction = useEventCallback(requestConnectedHealthPermissions);
+
   const pages = {
-    workout: <WorkoutPage workout={state.workout} onWorkoutChange={updateWorkoutData} onAdd={openModulePicker} onBackup={openBackupChoice} modules={pageModules.workout} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
-    workoutHistory: <WorkoutHistoryPage workout={state.workout} watchData={watchData} onWorkoutChange={updateWorkoutData} />,
-    home: <HomePage weekDays={weekDays} habitNames={trackedHabitNames} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.home} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
-    habit: <HabitPage weekDays={weekDays} habitNames={state.habitNames} trackedHabits={trackedHabitNames} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.habit} moduleContext={moduleContext} onSetHabitCompletion={setHabitCompletion} onToggleHabitTracking={toggleHabitTracking} onRenameHabit={(habit) => transitionOverlay(() => setEditingHabit(habit))} onReorderHabit={reorderHabit} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
-    water: <WaterPage weekDays={weekDays} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.water} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
-    sleep: <SleepPage weekDays={weekDays} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.sleep} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
-    stats: <StatsPage entries={state.entries} habitNames={trackedHabitNames} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onBackup={openBackupChoice} onHistory={openHistory} onEditDate={openRecordForDate} modules={pageModules.stats} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
-    coach: <CoachPage analytics={coachAnalytics} workout={state.workout} aiSettings={aiSettings} geminiApiKey={geminiApiKey} coachMessages={state.coachMessages} onSaveMessages={saveCoachMessages} onApplyProposal={applyCoachProposal} />,
-    settings: <SettingsPage goals={goals} onUpdateGoals={updateGoals} aiSettings={aiSettings} geminiApiKey={geminiApiKey} connectedHealth={connectedHealth} watchData={watchData} onUpdateConnectedHealth={updateConnectedHealth} onCheckConnectedHealth={checkConnectedHealth} onOpenConnectedHealthSettings={openConnectedHealthSettings} onRequestConnectedHealthPermissions={requestConnectedHealthPermissions} onUpdateAISettings={updateAISettings} onUpdateGeminiApiKey={updateGeminiApiKey} />,
+    workout: <MemoWorkoutPage workout={state.workout} onWorkoutChange={workoutChangeAction} onAdd={modulePickerAction} onBackup={backupAction} modules={pageModules.workout} moduleContext={moduleContext} onRemoveModule={removePageModuleAction} onEditModule={editPageModuleAction} onReorderModule={reorderPageModuleAction} />,
+    workoutHistory: <MemoWorkoutHistoryPage workout={state.workout} watchData={watchData} onWorkoutChange={workoutChangeAction} />,
+    home: <MemoHomePage weekDays={weekDays} habitNames={trackedHabitNames} goals={goals} onAdd={addChoiceAction} onCustomize={modulePickerAction} onBackup={backupAction} onHistory={historyAction} modules={pageModules.home} moduleContext={moduleContext} onRemoveModule={removePageModuleAction} onEditModule={editPageModuleAction} onReorderModule={reorderPageModuleAction} />,
+    habit: <MemoHabitPage weekDays={weekDays} habitNames={state.habitNames} trackedHabits={trackedHabitNames} goals={goals} onAdd={addChoiceAction} onCustomize={modulePickerAction} onBackup={backupAction} onHistory={historyAction} modules={pageModules.habit} moduleContext={moduleContext} onSetHabitCompletion={habitCompletionAction} onToggleHabitTracking={toggleHabitAction} onRenameHabit={renameHabitAction} onReorderHabit={reorderHabitAction} onRemoveModule={removePageModuleAction} onEditModule={editPageModuleAction} onReorderModule={reorderPageModuleAction} />,
+    water: <MemoWaterPage weekDays={weekDays} goals={goals} onAdd={addChoiceAction} onCustomize={modulePickerAction} onBackup={backupAction} onHistory={historyAction} modules={pageModules.water} moduleContext={moduleContext} onRemoveModule={removePageModuleAction} onEditModule={editPageModuleAction} onReorderModule={reorderPageModuleAction} />,
+    sleep: <MemoSleepPage weekDays={weekDays} goals={goals} onAdd={addChoiceAction} onCustomize={modulePickerAction} onBackup={backupAction} onHistory={historyAction} modules={pageModules.sleep} moduleContext={moduleContext} onRemoveModule={removePageModuleAction} onEditModule={editPageModuleAction} onReorderModule={reorderPageModuleAction} />,
+    stats: <MemoStatsPage entries={state.entries} habitNames={trackedHabitNames} goals={goals} onAdd={addChoiceAction} onCustomize={modulePickerAction} onBackup={backupAction} onHistory={historyAction} onEditDate={recordDateAction} modules={pageModules.stats} moduleContext={moduleContext} onRemoveModule={removePageModuleAction} onEditModule={editPageModuleAction} onReorderModule={reorderPageModuleAction} />,
+    coach: <MemoCoachPage analytics={coachAnalytics} workout={state.workout} aiSettings={aiSettings} geminiApiKey={geminiApiKey} coachMessages={state.coachMessages} onSaveMessages={coachMessagesAction} onApplyProposal={coachProposalAction} />,
+    settings: <MemoSettingsPage goals={goals} onUpdateGoals={goalsAction} aiSettings={aiSettings} geminiApiKey={geminiApiKey} connectedHealth={connectedHealth} watchData={watchData} onUpdateConnectedHealth={connectedHealthAction} onCheckConnectedHealth={checkConnectedHealthAction} onOpenConnectedHealthSettings={openConnectedHealthAction} onRequestConnectedHealthPermissions={requestConnectedHealthAction} onUpdateAISettings={aiSettingsAction} onUpdateGeminiApiKey={geminiKeyAction} />,
   };
 
   return (
     <>
       <main
         ref={appShellRef}
-        className={`app-shell ${chromeCompact ? "chrome-compact" : ""}`}
+        className="app-shell"
         aria-hidden={launchPhase !== "ready" ? "true" : undefined}
       >
-        <PullRefreshIndicator state={pullRefreshState} message={pullRefreshMessage} />
-        <div className={`page-stage page-${pageMotion} metric-${activePage}`} key={activePage}>
+        <MemoPullRefreshIndicator state={pullRefreshState} message={pullRefreshMessage} />
+        <div className={`page-stage page-${pageMotion} metric-${activePage} ${usesNativePageMotion ? "native-page-motion" : "css-page-motion"}`} key={activePage}>
           {pages[activePage]}
         </div>
-        <BottomNav activePage={activePage} onPageChange={changeActivePage} />
+        <MemoBottomNav activePage={activePage} onPageChange={navigatePage} />
         <input
           ref={importInputRef}
           className="backup-file-input"

@@ -99,3 +99,10 @@ This is a compact record of accepted and rejected product/technical directions. 
 - **Decision:** Import completed exercise sessions through stable Health Connect as read-only external workouts, preserve every reliably supplied field, and present them alongside Archive workouts without copying them into the manual workout store.
 - **Rationale:** Garmin and other providers can supply useful run and activity records, but Health Connect does not guarantee Archive's routine/exercise/set schema. Honest source attribution and nullable fields preserve trust while allowing the real provider contract to be measured.
 - **Consequence:** Imported sessions may mark a Workout History day as active, but cannot complete a scheduled Archive routine by fuzzy matching, affect Workout Mode, or fabricate weights, sets, routes, or exercises. Direct Garmin and experimental Health Connect APIs remain separate future decisions.
+
+## D-015 — Keep expensive work outside direct manipulation frames
+
+- **Status:** Accepted
+- **Decision:** Coalesce ordinary whole-state persistence into idle work, isolate scroll chrome from root React state, memoize derived domains by their real source slices, lazy-load coherent heavy features, and let one coordinated transition explain a page change.
+- **Rationale:** Added animation cannot hide main-thread serialization, broad rerenders, repeated normalization, or live blur repainting. Smoothness comes from completing less work inside each interaction frame while retaining intentional feedback.
+- **Consequence:** Backup imports and meaningful Workout Mode boundaries still flush immediately; in-progress wheel adjustments can wait for the next idle/lifecycle/durable boundary. Liquid glass keeps its accepted static identity, but live backdrop sampling is suspended while the true-width capsule or document is moving. Charts reveal once per data signature rather than replaying on ordinary revisits.

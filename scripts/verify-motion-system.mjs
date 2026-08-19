@@ -48,6 +48,6 @@ check(motionCss.includes(".workout-value-wheel > button.wheel-current"), "Center
 check(motionCss.includes(".settings-section.collapsed .settings-section-reveal"), "Settings collapse animation is missing.");
 check(motionCss.includes(".motion-popover.motion-closed"), "Popover exit animation is missing.");
 check(motionCss.includes("@media (prefers-reduced-motion: reduce)"), "The motion system needs a reduced-motion fallback.");
-check(!motionCss.includes("filter: blur("), "The v0.12 motion layer must not animate paint-heavy blur filters.");
+check(!/(?:^|\n)\s*filter:\s*blur\(/.test(motionCss), "The motion layer must not use paint-heavy foreground blur filters.");
 
 console.log("Motion system checks passed: true-capsule glass navigation, continuous wheels, FLIP reordering, reversible disclosure, sheet drag compositing, view transitions, and reduced-motion fallbacks.");

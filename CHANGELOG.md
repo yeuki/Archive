@@ -6,6 +6,8 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 
 ### Added
 
+- Added a deterministic performance regression suite covering coalesced persistence, urgent durability, isolated scroll chrome, memoized rendering boundaries, bounded navigation glass, one-time chart reveals, and lazy feature chunks.
+- Added lazy loading for the focused Workout Mode and detailed body-map renderer so neither payload blocks Archive's initial JavaScript evaluation.
 - Added rich, source-attributed Health Connect workout ingestion on the stable Android API, preserving session identity, type/title, device provenance, durations, attributable distance/calorie/heart-rate/speed/elevation/cadence metrics, laps, segments, repetitions, and route availability when supplied.
 - Added read-only imported workouts to the existing Workout History calendar and detail view without inserting them into Archive's manual workout logs or active Workout Mode state.
 - Added Settings diagnostics for Garmin-origin workout counts and the number of imported sessions containing metrics, laps, segments, or route references.
@@ -13,12 +15,19 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 
 ### Changed
 
+- Changed ordinary local-state persistence to coalesce rapid updates and serialize during browser idle time, with lifecycle flushes on backgrounding or page exit and immediate writes for imports, completed-set transitions, workout pause/rest progression, start, finish, and discard.
+- Isolated scroll-reactive top and bottom chrome from root React state, throttled interactive glass lighting to animation frames, and temporarily replaces live backdrop sampling with the same layered translucent material while the dock or document is moving.
+- Memoized normalized health, goals, module, workout, and Coach inputs by their source slices; active-set edits no longer rebuild routine/history structures or recompute hidden Coach analytics.
+- Coordinated page motion around one native View Transition, prevented page-card entrances from stacking beneath it, and limited chart drawing/bar growth to the first presentation of a data signature.
+- Reduced persistent compositor hints, removed the blurred Workout Mode ambient raster, enabled offscreen rendering containment for long Settings/history content, and restored natural touch scrolling outside explicitly requested programmatic movement.
 - Changed Health Connect permission handling to sync every granted layer when optional permissions are missing, while clearly reporting partial coverage instead of blocking all health data.
 - Expanded the Health Connect read set with total calories, speed, elevation gained, and cadence while retaining the stable `connect-client:1.1.0` dependency and launch/pull-to-refresh-only policy.
 - Changed Health Connect workout reconciliation to prefer stable record IDs and source-filter aggregate metrics to the exercise session's data origin.
 
 ### Known issues and unfinished work
 
+- The performance and motion candidate still needs extended physical-phone use across long personal history, Workout Mode, and navigation before v0.14.0 acceptance and release publication.
+- Archive's true-capsule navigation still changes real width to preserve circular end caps; the pass removes live blur during that bounded movement rather than distorting the vessel with non-uniform scaling.
 - Garmin Connect and Forerunner 170 must be tested on the physical phone to establish which exercise sessions, laps, strength segments, repetitions, and metrics Garmin actually publishes through Health Connect.
 - Stable Health Connect does not expose reliable per-set weight, set index, or RPE fields; Archive leaves them absent rather than inferring values. Direct Garmin integration and experimental Android APIs remain out of scope for this candidate.
 
