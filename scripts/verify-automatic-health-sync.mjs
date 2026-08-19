@@ -97,6 +97,11 @@ try {
   const appSource = await readFile(new URL("../src/App.jsx", import.meta.url), "utf8");
 
   assert.doesNotMatch(manifest, /READ_HEALTH_DATA_IN_BACKGROUND/);
+  assert.match(manifest, /android\.permission\.health\.READ_EXERCISE/);
+  assert.match(manifest, /android\.permission\.health\.READ_TOTAL_CALORIES_BURNED/);
+  assert.match(manifest, /android\.permission\.health\.READ_SPEED/);
+  assert.match(manifest, /android\.permission\.health\.READ_ELEVATION_GAINED/);
+  assert.match(manifest, /android\.permission\.health\.READ_STEPS_CADENCE/);
   assert.doesNotMatch(workerSource, /PeriodicWorkRequestBuilder<HealthConnectSyncWorker>/);
   assert.doesNotMatch(workerSource, /ConnectedHealthSnapshotReader\.read/);
   assert.doesNotMatch(workerSource, /fun saveBackgroundSnapshot/);
@@ -104,7 +109,13 @@ try {
   assert.match(workerSource, /Kept as a no-op migration target/);
   assert.match(pluginSource, /"launch", "pullToRefresh", "manual"/);
   assert.match(pluginSource, /if \(trigger == "launch"\)/);
+  assert.match(pluginSource, /"canSync"/);
+  assert.match(pluginSource, /"partialPermissions"/);
   assert.match(readerSource, /"launch", "pullToRefresh", "manual"/);
+  assert.match(readerSource, /"healthConnectRecordId"/);
+  assert.match(readerSource, /"laps"/);
+  assert.match(readerSource, /"segments"/);
+  assert.match(readerSource, /dataOriginFilter\s*=\s*setOf\(record\.metadata\.dataOrigin\)/);
 
   assert.match(appSource, /const HEALTH_SYNC_WINDOW_DAYS = 30/);
   assert.match(appSource, /const ARCHIVE_LAUNCH_LOGO_WIDTH = 108/);

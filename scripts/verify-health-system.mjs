@@ -33,6 +33,7 @@ const syncMetadata = {
 
 try {
   const {
+    combinedWorkoutHistory,
     mergeWatchData,
     mergeWatchSleepIntoEntries,
     normalizeHealthSystem,
@@ -145,6 +146,135 @@ try {
   assert.ok(merged.healthSystem.integrity.staleRecordsRemoved >= 2);
   assert.ok(merged.healthSystem.integrity.conflictsResolved >= 2);
 
+  const garminSnapshot = {
+    ...syncMetadata,
+    healthSchemaVersion: 2,
+    policyVersion: "archive-health-2",
+    dailySummaries: [],
+    sleepSessions: [],
+    workouts: [{
+      id: "hc-run-1",
+      healthConnectRecordId: "hc-run-1",
+      identityVersion: 2,
+      source: "com.garmin.android.apps.connectmobile",
+      startedAt: "2026-07-13T11:00:00Z",
+      endedAt: "2026-07-13T11:48:00Z",
+      durationMinutes: 48,
+      elapsedDurationSeconds: 2880,
+      activeDurationSeconds: 2760,
+      type: "Running",
+      title: "Morning run",
+      distanceMeters: 8100,
+      activeCalories: 575,
+      averageHeartRate: 151,
+      maximumHeartRate: 176,
+      averageCadence: 169,
+      elevationGainedMeters: 62,
+      routeStatus: "available",
+      metricPermissions: {
+        distance: true,
+        activeCalories: true,
+        totalCalories: true,
+        heartRate: true,
+        speed: true,
+        elevation: true,
+        cadence: true,
+      },
+      metricAvailability: {
+        distance: true,
+        activeCalories: true,
+        totalCalories: false,
+        heartRate: true,
+        speed: false,
+        elevation: true,
+        cadence: true,
+      },
+      laps: [{ index: 1, durationSeconds: 1380, distanceMeters: 4000 }],
+      segments: [{ index: 1, type: "Running", durationSeconds: 2760, repetitions: null }],
+    }],
+    samples: { heartRate: [], heartRateVariability: [] },
+  };
+  const normalizedGarmin = normalizeWatchData(garminSnapshot);
+  assert.equal(normalizedGarmin.workouts.length, 1);
+  assert.equal(normalizedGarmin.workouts[0].healthConnectRecordId, "hc-run-1");
+  assert.equal(normalizedGarmin.workouts[0].source, "com.garmin.android.apps.connectmobile");
+  assert.equal(normalizedGarmin.workouts[0].distanceMeters, 8100);
+  assert.equal(normalizedGarmin.workouts[0].laps.length, 1);
+  assert.equal(normalizedGarmin.workouts[0].segments.length, 1);
+  assert.equal(normalizedGarmin.workouts[0].segments[0].weightKg, null, "missing set weight stays unknown rather than becoming zero");
+  assert.equal(normalizedGarmin.workouts[0].routeStatus, "available");
+  const backupRoundTrip = normalizeWatchData(JSON.parse(JSON.stringify(normalizedGarmin)));
+  assert.deepEqual(backupRoundTrip.workouts[0], normalizedGarmin.workouts[0], "rich workouts survive a JSON backup round trip");
+
+  const manualWorkout = {
+    id: "archive-workout-1",
+    date: "2026-07-13",
+    routineName: "Archive routine",
+    duration: 40,
+    exercises: [],
+  };
+  const unifiedHistory = combinedWorkoutHistory([manualWorkout], normalizedGarmin.workouts);
+  assert.equal(unifiedHistory.length, 2);
+  assert.equal(unifiedHistory.filter(({ historyKind }) => historyKind === "external").length, 1);
+  assert.equal(manualWorkout.historyKind, undefined, "deriving unified history does not mutate Archive workout records");
+
+  const partialWorkout = normalizeWatchData({
+    workouts: [{
+      id: "partial-session",
+      source: "com.garmin.android.apps.connectmobile",
+      date: "2026-07-13",
+      type: "Strength",
+      segments: [{}],
+    }],
+  }).workouts[0];
+  assert.equal(partialWorkout.elapsedDurationSeconds, null, "an absent duration remains unknown");
+  assert.equal(partialWorkout.segments.length, 0, "an empty provider segment is not turned into a fake exercise");
+
+  const correctedGarmin = mergeWatchData(normalizedGarmin, {
+    ...garminSnapshot,
+    syncedAt: "2026-07-14T15:00:00Z",
+    workouts: [{
+      ...garminSnapshot.workouts[0],
+      title: "Corrected morning run",
+      endedAt: "2026-07-13T11:50:00Z",
+      durationMinutes: 50,
+      elapsedDurationSeconds: 3000,
+    }],
+  });
+  assert.equal(correctedGarmin.workouts.length, 1, "a corrected Health Connect record replaces its prior version");
+  assert.equal(correctedGarmin.workouts[0].title, "Corrected morning run");
+  assert.equal(correctedGarmin.workouts[0].elapsedDurationSeconds, 3000);
+
+  const partialDaily = mergeWatchData({
+    dailySummaries: [{
+      date: "2026-07-13",
+      steps: 7000,
+      distanceMeters: 6500,
+      totalCalories: 2400,
+      fieldAvailability: { steps: true, distance: true, totalCalories: true },
+    }],
+  }, {
+    ...syncMetadata,
+    snapshotCompleteness: {
+      ...syncMetadata.snapshotCompleteness,
+      dailySummaries: false,
+    },
+    dailySummaries: [{
+      date: "2026-07-13",
+      steps: 7600,
+      distanceMeters: 0,
+      totalCalories: 0,
+      fieldAvailability: { steps: true, distance: false, totalCalories: false },
+    }],
+    sleepSessions: [],
+    workouts: [],
+    samples: { heartRate: [], heartRateVariability: [] },
+  });
+  const partialDay = partialDaily.dailySummaries.find(({ date }) => date === "2026-07-13");
+  assert.equal(partialDay.steps, 7600);
+  assert.equal(partialDay.distanceMeters, 6500, "a missing optional permission does not erase the last attributed distance");
+  assert.equal(partialDay.totalCalories, 2400, "a missing optional permission does not erase the last attributed calorie total");
+
   const entries = mergeWatchSleepIntoEntries([
     { date: "2026-07-09", habits: {}, water: 0, sleep: 7, sleepSource: "sync" },
     { date: "2026-07-10", habits: {}, water: 0, sleep: 6, sleepSource: "manual" },
@@ -161,7 +291,7 @@ try {
   assert.equal(manualFallback.sleep, 6.5);
   assert.equal(manualFallback.sleepSource, "manual");
 
-  console.log("Health system checks passed: provenance, timezone policy, deduplication, reconciliation, deletion cleanup, and watch-first sleep precedence.");
+  console.log("Health system checks passed: provenance, timezone policy, rich Garmin workout normalization, correction identity, partial permissions, reconciliation, deletion cleanup, and watch-first sleep precedence.");
 } finally {
   await vite.close();
 }

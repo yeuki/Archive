@@ -81,6 +81,10 @@ Permission review and Health Connect settings remain available because they are 
 
 The health archive stores source/provider and import provenance. Reconciliation updates corrected records and removes provider records that no longer exist within the authoritative window. High-frequency samples remain bounded.
 
+Health Connect exercise sessions are stored as source-attributed, read-only external workouts. Stable Health Connect record identity is preferred so provider corrections replace the earlier local representation instead of creating a duplicate. Session metadata, attributable metrics, laps, segments, repetitions, device provenance, and route availability are retained when the stable Android API supplies them; absent values remain unknown. Raw route coordinates are not stored.
+
+Permissions are progressive. If Archive has at least one supported read grant, it reconciles the available layers and marks optional denied layers as partial rather than blocking the entire import. Per-record availability allows a missing permission to be distinguished from a provider that simply did not publish a value.
+
 ### Sleep policy
 
 - Watch-synced sleep is authoritative over a conflicting manual record.
@@ -98,6 +102,7 @@ Routine configuration and active logging are separate experiences.
 - The active session can be paused, exited, restored, edited, skipped, or finished according to the focused flow.
 - A historical workout is appended only through **Finish workout**.
 - History keeps routine/exercise snapshots so later library edits do not rewrite the past.
+- Imported Health Connect sessions may appear alongside finished Archive workouts in the history calendar, but remain outside `workout.workouts` and can never create, mutate, resume, or finish an active Workout Mode session.
 
 Recent completed values provide defaults when an exercise is added to another routine. Any workout-schema change must preserve resume and historical normalization.
 

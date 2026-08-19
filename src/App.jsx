@@ -89,7 +89,7 @@ const DEFAULT_GOALS = {
 };
 const STORAGE_KEY = "archive-productivity-tracker";
 const GEMINI_KEY_STORAGE_KEY = "archive-productivity-tracker-gemini-key";
-const BACKUP_VERSION = 3;
+const BACKUP_VERSION = 4;
 const ConnectedHealthNative = registerPlugin("ConnectedHealth");
 const DEFAULT_AI_SETTINGS = {
   useGemini: false,
@@ -104,12 +104,16 @@ const WATCH_METRIC_DEFINITIONS = [
   { id: "exercise", label: "Exercise sessions", unit: "workouts", cadence: "as completed", category: "Training", defaultEnabled: true },
   { id: "distance", label: "Distance", unit: "m", cadence: "daily", category: "Movement", defaultEnabled: true },
   { id: "activeCalories", label: "Active calories", unit: "kcal", cadence: "daily", category: "Energy", defaultEnabled: true },
+  { id: "totalCalories", label: "Total calories", unit: "kcal", cadence: "daily", category: "Energy", defaultEnabled: true },
   { id: "heartRate", label: "Heart rate", unit: "bpm", cadence: "samples", category: "Vitals", defaultEnabled: true },
   { id: "heartRateVariability", label: "HRV", unit: "ms", cadence: "samples", category: "Recovery", defaultEnabled: true },
   { id: "floors", label: "Floors climbed", unit: "floors", cadence: "daily", category: "Movement", defaultEnabled: false },
+  { id: "speed", label: "Workout speed", unit: "m/s", cadence: "per workout", category: "Training", defaultEnabled: true },
+  { id: "elevation", label: "Workout elevation", unit: "m", cadence: "per workout", category: "Training", defaultEnabled: true },
+  { id: "cadence", label: "Workout cadence", unit: "steps/min", cadence: "per workout", category: "Training", defaultEnabled: true },
 ];
-const HEALTH_DATA_SCHEMA_VERSION = 1;
-const HEALTH_POLICY_VERSION = "archive-health-1";
+const HEALTH_DATA_SCHEMA_VERSION = 2;
+const HEALTH_POLICY_VERSION = "archive-health-2";
 const HEALTH_SYNC_WINDOW_DAYS = 30;
 const LAUNCH_MINIMUM_VISIBLE_MS = 420;
 const LAUNCH_SYNC_TIMEOUT_MS = 9000;
@@ -173,6 +177,9 @@ const DEFAULT_CONNECTED_HEALTH = {
   lastCheckedAt: "",
   lastSyncAt: "",
   permissionsGranted: false,
+  canSync: false,
+  partialPermissions: false,
+  workoutPermissionGranted: false,
   grantedPermissions: [],
   missingPermissions: [],
   requestedPermissions: [],
@@ -888,7 +895,7 @@ function normalizeAISettings(settings = {}) {
 
 function normalizeConnectedHealth(settings = {}) {
   const source = settings && typeof settings === "object" ? settings : {};
-  const statusOptions = new Set(["notChecked", "available", "unavailable", "error", "opened", "webPreview", "permissionsNeeded", "synced"]);
+  const statusOptions = new Set(["notChecked", "available", "partial", "unavailable", "error", "opened", "webPreview", "permissionsNeeded", "synced"]);
   const automaticStatusOptions = new Set(["off", "scheduled", "running", "captured", "synced", "permissionNeeded", "foregroundOnly", "error"]);
   const rawMetrics = source.metrics ?? {};
   const metrics = Object.fromEntries(WATCH_METRIC_DEFINITIONS.map((metric) => {
@@ -910,6 +917,9 @@ function normalizeConnectedHealth(settings = {}) {
     lastCheckedAt: typeof source.lastCheckedAt === "string" ? source.lastCheckedAt : "",
     lastSyncAt: typeof source.lastSyncAt === "string" ? source.lastSyncAt : "",
     permissionsGranted: Boolean(source.permissionsGranted ?? source.allGranted),
+    canSync: Boolean(source.canSync ?? source.permissionsGranted ?? source.allGranted),
+    partialPermissions: Boolean(source.partialPermissions),
+    workoutPermissionGranted: Boolean(source.workoutPermissionGranted),
     grantedPermissions: uniqueStrings(source.grantedPermissions).slice(0, 40),
     missingPermissions: uniqueStrings(source.missingPermissions ?? source.deniedPermissions).slice(0, 40),
     requestedPermissions: uniqueStrings(source.requestedPermissions).slice(0, 40),
@@ -1127,6 +1137,73 @@ function normalizeHealthSystem(data = {}) {
   };
 }
 
+function nullableNumber(value, minimum = -Infinity, maximum = Infinity) {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= minimum && parsed <= maximum ? parsed : null;
+}
+
+function normalizeAvailabilityMap(value = {}, defaults = {}) {
+  const source = value && typeof value === "object" ? value : {};
+  return Object.fromEntries(Object.entries(defaults).map(([key, fallback]) => (
+    [key, source[key] === undefined ? Boolean(fallback) : Boolean(source[key])]
+  )));
+}
+
+function normalizeWatchLap(lap = {}, index = 0) {
+  const source = lap && typeof lap === "object" ? lap : {};
+  const startedAt = normalizeTimestamp(source.startedAt ?? source.startTime);
+  const endedAt = normalizeTimestamp(source.endedAt ?? source.endTime);
+  const durationSeconds = nullableNumber(source.durationSeconds, 0, 172800);
+  const distanceMeters = nullableNumber(source.distanceMeters ?? source.distance, 0, 1000000);
+  if (!startedAt && !endedAt && durationSeconds === null && distanceMeters === null) return null;
+  return {
+    index: Math.max(1, Math.round(nullableNumber(source.index, 1, 10000) ?? index + 1)),
+    startedAt,
+    endedAt,
+    durationSeconds,
+    distanceMeters,
+  };
+}
+
+function normalizeWatchSegment(segment = {}, index = 0) {
+  const source = segment && typeof segment === "object" ? segment : {};
+  const startedAt = normalizeTimestamp(source.startedAt ?? source.startTime);
+  const endedAt = normalizeTimestamp(source.endedAt ?? source.endTime);
+  const typeCode = nullableNumber(source.typeCode ?? source.segmentType, 0, 100000);
+  const providedType = String(source.type ?? source.label ?? "").trim().slice(0, 100);
+  const durationSeconds = nullableNumber(source.durationSeconds, 0, 172800);
+  const repetitions = nullableNumber(source.repetitions ?? source.reps, 0, 100000);
+  const weightKg = nullableNumber(source.weightKg ?? source.weightKilograms, 0, 10000);
+  const setIndex = nullableNumber(source.setIndex, 0, 10000);
+  const rpe = nullableNumber(source.rpe ?? source.rateOfPerceivedExertion, 0, 10);
+  if (
+    !startedAt
+    && !endedAt
+    && typeCode === null
+    && !providedType
+    && durationSeconds === null
+    && repetitions === null
+    && weightKg === null
+    && setIndex === null
+    && rpe === null
+  ) return null;
+  const type = providedType || (typeCode === null ? "Exercise" : `Exercise type ${typeCode}`);
+  return {
+    index: Math.max(1, Math.round(nullableNumber(source.index, 1, 10000) ?? index + 1)),
+    typeCode: typeCode === null ? null : Math.round(typeCode),
+    type,
+    startedAt,
+    endedAt,
+    durationSeconds,
+    repetitions: repetitions === null ? null : Math.round(repetitions),
+    weightKg,
+    setIndex: setIndex === null ? null : Math.round(setIndex),
+    rpe,
+    isRest: Boolean(source.isRest) || /^(rest|pause)$/i.test(type),
+  };
+}
+
 function normalizeWatchDailySummary(summary = {}, context = DEFAULT_HEALTH_SYSTEM) {
   const source = summary && typeof summary === "object" ? summary : {};
   if (!validDateKey(source.date)) return null;
@@ -1148,6 +1225,16 @@ function normalizeWatchDailySummary(summary = {}, context = DEFAULT_HEALTH_SYSTE
     restingHeartRate: positiveNumber(source.restingHeartRate, 0, 0, 250),
     averageHeartRate: positiveNumber(source.averageHeartRate, 0, 0, 250),
     hrvMs: positiveNumber(source.hrvMs ?? source.heartRateVariability, 0, 0, 500),
+    fieldAvailability: normalizeAvailabilityMap(source.fieldAvailability, {
+      steps: Object.prototype.hasOwnProperty.call(source, "steps"),
+      distance: Object.prototype.hasOwnProperty.call(source, "distanceMeters") || Object.prototype.hasOwnProperty.call(source, "distance"),
+      activeCalories: Object.prototype.hasOwnProperty.call(source, "activeCalories"),
+      totalCalories: Object.prototype.hasOwnProperty.call(source, "totalCalories"),
+      floors: Object.prototype.hasOwnProperty.call(source, "floors"),
+      heartRate: Object.prototype.hasOwnProperty.call(source, "averageHeartRate"),
+      hrv: Object.prototype.hasOwnProperty.call(source, "hrvMs") || Object.prototype.hasOwnProperty.call(source, "heartRateVariability"),
+      sleep: Object.prototype.hasOwnProperty.call(source, "sleepMinutes"),
+    }),
     timezone,
     importedAt: normalizeTimestamp(source.importedAt ?? context.lastReconciledAt ?? updatedAt),
     updatedAt,
@@ -1166,7 +1253,7 @@ function normalizeWatchSession(session = {}, index = 0, type = "session", contex
   const providedDate = validDateKey(source.date) ? source.date : "";
   const id = String(source.id ?? source.sourceId ?? fallbackId).trim().slice(0, 120) || fallbackId;
 
-  return {
+  const baseSession = {
     id,
     provider,
     source: String(source.source ?? source.sourceName ?? DEFAULT_CONNECTED_HEALTH.sourceName).trim().slice(0, 60) || DEFAULT_CONNECTED_HEALTH.sourceName,
@@ -1176,12 +1263,104 @@ function normalizeWatchSession(session = {}, index = 0, type = "session", contex
     endedAt,
     durationMinutes: Math.round(positiveNumber(source.durationMinutes ?? source.duration, 0, 0, 1440)),
     type: String(source.type ?? type).trim().slice(0, 60) || type,
-    distanceMeters: positiveNumber(source.distanceMeters ?? source.distance, 0, 0, 1000000),
-    activeCalories: positiveNumber(source.activeCalories, 0, 0, 20000),
-    averageHeartRate: positiveNumber(source.averageHeartRate, 0, 0, 250),
+    distanceMeters: type === "exercise"
+      ? nullableNumber(source.distanceMeters ?? source.distance, 0, 1000000)
+      : positiveNumber(source.distanceMeters ?? source.distance, 0, 0, 1000000),
+    activeCalories: type === "exercise"
+      ? nullableNumber(source.activeCalories, 0, 20000)
+      : positiveNumber(source.activeCalories, 0, 0, 20000),
+    averageHeartRate: type === "exercise"
+      ? nullableNumber(source.averageHeartRate, 0, 250)
+      : positiveNumber(source.averageHeartRate, 0, 0, 250),
     notes: String(source.notes ?? "").trim().slice(0, 500),
     timezone,
     importedAt: normalizeTimestamp(source.importedAt ?? context.lastReconciledAt),
+  };
+
+  if (type !== "exercise") return baseSession;
+
+  const laps = (Array.isArray(source.laps) ? source.laps : [])
+    .map(normalizeWatchLap)
+    .filter(Boolean);
+  const segments = (Array.isArray(source.segments) ? source.segments : [])
+    .map(normalizeWatchSegment)
+    .filter(Boolean);
+  const healthConnectRecordId = String(source.healthConnectRecordId ?? (source.identityVersion >= 2 ? source.id : "")).trim().slice(0, 160);
+  const metricPermissions = normalizeAvailabilityMap(source.metricPermissions, {
+    distance: baseSession.distanceMeters !== null,
+    activeCalories: baseSession.activeCalories !== null,
+    totalCalories: Object.prototype.hasOwnProperty.call(source, "totalCalories"),
+    heartRate: baseSession.averageHeartRate !== null,
+    speed: Object.prototype.hasOwnProperty.call(source, "averageSpeedMetersPerSecond")
+      || Object.prototype.hasOwnProperty.call(source, "maximumSpeedMetersPerSecond"),
+    elevation: Object.prototype.hasOwnProperty.call(source, "elevationGainedMeters"),
+    cadence: Object.prototype.hasOwnProperty.call(source, "averageCadence")
+      || Object.prototype.hasOwnProperty.call(source, "maximumCadence"),
+  });
+  const metricAvailability = normalizeAvailabilityMap(source.metricAvailability, {
+    distance: baseSession.distanceMeters !== null,
+    activeCalories: baseSession.activeCalories !== null,
+    totalCalories: nullableNumber(source.totalCalories, 0, 30000) !== null,
+    heartRate: baseSession.averageHeartRate !== null,
+    speed: nullableNumber(source.averageSpeedMetersPerSecond, 0, 100) !== null,
+    elevation: nullableNumber(source.elevationGainedMeters, 0, 100000) !== null,
+    cadence: nullableNumber(source.averageCadence, 0, 1000) !== null,
+  });
+  const sourceDevice = source.sourceDevice && typeof source.sourceDevice === "object"
+    ? {
+      type: String(source.sourceDevice.type ?? "unknown").trim().slice(0, 40) || "unknown",
+      manufacturer: String(source.sourceDevice.manufacturer ?? "").trim().slice(0, 80),
+      model: String(source.sourceDevice.model ?? "").trim().slice(0, 100),
+    }
+    : null;
+  const routeStatus = ["none", "available", "consentRequired", "loaded", "unknown"].includes(source.routeStatus)
+    ? source.routeStatus
+    : "unknown";
+  const startedMilliseconds = Date.parse(startedAt);
+  const endedMilliseconds = Date.parse(endedAt);
+  const timestampDurationSeconds = Number.isFinite(startedMilliseconds)
+    && Number.isFinite(endedMilliseconds)
+    && endedMilliseconds >= startedMilliseconds
+    ? Math.round((endedMilliseconds - startedMilliseconds) / 1000)
+    : null;
+  const elapsedDurationSeconds = nullableNumber(source.elapsedDurationSeconds, 0, 604800)
+    ?? timestampDurationSeconds
+    ?? (baseSession.durationMinutes > 0 ? baseSession.durationMinutes * 60 : null);
+
+  return {
+    ...baseSession,
+    external: true,
+    identityVersion: Math.round(nullableNumber(source.identityVersion, 1, 100) ?? (healthConnectRecordId ? 2 : 1)),
+    recordType: String(source.recordType ?? "exerciseSession").trim().slice(0, 60) || "exerciseSession",
+    healthConnectRecordId,
+    clientRecordId: String(source.clientRecordId ?? "").trim().slice(0, 160),
+    clientRecordVersion: nullableNumber(source.clientRecordVersion, 0, Number.MAX_SAFE_INTEGER),
+    lastModifiedAt: normalizeTimestamp(source.lastModifiedAt ?? source.updatedAt),
+    recordingMethod: ["active", "automatic", "manual", "unknown"].includes(source.recordingMethod)
+      ? source.recordingMethod
+      : "unknown",
+    sourceDevice,
+    title: String(source.title ?? "").trim().slice(0, 160),
+    typeCode: nullableNumber(source.typeCode ?? source.exerciseType, 0, 100000),
+    startZoneOffset: String(source.startZoneOffset ?? "").trim().slice(0, 20),
+    endZoneOffset: String(source.endZoneOffset ?? "").trim().slice(0, 20),
+    elapsedDurationSeconds,
+    activeDurationSeconds: nullableNumber(source.activeDurationSeconds, 0, 604800),
+    restDurationSeconds: nullableNumber(source.restDurationSeconds, 0, 604800),
+    totalCalories: nullableNumber(source.totalCalories, 0, 30000),
+    minimumHeartRate: nullableNumber(source.minimumHeartRate, 0, 250),
+    maximumHeartRate: nullableNumber(source.maximumHeartRate, 0, 250),
+    averageSpeedMetersPerSecond: nullableNumber(source.averageSpeedMetersPerSecond, 0, 100),
+    maximumSpeedMetersPerSecond: nullableNumber(source.maximumSpeedMetersPerSecond, 0, 100),
+    elevationGainedMeters: nullableNumber(source.elevationGainedMeters, 0, 100000),
+    averageCadence: nullableNumber(source.averageCadence, 0, 1000),
+    maximumCadence: nullableNumber(source.maximumCadence, 0, 1000),
+    routeStatus,
+    laps,
+    segments,
+    metricsComplete: Boolean(source.metricsComplete),
+    metricPermissions,
+    metricAvailability,
   };
 }
 
@@ -1219,6 +1398,12 @@ function dailySummaryIdentity(summary) {
 }
 
 function sessionIdentity(session) {
+  if (session?.healthConnectRecordId) {
+    return [session.provider, session.source, session.recordType ?? "session", session.healthConnectRecordId].join("|");
+  }
+  if (session?.clientRecordId) {
+    return [session.provider, session.source, session.recordType ?? "session", "client", session.clientRecordId].join("|");
+  }
   if (session?.startedAt || session?.endedAt) {
     return [session.provider, session.source, session.type, session.startedAt, session.endedAt].join("|");
   }
@@ -1293,6 +1478,10 @@ function normalizeWatchDataDetailed(data = {}) {
       summariesByDate.set(date, {
         ...summary,
         sleepMinutes: sleepMinutesByStartDate.get(date) ?? 0,
+        fieldAvailability: {
+          ...(summary.fieldAvailability ?? {}),
+          sleep: sleepMinutesByStartDate.has(date),
+        },
       });
     });
 
@@ -1425,6 +1614,40 @@ function mergeIncompleteLayer(existing = [], incoming = [], identity) {
   return dedupeWatchItems([...existing, ...incoming], identity).items;
 }
 
+function mergeIncompleteDailyLayer(existing = [], incoming = []) {
+  const byDate = new Map(existing.map((item) => [dailySummaryIdentity(item), item]));
+  const fields = {
+    steps: "steps",
+    distance: "distanceMeters",
+    activeCalories: "activeCalories",
+    totalCalories: "totalCalories",
+    floors: "floors",
+    heartRate: "averageHeartRate",
+    hrv: "hrvMs",
+    sleep: "sleepMinutes",
+  };
+
+  incoming.forEach((item) => {
+    const identity = dailySummaryIdentity(item);
+    const previous = byDate.get(identity);
+    if (!previous) {
+      byDate.set(identity, item);
+      return;
+    }
+    const availability = {
+      ...(previous.fieldAvailability ?? {}),
+      ...(item.fieldAvailability ?? {}),
+    };
+    const merged = { ...previous, ...item, fieldAvailability: availability };
+    Object.entries(fields).forEach(([availabilityKey, valueKey]) => {
+      if (item.fieldAvailability?.[availabilityKey] === false) merged[valueKey] = previous[valueKey];
+    });
+    byDate.set(identity, merged);
+  });
+
+  return [...byDate.values()];
+}
+
 function mergeWatchData(currentData = {}, incomingData = {}) {
   const currentDetailed = normalizeWatchDataDetailed(currentData);
   const incomingDetailed = normalizeWatchDataDetailed(incomingData);
@@ -1457,7 +1680,7 @@ function mergeWatchData(currentData = {}, incomingData = {}) {
       ...current.dailySummaries.filter((item) => !dateFallsWithin(item.date, system.syncWindow.startDate, system.syncWindow.endDate)),
       ...incoming.dailySummaries,
     ]
-    : mergeIncompleteLayer(current.dailySummaries, incoming.dailySummaries, dailySummaryIdentity);
+    : mergeIncompleteDailyLayer(current.dailySummaries, incoming.dailySummaries);
   const sleepSessions = complete.sleepSessions
     ? [
       ...current.sleepSessions.filter((item) => !sessionFallsWithinWindow(item, system, "sleep")),
@@ -6283,23 +6506,244 @@ function ExerciseLibrary({ exercises, onAddExercise }) {
   );
 }
 
-function WorkoutHistoryPanel({ workouts }) {
+function isExternalWorkout(workout) {
+  return workout?.historyKind === "external" || workout?.external === true;
+}
+
+function externalWorkoutTitle(workout) {
+  const title = String(workout?.title ?? "").trim();
+  const type = String(workout?.type ?? "").trim();
+  if (title && !/^exercise session$/i.test(title)) return title;
+  if (type && !/^exercise$/i.test(type)) return type;
+  return "Recorded workout";
+}
+
+function historyWorkoutTitle(workout) {
+  return isExternalWorkout(workout)
+    ? externalWorkoutTitle(workout)
+    : String(workout?.routineName ?? "Workout").trim() || "Workout";
+}
+
+function externalWorkoutSetCount(workout) {
+  return (workout?.segments ?? []).filter((segment) => (
+    !segment.isRest && Number(segment.repetitions) > 0
+  )).length;
+}
+
+function externalWorkoutVolume(workout) {
+  return (workout?.segments ?? []).reduce((total, segment) => {
+    const weight = Number(segment.weightKg);
+    const repetitions = Number(segment.repetitions);
+    return total + (!segment.isRest && weight > 0 && repetitions > 0 ? weight * repetitions : 0);
+  }, 0);
+}
+
+function historyWorkoutSetCount(workout) {
+  return isExternalWorkout(workout) ? externalWorkoutSetCount(workout) : workoutSetCount(workout);
+}
+
+function historyWorkoutVolume(workout) {
+  return isExternalWorkout(workout) ? externalWorkoutVolume(workout) : workoutVolume(workout);
+}
+
+function historyWorkoutDurationMinutes(workout) {
+  if (!isExternalWorkout(workout)) return Math.max(0, Math.round(Number(workout?.duration) || 0));
+  const elapsedSeconds = nullableNumber(workout?.elapsedDurationSeconds, 0, 604800);
+  return elapsedSeconds === null
+    ? Math.max(0, Math.round(Number(workout?.durationMinutes) || 0))
+    : Math.max(0, Math.round(elapsedSeconds / 60));
+}
+
+function combinedWorkoutHistory(manualWorkouts = [], connectedWorkouts = []) {
+  const manual = manualWorkouts.map((workout, index) => ({
+    ...workout,
+    historyKind: "manual",
+    historyKey: `manual:${workout.id || `${workout.date}-${index}`}`,
+  }));
+  const external = connectedWorkouts
+    .filter((workout) => validDateKey(workout.date))
+    .map((workout, index) => ({
+      ...workout,
+      historyKind: "external",
+      historyKey: `health:${workout.healthConnectRecordId || workout.id || `${workout.date}-${index}`}`,
+    }));
+  return [...manual, ...external];
+}
+
+function formatExternalDuration(seconds, fallbackMinutes = 0) {
+  const directSeconds = nullableNumber(seconds, 0, 604800);
+  const fallback = nullableNumber(fallbackMinutes, 0, 10080);
+  if (directSeconds === null && (fallback === null || fallback <= 0)) return "";
+  const totalSeconds = Math.max(0, Math.round(directSeconds ?? fallback * 60));
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const remainder = totalSeconds % 60;
+  if (hours) return `${hours}h ${minutes}m`;
+  return remainder ? `${minutes}m ${remainder}s` : `${minutes}m`;
+}
+
+function formatExternalDistance(meters) {
+  const value = nullableNumber(meters, 0, 1000000);
+  if (value === null) return "";
+  return value >= 1000 ? `${(value / 1000).toFixed(value >= 10000 ? 1 : 2)} km` : `${Math.round(value)} m`;
+}
+
+function formatExternalPace(distanceMeters, seconds) {
+  const distance = nullableNumber(distanceMeters, 1, 1000000);
+  const duration = nullableNumber(seconds, 1, 604800);
+  if (distance === null || duration === null) return "";
+  const paceSeconds = Math.round(duration / (distance / 1000));
+  if (!Number.isFinite(paceSeconds) || paceSeconds <= 0 || paceSeconds > 3600) return "";
+  return `${Math.floor(paceSeconds / 60)}:${String(paceSeconds % 60).padStart(2, "0")} /km`;
+}
+
+function externalWorkoutMetricItems(workout) {
+  const items = [];
+  const distance = nullableNumber(workout?.distanceMeters, 0, 1000000);
+  const activeSeconds = nullableNumber(workout?.activeDurationSeconds, 1, 604800)
+    ?? nullableNumber(workout?.elapsedDurationSeconds, 1, 604800);
+  const pace = formatExternalPace(distance, activeSeconds);
+  const pushNumber = (label, value, formatter) => {
+    const parsed = nullableNumber(value);
+    if (parsed !== null) items.push({ label, value: formatter(parsed) });
+  };
+
+  if (distance !== null) items.push({ label: "Distance", value: formatExternalDistance(distance) });
+  if (pace) items.push({ label: "Average pace", value: pace });
+  pushNumber("Active calories", workout?.activeCalories, (value) => `${Math.round(value)} kcal`);
+  if (workout?.activeCalories === null || workout?.activeCalories === undefined) {
+    pushNumber("Total calories", workout?.totalCalories, (value) => `${Math.round(value)} kcal`);
+  }
+  pushNumber("Average heart rate", workout?.averageHeartRate, (value) => `${Math.round(value)} bpm`);
+  pushNumber("Maximum heart rate", workout?.maximumHeartRate, (value) => `${Math.round(value)} bpm`);
+  if (!pace) {
+    pushNumber("Average speed", workout?.averageSpeedMetersPerSecond, (value) => `${(value * 3.6).toFixed(1)} km/h`);
+  }
+  pushNumber("Elevation gained", workout?.elevationGainedMeters, (value) => `${Math.round(value)} m`);
+  pushNumber("Average cadence", workout?.averageCadence, (value) => `${Math.round(value)} /min`);
+  return items;
+}
+
+function ExternalWorkoutHistorySession({ workout, workoutIndex, totalWorkouts }) {
+  const sourceLabel = healthOriginLabel(workout.source);
+  const metricItems = externalWorkoutMetricItems(workout);
+  const setCount = externalWorkoutSetCount(workout);
+  const hasStrengthShape = /strength|weight|resistance/i.test(`${workout.type} ${workout.title}`);
+  const unavailablePermissions = Object.entries(workout.metricPermissions ?? {})
+    .filter(([, available]) => available === false)
+    .map(([metric]) => metric);
+  const sessionTime = workout.startedAt
+    ? new Date(workout.startedAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
+    : "Time unavailable";
+  const deviceLabel = [workout.sourceDevice?.manufacturer, workout.sourceDevice?.model]
+    .filter(Boolean)
+    .join(" ");
+  const routeCopy = workout.routeStatus === "available"
+    ? "A route is available in Health Connect; Archive preserves its availability without copying coordinates."
+    : workout.routeStatus === "consentRequired"
+      ? "A route exists, but Android requires separate user consent before coordinates can be read."
+      : "";
+
+  return (
+    <article className="workout-history-session external-workout-session" style={{ "--session-index": workoutIndex }}>
+      <div className="workout-history-session-head">
+        <div>
+          <span>{sourceLabel} {totalWorkouts > 1 ? `· Workout ${workoutIndex + 1}` : ""}</span>
+          <strong>{externalWorkoutTitle(workout)}</strong>
+          <small>
+            {sessionTime} · {formatExternalDuration(workout.elapsedDurationSeconds, workout.durationMinutes) || "Duration unavailable"}
+            {deviceLabel ? ` · ${deviceLabel}` : ""}
+          </small>
+        </div>
+        <b className="external-workout-source-mark" aria-label={`Imported from ${sourceLabel}`}>HC</b>
+      </div>
+
+      {metricItems.length > 0 && (
+        <div className="external-workout-metrics">
+          {metricItems.map((metric) => (
+            <div className="external-workout-metric" key={metric.label}>
+              <small>{metric.label}</small>
+              <strong>{metric.value}</strong>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {workout.laps?.length > 0 && (
+        <details className="external-workout-detail-group" open={workout.laps.length <= 4}>
+          <summary><span>Laps</span><b>{workout.laps.length}</b></summary>
+          <div className="external-workout-detail-list">
+            {workout.laps.map((lap) => (
+              <div className="external-workout-detail-row" key={`lap-${lap.index}-${lap.startedAt}`}>
+                <span>Lap {lap.index}</span>
+                <strong>{formatExternalDistance(lap.distanceMeters) || "Distance unavailable"}</strong>
+                <small>{formatExternalDuration(lap.durationSeconds) || "Time unavailable"}</small>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+
+      {workout.segments?.length > 0 && (
+        <details className="external-workout-detail-group" open={workout.segments.length <= 6}>
+          <summary><span>Segments {setCount ? `· ${setCount} recorded sets` : ""}</span><b>{workout.segments.length}</b></summary>
+          <div className="external-workout-detail-list">
+            {workout.segments.map((segment) => (
+              <div className={`external-workout-detail-row ${segment.isRest ? "rest" : ""}`} key={`segment-${segment.index}-${segment.startedAt}`}>
+                <span>{segment.type || `Segment ${segment.index}`}</span>
+                <strong>
+                  {segment.repetitions !== null ? `${segment.repetitions} reps` : formatExternalDuration(segment.durationSeconds) || "Duration unavailable"}
+                </strong>
+                <small>
+                  {segment.weightKg !== null ? `${segment.weightKg} kg` : segment.repetitions !== null ? formatExternalDuration(segment.durationSeconds) : ""}
+                </small>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+
+      {routeCopy && <p className="external-workout-note">{routeCopy}</p>}
+      {hasStrengthShape && !workout.segments?.length && (
+        <p className="external-workout-note">
+          {sourceLabel} shared the strength session, but no exercise or set segments were available through Health Connect.
+        </p>
+      )}
+      {!metricItems.length && !workout.laps?.length && !workout.segments?.length && (
+        <p className="external-workout-note">
+          {unavailablePermissions.length
+            ? "The session imported successfully. Additional metrics need optional Health Connect permissions."
+            : `${sourceLabel} shared the completed session without additional attributable workout details.`}
+        </p>
+      )}
+      {workout.notes && <p className="workout-history-notes">{workout.notes}</p>}
+    </article>
+  );
+}
+
+function WorkoutHistoryPanel({ workouts, connectedWorkouts = [] }) {
   const [query, setQuery] = useState("");
-  const filteredWorkouts = [...workouts]
+  const historyWorkouts = combinedWorkoutHistory(workouts, connectedWorkouts);
+  const filteredWorkouts = [...historyWorkouts]
     .sort((a, b) => b.date.localeCompare(a.date))
-    .filter((workout) => `${workout.routineName} ${workout.notes} ${workout.date}`.toLowerCase().includes(query.trim().toLowerCase()));
+    .filter((workout) => `${historyWorkoutTitle(workout)} ${workout.notes} ${workout.date} ${workout.source}`.toLowerCase().includes(query.trim().toLowerCase()));
 
   return (
     <div className="panel workout-history-panel">
-      <SectionTitle title="Workout history" meta={`${workouts.length} saved`} />
+      <SectionTitle title="Workout history" meta={`${historyWorkouts.length} saved`} />
       <input className="library-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search history" />
       <div className="workout-history-list">
         {filteredWorkouts.slice(0, 8).map((workout) => (
-          <div className="history-row workout-history-row" key={workout.id}>
+          <div className="history-row workout-history-row" key={workout.historyKey}>
             <span>{formatShortDate(workout.date)}</span>
             <div>
-              <strong>{workout.routineName}</strong>
-              <small>{workoutSetCount(workout)} sets / {Math.round(workoutVolume(workout))} volume / {workout.duration} min</small>
+              <strong>{historyWorkoutTitle(workout)}</strong>
+              <small>
+                {isExternalWorkout(workout) ? `${healthOriginLabel(workout.source)} / ` : ""}
+                {historyWorkoutSetCount(workout) ? `${historyWorkoutSetCount(workout)} sets / ` : ""}
+                {historyWorkoutDurationMinutes(workout) ? `${historyWorkoutDurationMinutes(workout)} min` : "Duration unavailable"}
+              </small>
             </div>
           </div>
         ))}
@@ -6309,9 +6753,11 @@ function WorkoutHistoryPanel({ workouts }) {
   );
 }
 
-function WorkoutHistoryPage({ workout, onWorkoutChange }) {
+function WorkoutHistoryPage({ workout, watchData, onWorkoutChange }) {
   const data = normalizeWorkoutState(workout);
-  const sortedWorkouts = [...data.workouts].sort((a, b) => b.date.localeCompare(a.date));
+  const connectedWorkouts = normalizeWatchData(watchData).workouts;
+  const historyWorkouts = combinedWorkoutHistory(data.workouts, connectedWorkouts);
+  const sortedWorkouts = [...historyWorkouts].sort((a, b) => b.date.localeCompare(a.date));
   const latestWorkout = sortedWorkouts[0] ?? null;
   const now = new Date();
   const today = dateKey(now);
@@ -6324,11 +6770,11 @@ function WorkoutHistoryPage({ workout, onWorkoutChange }) {
   const [backfillDraft, setBackfillDraft] = useState(null);
   const workoutsByDate = useMemo(() => {
     const grouped = new Map();
-    data.workouts.forEach((savedWorkout) => {
+    historyWorkouts.forEach((savedWorkout) => {
       grouped.set(savedWorkout.date, [...(grouped.get(savedWorkout.date) ?? []), savedWorkout]);
     });
     return grouped;
-  }, [data.workouts]);
+  }, [historyWorkouts]);
   const firstDayOffset = (viewMonth.getDay() + 6) % 7;
   const daysInMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 0).getDate();
   const monthCells = Array.from({ length: 42 }, (_, index) => {
@@ -6338,7 +6784,7 @@ function WorkoutHistoryPage({ workout, onWorkoutChange }) {
     const workouts = workoutsByDate.get(date) ?? [];
     const scheduledRoutine = date < today ? scheduledRoutineForDate(data, date) : null;
     const scheduledCompleted = scheduledRoutine
-      ? workouts.some((savedWorkout) => workoutMatchesRoutine(savedWorkout, scheduledRoutine))
+      ? workouts.some((savedWorkout) => !isExternalWorkout(savedWorkout) && workoutMatchesRoutine(savedWorkout, scheduledRoutine))
       : false;
     return {
       date,
@@ -6356,8 +6802,8 @@ function WorkoutHistoryPage({ workout, onWorkoutChange }) {
   const monthAdherence = monthPlannedDays
     ? ((monthPlannedDays - monthMissedDays) / monthPlannedDays) * 100
     : clamp((monthCompletedDays / 12) * 100, 0, 100);
-  const monthSetTotal = monthWorkouts.reduce((total, savedWorkout) => total + workoutSetCount(savedWorkout), 0);
-  const monthVolumeTotal = Math.round(monthWorkouts.reduce((total, savedWorkout) => total + workoutVolume(savedWorkout), 0));
+  const monthSetTotal = monthWorkouts.reduce((total, savedWorkout) => total + historyWorkoutSetCount(savedWorkout), 0);
+  const monthVolumeTotal = Math.round(monthWorkouts.reduce((total, savedWorkout) => total + historyWorkoutVolume(savedWorkout), 0));
   const monthLabel = viewMonth.toLocaleDateString(undefined, { month: "long", year: "numeric" });
   const latestMonthWorkout = [...monthWorkouts].sort((a, b) => b.date.localeCompare(a.date))[0] ?? null;
   const selectedWorkouts = selectedDate ? workoutsByDate.get(selectedDate) ?? [] : [];
@@ -6365,7 +6811,7 @@ function WorkoutHistoryPage({ workout, onWorkoutChange }) {
     ? scheduledRoutineForDate(data, selectedDate)
     : null;
   const selectedScheduledCompleted = selectedScheduledRoutine
-    ? selectedWorkouts.some((savedWorkout) => workoutMatchesRoutine(savedWorkout, selectedScheduledRoutine))
+    ? selectedWorkouts.some((savedWorkout) => !isExternalWorkout(savedWorkout) && workoutMatchesRoutine(savedWorkout, selectedScheduledRoutine))
     : false;
   const selectedMissedRoutine = selectedScheduledRoutine && !selectedScheduledCompleted
     ? selectedScheduledRoutine
@@ -6519,8 +6965,15 @@ function WorkoutHistoryPage({ workout, onWorkoutChange }) {
           )}
           {selectedWorkouts.length ? (
             <div className="workout-day-sessions">
-              {selectedWorkouts.map((savedWorkout, workoutIndex) => (
-                <article className="workout-history-session" style={{ "--session-index": workoutIndex }} key={savedWorkout.id}>
+              {selectedWorkouts.map((savedWorkout, workoutIndex) => isExternalWorkout(savedWorkout) ? (
+                <ExternalWorkoutHistorySession
+                  workout={savedWorkout}
+                  workoutIndex={workoutIndex}
+                  totalWorkouts={selectedWorkouts.length}
+                  key={savedWorkout.historyKey}
+                />
+              ) : (
+                <article className="workout-history-session" style={{ "--session-index": workoutIndex }} key={savedWorkout.historyKey ?? savedWorkout.id}>
                   <div className="workout-history-session-head">
                     <div>
                       <span>Workout {selectedWorkouts.length > 1 ? workoutIndex + 1 : ""}</span>
@@ -6565,10 +7018,10 @@ function WorkoutHistoryPage({ workout, onWorkoutChange }) {
           ) : !selectedMissedRoutine && (
             <GuidedHighlight
               eyebrow="Archive"
-              title={data.workouts.length ? "Choose a marked day" : "Your training story starts here"}
-              copy={data.workouts.length
+              title={historyWorkouts.length ? "Choose a marked day" : "Your training story starts here"}
+              copy={historyWorkouts.length
                 ? "Black squares contain completed sessions. Outlined squares let you record a missed scheduled workout."
-                : "Finished workouts and missed scheduled days will appear here with every set preserved."}
+                : "Finished Archive workouts and imported Health Connect sessions will appear here without changing your active workout."}
               status="quiet"
             />
           )}
@@ -7058,6 +7511,7 @@ function WorkoutPage({ workout, onWorkoutChange, onAdd, onBackup, modules, modul
 function connectedHealthStatusLabel(settings) {
   const normalized = normalizeConnectedHealth(settings);
   if (normalized.status === "synced") return "Synced";
+  if (normalized.status === "partial") return "Partial";
   if (normalized.status === "permissionsNeeded") return "Needs permission";
   if (normalized.enabled && normalized.status === "available") return "Ready";
   if (normalized.status === "available") return "Available";
@@ -7072,6 +7526,7 @@ function connectedHealthStatusDetail(settings) {
   const normalized = normalizeConnectedHealth(settings);
   if (normalized.statusMessage) return normalized.statusMessage;
   if (normalized.status === "synced") return "Archive imported the latest available Health Connect records.";
+  if (normalized.status === "partial") return "Archive imported granted data. Review optional permissions to fill remaining workout fields.";
   if (normalized.status === "permissionsNeeded") return "Review Health Connect permissions so Archive can import watch data.";
   if (normalized.status === "available") return "Health Connect can be used as the bridge for Samsung Health now and other sources later.";
   if (normalized.status === "webPreview") return "This setting is visible in the browser, but watch sync runs inside the Android app.";
@@ -7236,9 +7691,9 @@ function ConnectedHealthPanel({
   const enabledMetrics = WATCH_METRIC_DEFINITIONS.filter((metric) => settings.metrics[metric.id]);
   const statusLabel = connectedHealthStatusLabel(settings);
   const requestedPermissionCount = settings.requestedPermissions.length || WATCH_METRIC_DEFINITIONS.length;
-  const grantedPermissionCount = settings.permissionsGranted
-    ? requestedPermissionCount
-    : Math.min(settings.grantedPermissions.length, requestedPermissionCount);
+  const grantedPermissionCount = settings.grantedPermissions.length
+    ? Math.min(settings.grantedPermissions.length, requestedPermissionCount)
+    : settings.permissionsGranted ? requestedPermissionCount : 0;
   const healthSystem = data.healthSystem;
   const integrity = healthSystem.integrity;
   const freshness = healthDataFreshness(healthSystem.lastReconciledAt || settings.lastSyncAt);
@@ -7262,6 +7717,18 @@ function ConnectedHealthPanel({
       ?? data.workouts.at(-1)?.source
       ?? data.dailySummaries.at(-1)?.source,
   );
+  const garminWorkouts = data.workouts.filter((workout) => /garmin/i.test(String(workout.source ?? "")));
+  const workoutsWithSegments = data.workouts.filter((workout) => workout.segments?.length > 0);
+  const workoutsWithLaps = data.workouts.filter((workout) => workout.laps?.length > 0);
+  const workoutsWithMetrics = data.workouts.filter((workout) => (
+    Object.values(workout.metricAvailability ?? {}).some(Boolean)
+  ));
+  const workoutsWithRoutes = data.workouts.filter((workout) => (
+    workout.routeStatus === "available" || workout.routeStatus === "consentRequired"
+  ));
+  const latestConnectedWorkout = [...data.workouts].sort((a, b) => (
+    String(b.startedAt || b.date).localeCompare(String(a.startedAt || a.date))
+  ))[0] ?? null;
 
   const runAction = async (actionName, action) => {
     if (!action) return;
@@ -7297,7 +7764,7 @@ function ConnectedHealthPanel({
         <SettingsRow
           label="Source"
           value="Health Connect"
-          detail="Samsung Health now; Garmin and HealthKit can map here later."
+          detail="Samsung Health and Garmin Connect can share supported records through Android's health-data layer."
         />
         <SettingsRow label="Import">
           <button
@@ -7320,7 +7787,7 @@ function ConnectedHealthPanel({
         />
         <SettingsRow
           label="Permissions"
-          value={settings.permissionsGranted ? "Granted" : "Needed"}
+          value={settings.permissionsGranted ? "Granted" : settings.canSync ? "Partial" : "Needed"}
           detail={`${grantedPermissionCount}/${requestedPermissionCount} Health Connect data types granted`}
         />
         <SettingsRow
@@ -7371,7 +7838,7 @@ function ConnectedHealthPanel({
           >
             <span>
               <strong>{busyAction === "open" ? "Opening..." : "Open Health Connect"}</strong>
-              <small>Use this to let Samsung Health share steps, sleep, workouts, and vitals.</small>
+              <small>Review which providers and data types can share steps, sleep, workouts, and vitals.</small>
             </span>
             <b>Open</b>
           </button>
@@ -7431,6 +7898,23 @@ function ConnectedHealthPanel({
           detail={`${data.sleepSessions.length} sleep sessions / ${data.workouts.length} workouts`}
         />
         <SettingsRow
+          label="Imported workouts"
+          value={`${data.workouts.length}`}
+          detail={`${garminWorkouts.length} from Garmin Connect · ${workoutsWithMetrics.length} with attributed metrics`}
+        />
+        <SettingsRow
+          label="Workout detail"
+          value={`${workoutsWithSegments.length} segmented`}
+          detail={`${workoutsWithLaps.length} with laps · ${workoutsWithRoutes.length} with a route reference`}
+        />
+        {latestConnectedWorkout && (
+          <SettingsRow
+            label="Latest workout"
+            value={healthOriginLabel(latestConnectedWorkout.source)}
+            detail={`${formatShortDate(latestConnectedWorkout.date)} · ${externalWorkoutTitle(latestConnectedWorkout)}`}
+          />
+        )}
+        <SettingsRow
           label="Samples"
           value={`${data.samples.heartRate.length} HR`}
           detail={`${data.samples.heartRateVariability.length} HRV · rolling ${healthSystem.sampleRetention.limitPerMetric}-sample retention per metric`}
@@ -7457,7 +7941,7 @@ function ConnectedHealthPanel({
         </div>
       </SettingsSection>
       <div className="ai-disclosure">
-        Health Connect import is read-only. Samsung Health must share data with Health Connect; launch Archive or pull down from the top of a main page to import the latest records.
+        Health Connect import is read-only. Your health provider must first share records with Health Connect; launch Archive or pull down from the top of a main page to import the latest records.
       </div>
     </div>
   );
@@ -8399,7 +8883,8 @@ function ModuleVisual({ moduleId, context, instanceId, settings = {} }) {
     }
     case "workout-history": {
       const workout = normalizeWorkoutState(context.workout);
-      return <WorkoutHistoryPanel workouts={workout.workouts} />;
+      const connectedWorkouts = normalizeWatchData(context.watchData).workouts;
+      return <WorkoutHistoryPanel workouts={workout.workouts} connectedWorkouts={connectedWorkouts} />;
     }
     case "workout-exercise-library": {
       const workout = normalizeWorkoutState(context.workout);
@@ -9335,6 +9820,7 @@ export {
   applyCoachActionsToWorkout,
   buildFocusAnalysis,
   coachIntent,
+  combinedWorkoutHistory,
   createCoachWorkoutProposal,
   mergeWatchData,
   mergeWatchSleepIntoEntries,
@@ -9712,14 +10198,29 @@ export default function App() {
         : null;
       const nativeStatus = permissionStatus ?? status;
       const permissionsGranted = Boolean(nativeStatus?.allGranted ?? nativeStatus?.permissionsGranted);
+      const canSync = Boolean(
+        nativeStatus?.canSync
+          ?? (permissionsGranted || (Array.isArray(nativeStatus?.grantedPermissions) && nativeStatus.grantedPermissions.length > 0)),
+      );
+      const partialPermissions = Boolean(
+        nativeStatus?.partialPermissions ?? (canSync && !permissionsGranted),
+      );
+      const healthConnectAvailable = Boolean(status?.status === "available" || status?.available);
       updateConnectedHealth({
-        status: nativeStatus?.status === "permissionsNeeded"
-          ? "permissionsNeeded"
-          : status?.status === "available" || status?.available ? "available" : "unavailable",
+        status: !healthConnectAvailable
+          ? "unavailable"
+          : !canSync
+            ? "permissionsNeeded"
+            : partialPermissions
+              ? "partial"
+              : "available",
         statusMessage: String(nativeStatus?.message ?? status?.message ?? "").trim(),
         platform: String(nativeStatus?.platform ?? status?.platform ?? Capacitor.getPlatform?.() ?? "android"),
         lastCheckedAt: checkedAt,
         permissionsGranted,
+        canSync,
+        partialPermissions,
+        workoutPermissionGranted: Boolean(nativeStatus?.workoutPermissionGranted),
         grantedPermissions: nativeStatus?.grantedPermissions ?? [],
         missingPermissions: nativeStatus?.missingPermissions ?? [],
         requestedPermissions: nativeStatus?.requestedPermissions ?? [],
@@ -9755,15 +10256,25 @@ export default function App() {
     try {
       const result = await ConnectedHealthNative.requestHealthPermissions();
       const permissionsGranted = Boolean(result?.allGranted ?? result?.permissionsGranted);
+      const canSync = Boolean(
+        result?.canSync
+          ?? (permissionsGranted || (Array.isArray(result?.grantedPermissions) && result.grantedPermissions.length > 0)),
+      );
+      const partialPermissions = Boolean(result?.partialPermissions ?? (canSync && !permissionsGranted));
       updateConnectedHealth({
         enabled: true,
-        status: permissionsGranted ? "available" : "permissionsNeeded",
+        status: !canSync ? "permissionsNeeded" : partialPermissions ? "partial" : "available",
         statusMessage: String(result?.message ?? (permissionsGranted
           ? "Health Connect permissions are granted."
-          : "Archive still needs Health Connect permission before it can import watch data.")).trim(),
+          : canSync
+            ? "Archive can import granted Health Connect data; optional permissions remain available."
+            : "Archive still needs Health Connect permission before it can import watch data.")).trim(),
         platform: String(result?.platform ?? Capacitor.getPlatform?.() ?? "android"),
         lastCheckedAt: requestedAt,
         permissionsGranted,
+        canSync,
+        partialPermissions,
+        workoutPermissionGranted: Boolean(result?.workoutPermissionGranted),
         grantedPermissions: result?.grantedPermissions ?? [],
         missingPermissions: result?.missingPermissions ?? [],
         requestedPermissions: result?.requestedPermissions ?? [],
@@ -9791,6 +10302,17 @@ export default function App() {
       const currentConnectedHealth = normalizeConnectedHealth(current.connectedHealth);
       const syncedAt = typeof result?.syncedAt === "string" ? result.syncedAt : checkedAt;
       const reconciledWatchData = mergeWatchData(current.watchData, result);
+      const permissionsGranted = Boolean(result?.allGranted ?? result?.permissionsGranted);
+      const canSync = Boolean(result?.canSync ?? result?.synced ?? permissionsGranted);
+      const partialPermissions = Boolean(result?.partialPermissions ?? (canSync && !permissionsGranted));
+      const nextStatus = result?.synced
+        ? partialPermissions ? "partial" : "synced"
+        : canSync
+          ? partialPermissions ? "partial" : "available"
+          : "permissionsNeeded";
+      const nextStatusMessage = partialPermissions
+        ? String(result?.message || statusMessage || "Archive imported the Health Connect data currently permitted.").trim()
+        : String(statusMessage || result?.message || "Health Connect data synced.").trim();
 
       return {
         ...current,
@@ -9799,13 +10321,18 @@ export default function App() {
           ...currentConnectedHealth,
           ...nativeAutomaticHealthPatch(result),
           enabled: true,
-          status: result?.synced ? "synced" : "available",
-          statusMessage: String(statusMessage || result?.message || "Health Connect data synced.").trim(),
+          status: nextStatus,
+          statusMessage: nextStatusMessage,
           platform: String(result?.platform ?? Capacitor.getPlatform?.() ?? "android"),
           lastCheckedAt: checkedAt,
           lastSyncAt: syncedAt,
           ...(Number(result?.days) >= 30 ? { lastForegroundSyncAt: syncedAt } : {}),
-          permissionsGranted: true,
+          permissionsGranted,
+          canSync,
+          partialPermissions,
+          workoutPermissionGranted: Boolean(
+            result?.workoutPermissionGranted ?? currentConnectedHealth.workoutPermissionGranted,
+          ),
           grantedPermissions: result?.grantedPermissions ?? currentConnectedHealth.grantedPermissions,
           missingPermissions: result?.missingPermissions ?? [],
           requestedPermissions: result?.requestedPermissions ?? currentConnectedHealth.requestedPermissions,
@@ -9860,8 +10387,10 @@ export default function App() {
           trigger,
         });
         const permissionsGranted = Boolean(result?.allGranted ?? result?.permissionsGranted);
+        const canSync = Boolean(result?.canSync ?? result?.synced ?? permissionsGranted);
+        const partialPermissions = Boolean(result?.partialPermissions ?? (canSync && !permissionsGranted));
 
-        if (result?.needsPermissions || !permissionsGranted) {
+        if (!result?.synced && (result?.needsPermissions || !canSync)) {
           const message = String(result?.message ?? "Archive needs Health Connect permissions before syncing watch data.").trim();
           updateConnectedHealth({
             enabled: true,
@@ -9870,6 +10399,9 @@ export default function App() {
             platform: String(result?.platform ?? Capacitor.getPlatform?.() ?? "android"),
             lastCheckedAt: checkedAt,
             permissionsGranted,
+            canSync,
+            partialPermissions,
+            workoutPermissionGranted: Boolean(result?.workoutPermissionGranted),
             grantedPermissions: result?.grantedPermissions ?? [],
             missingPermissions: result?.missingPermissions ?? [],
             requestedPermissions: result?.requestedPermissions ?? [],
@@ -9881,13 +10413,15 @@ export default function App() {
           return { ok: false, status: "permissionsNeeded", message };
         }
 
-        const statusMessage = trigger === "launch"
-          ? "Health data refreshed while Archive opened."
-          : "Health data refreshed with pull-to-refresh.";
+        const statusMessage = partialPermissions
+          ? String(result?.message ?? "Archive refreshed the Health Connect data currently permitted.").trim()
+          : trigger === "launch"
+            ? "Health data refreshed while Archive opened."
+            : "Health data refreshed with pull-to-refresh.";
         reconcileConnectedHealthSnapshot(result, { checkedAt, statusMessage });
         return {
           ok: true,
-          status: result?.synced ? "synced" : "available",
+          status: partialPermissions ? "partial" : result?.synced ? "synced" : "available",
           message: statusMessage,
         };
       } catch (error) {
@@ -10376,7 +10910,7 @@ export default function App() {
 
   const pages = {
     workout: <WorkoutPage workout={state.workout} onWorkoutChange={updateWorkoutData} onAdd={openModulePicker} onBackup={openBackupChoice} modules={pageModules.workout} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
-    workoutHistory: <WorkoutHistoryPage workout={state.workout} onWorkoutChange={updateWorkoutData} />,
+    workoutHistory: <WorkoutHistoryPage workout={state.workout} watchData={watchData} onWorkoutChange={updateWorkoutData} />,
     home: <HomePage weekDays={weekDays} habitNames={trackedHabitNames} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.home} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
     habit: <HabitPage weekDays={weekDays} habitNames={state.habitNames} trackedHabits={trackedHabitNames} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.habit} moduleContext={moduleContext} onSetHabitCompletion={setHabitCompletion} onToggleHabitTracking={toggleHabitTracking} onRenameHabit={(habit) => transitionOverlay(() => setEditingHabit(habit))} onReorderHabit={reorderHabit} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
     water: <WaterPage weekDays={weekDays} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.water} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,

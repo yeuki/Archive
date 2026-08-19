@@ -8481,6 +8481,144 @@ body {
   padding: 11px;
 }
 
+.external-workout-session {
+  overflow: hidden;
+}
+
+.history-details-section .external-workout-source-mark {
+  border: 1px solid rgba(60, 60, 67, 0.08);
+  background: rgba(244, 246, 251, 0.88);
+  color: rgba(17, 17, 17, 0.72);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 7px 18px rgba(42, 48, 62, 0.08);
+}
+
+.external-workout-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.external-workout-metric {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  border: 1px solid rgba(60, 60, 67, 0.055);
+  border-radius: 16px;
+  background: rgba(248, 248, 250, 0.68);
+  padding: 10px 11px;
+}
+
+.external-workout-metric small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.62rem;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.external-workout-metric strong {
+  overflow: hidden;
+  font-size: 0.83rem;
+  font-weight: 640;
+  letter-spacing: -0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.external-workout-detail-group {
+  border: 1px solid rgba(60, 60, 67, 0.065);
+  border-radius: 18px;
+  background: rgba(252, 252, 253, 0.7);
+  overflow: hidden;
+}
+
+.external-workout-detail-group summary {
+  min-height: 44px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  cursor: pointer;
+  list-style: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.external-workout-detail-group summary::-webkit-details-marker {
+  display: none;
+}
+
+.external-workout-detail-group summary span {
+  color: rgba(17, 17, 17, 0.82);
+  font-size: 0.74rem;
+  font-weight: 620;
+}
+
+.external-workout-detail-group summary b {
+  min-width: 25px;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 560;
+  text-align: right;
+}
+
+.external-workout-detail-list {
+  display: grid;
+  padding: 0 10px 10px;
+}
+
+.external-workout-detail-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 10px;
+  border-top: 1px solid rgba(60, 60, 67, 0.055);
+  padding: 9px 2px;
+}
+
+.external-workout-detail-row span {
+  overflow: hidden;
+  grid-row: span 2;
+  align-self: center;
+  font-size: 0.74rem;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.external-workout-detail-row strong,
+.external-workout-detail-row small {
+  text-align: right;
+}
+
+.external-workout-detail-row strong {
+  font-size: 0.72rem;
+  font-weight: 620;
+}
+
+.external-workout-detail-row small {
+  min-height: 0.72rem;
+  color: var(--muted);
+  font-size: 0.62rem;
+}
+
+.external-workout-detail-row.rest span,
+.external-workout-detail-row.rest strong {
+  color: var(--muted);
+}
+
+.external-workout-note {
+  margin: 0;
+  border-left: 2px solid rgba(162, 191, 254, 0.72);
+  color: var(--muted);
+  font-size: 0.7rem;
+  line-height: 1.45;
+  padding: 2px 0 2px 10px;
+}
+
 /* Coach canvas */
 
 .coach-canvas-screen {

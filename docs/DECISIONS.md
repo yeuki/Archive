@@ -92,3 +92,10 @@ This is a compact record of accepted and rejected product/technical directions. 
 - **Decision:** The liquid-glass navigation vessel uses real collapsed and expanded widths with fully circular end caps. Keep the centered Home control and existing expansion behavior, but do not non-uniformly scale one wide shell when that distorts its outer silhouette.
 - **Rationale:** The accepted pre-v0.12 dock and curated navigation references read as a calm floating capsule; horizontally compressing the wide raster made its ends elliptical and could appear scalloped or cradled.
 - **Consequence:** Navigation motion may animate the fixed floating vessel's width and position because preserving the recognized silhouette takes precedence over the later fixed-raster optimization. Icon and selection motion remain compositor-based.
+
+## D-014 — Keep imported workouts source-attributed and separate from Archive logs
+
+- **Status:** Accepted
+- **Decision:** Import completed exercise sessions through stable Health Connect as read-only external workouts, preserve every reliably supplied field, and present them alongside Archive workouts without copying them into the manual workout store.
+- **Rationale:** Garmin and other providers can supply useful run and activity records, but Health Connect does not guarantee Archive's routine/exercise/set schema. Honest source attribution and nullable fields preserve trust while allowing the real provider contract to be measured.
+- **Consequence:** Imported sessions may mark a Workout History day as active, but cannot complete a scheduled Archive routine by fuzzy matching, affect Workout Mode, or fabricate weights, sets, routes, or exercises. Direct Garmin and experimental Health Connect APIs remain separate future decisions.

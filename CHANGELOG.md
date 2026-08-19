@@ -4,6 +4,24 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 
 ## [Unreleased]
 
+### Added
+
+- Added rich, source-attributed Health Connect workout ingestion on the stable Android API, preserving session identity, type/title, device provenance, durations, attributable distance/calorie/heart-rate/speed/elevation/cadence metrics, laps, segments, repetitions, and route availability when supplied.
+- Added read-only imported workouts to the existing Workout History calendar and detail view without inserting them into Archive's manual workout logs or active Workout Mode state.
+- Added Settings diagnostics for Garmin-origin workout counts and the number of imported sessions containing metrics, laps, segments, or route references.
+- Added deterministic coverage for Garmin-shaped workout normalization, corrected-record replacement, nullable missing fields, and partial-permission daily reconciliation.
+
+### Changed
+
+- Changed Health Connect permission handling to sync every granted layer when optional permissions are missing, while clearly reporting partial coverage instead of blocking all health data.
+- Expanded the Health Connect read set with total calories, speed, elevation gained, and cadence while retaining the stable `connect-client:1.1.0` dependency and launch/pull-to-refresh-only policy.
+- Changed Health Connect workout reconciliation to prefer stable record IDs and source-filter aggregate metrics to the exercise session's data origin.
+
+### Known issues and unfinished work
+
+- Garmin Connect and Forerunner 170 must be tested on the physical phone to establish which exercise sessions, laps, strength segments, repetitions, and metrics Garmin actually publishes through Health Connect.
+- Stable Health Connect does not expose reliable per-set weight, set index, or RPE fields; Archive leaves them absent rather than inferring values. Direct Garmin integration and experimental Android APIs remain out of scope for this candidate.
+
 ## [0.13.0] - 2026-08-13
 
 ### Added

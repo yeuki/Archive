@@ -77,9 +77,13 @@ class ConnectedHealthPlugin : Plugin() {
             put(metric("exercise", "Exercise sessions", "as completed", "workouts"))
             put(metric("distance", "Distance", "daily", "m"))
             put(metric("activeCalories", "Active calories", "daily", "kcal"))
+            put(metric("totalCalories", "Total calories", "daily", "kcal"))
             put(metric("heartRate", "Heart rate", "samples", "bpm"))
             put(metric("heartRateVariability", "HRV", "samples", "ms"))
             put(metric("floors", "Floors climbed", "daily", "floors"))
+            put(metric("speed", "Workout speed", "per workout", "m/s"))
+            put(metric("elevation", "Workout elevation", "per workout", "m"))
+            put(metric("cadence", "Workout cadence", "per workout", "steps/min"))
         }
         call.resolve(JSObject().apply { put("metrics", metrics) })
     }
@@ -184,10 +188,10 @@ class ConnectedHealthPlugin : Plugin() {
                 val granted = withContext(Dispatchers.IO) {
                     client.permissionController.getGrantedPermissions()
                 }
-                if (!granted.containsAll(readPermissions)) {
+                if (granted.intersect(readPermissions).isEmpty()) {
                     val payload = permissionPayload(
                         granted,
-                        "Health Connect permissions are needed before Archive can import watch data.",
+                        "At least one Health Connect permission is needed before Archive can import watch data.",
                     ).apply {
                         put("synced", false)
                         put("needsPermissions", true)
@@ -205,7 +209,7 @@ class ConnectedHealthPlugin : Plugin() {
                 }
 
                 val payload = withContext(Dispatchers.IO) {
-                    ConnectedHealthSnapshotReader.read(client, days, trigger)
+                    ConnectedHealthSnapshotReader.read(client, days, trigger, granted)
                 }
                 if (trigger == "launch") {
                     HealthConnectAutoSyncStore.markForegroundSuccess(
@@ -325,17 +329,27 @@ class ConnectedHealthPlugin : Plugin() {
         val missing = readPermissions - grantedPermissions
         val status = buildStatusPayload(grantedPermissions)
         val healthAvailable = status.getBool("available") ?: false
+        val canSync = grantedRequested.isNotEmpty()
+        val workoutPermissionGranted = grantedPermissions.contains(ConnectedHealthSnapshotReader.exerciseReadPermission)
 
         status.put(
             "status",
-            if (!healthAvailable) "unavailable" else if (missing.isEmpty()) "available" else "permissionsNeeded",
+            if (!healthAvailable) "unavailable" else if (!canSync) "permissionsNeeded" else "available",
         )
         status.put(
             "message",
-            if (missing.isEmpty()) message else "Archive needs Health Connect permission before it can import watch data.",
+            when {
+                missing.isEmpty() -> message
+                !canSync -> "Archive needs Health Connect permission before it can import watch data."
+                else -> "Archive can import granted Health Connect data; ${missing.size} optional data types still need permission."
+            },
         )
         status.put("allGranted", missing.isEmpty())
         status.put("permissionsGranted", missing.isEmpty())
+        status.put("canSync", canSync)
+        status.put("partialPermissions", canSync && missing.isNotEmpty())
+        status.put("workoutPermissionGranted", workoutPermissionGranted)
+        status.put("needsPermissions", !canSync)
         status.put("requestedPermissions", stringArray(readPermissions))
         status.put("grantedPermissions", stringArray(grantedRequested))
         status.put("missingPermissions", stringArray(missing))
