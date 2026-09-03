@@ -9,6 +9,7 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 - Added deterministic Home continuity that prioritizes exact workout resume, workout review, today's scheduled routine, the next pending habit, hydration, and a calm caught-up state.
 - Added one-tap hydration increments with remembered preference and exact undo, plus water-only and sleep-only saves that preserve all unrelated daily fields.
 - Added bounded, backup-compatible daily-entry drafts, factual launch/return context, evidence-gated weekly reflection, and a dedicated continuity regression suite.
+- Added an explicit local demo-data generator for current-date browser testing without seeding production state or changing phone data.
 - Added a deterministic performance regression suite covering coalesced persistence, urgent durability, isolated scroll chrome, memoized rendering boundaries, bounded navigation glass, one-time chart reveals, and lazy feature chunks.
 - Added lazy loading for the focused Workout Mode and detailed body-map renderer so neither payload blocks Archive's initial JavaScript evaluation.
 - Added rich, source-attributed Health Connect workout ingestion on the stable Android API, preserving session identity, type/title, device provenance, durations, attributable distance/calorie/heart-rate/speed/elevation/cadence metrics, laps, segments, repetitions, and route availability when supplied.
