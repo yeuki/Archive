@@ -15,6 +15,7 @@ React UI and domain state
         +-- Capacitor bridge
                 |
                 +-- Android Health Connect plugin
+                +-- Capacitor local-notifications plugin
                 +-- Android app lifecycle and system settings
 ```
 
@@ -37,6 +38,8 @@ There is no application backend or account service. GitHub stores source and rel
 | `src/App.jsx` | Application shell, page routing, state normalization/persistence, records, modules, health orchestration, and coach integration |
 | `src/HabitHoldDeck.jsx` | Focused, hold-to-complete habit interaction, chooser, completion feedback, and undo |
 | `src/dailyRecords.js` | Daily field-presence normalization and exact partial-record habit updates |
+| `src/reminders.js` | Reminder defaults, normalization, stable notification IDs, payloads, and destination validation |
+| `src/localNotifications.js` | Native permission, scheduling, cancellation, and notification-action adapter |
 | `src/WorkoutMode.jsx` | Focused live-workout experience and set/rest progression |
 | `src/workoutSession.js` | Active-session normalization, defaults, progression, and persistence helpers |
 | `src/motion.js` | Motion capability and reduced-motion helpers |

@@ -30,6 +30,13 @@ import {
   normalizeContinuity,
   restoreWaterInEntries,
 } from "./continuity.js";
+import { normalizeReminders, notificationDestination } from "./reminders.js";
+import {
+  listenForReminderActions,
+  localNotificationsAvailable,
+  notificationPermission,
+  syncLocalReminders,
+} from "./localNotifications.js";
 
 const loadWorkoutMode = () => import("./WorkoutMode.jsx");
 const loadBodyMapVisual = () => import("./BodyMapVisual.jsx");
@@ -2229,6 +2236,7 @@ function normalizeTrackerState(rawState = {}) {
     watchData,
     coachMessages: normalizeCoachMessages(rawState.coachMessages),
     continuity: normalizeContinuity(rawState.continuity),
+    reminders: normalizeReminders(rawState.reminders),
   };
 }
 
@@ -7728,6 +7736,9 @@ function SettingsPage({
   onRequestConnectedHealthPermissions,
   onUpdateAISettings,
   onUpdateGeminiApiKey,
+  reminders,
+  reminderStatus,
+  onUpdateReminder,
 }) {
   const normalizedGoals = useMemo(() => normalizeGoals(goals), [goals]);
   const normalizedHealth = useMemo(() => normalizeConnectedHealth(connectedHealth), [connectedHealth]);
@@ -7768,6 +7779,19 @@ function SettingsPage({
         className="settings-goals-section"
       >
         <GoalSettingsPanel goals={goals} onUpdateGoals={onUpdateGoals} />
+      </PageSection>
+
+      <PageSection
+        eyebrow="Gentle prompts"
+        title="Reminders"
+        meta={Object.values(normalizeReminders(reminders)).some((item) => item.enabled) ? "On" : "Off"}
+        className="settings-reminders-section"
+      >
+        <ReminderSettingsPanel
+          reminders={reminders}
+          status={reminderStatus}
+          onUpdate={onUpdateReminder}
+        />
       </PageSection>
 
       <PageSection
@@ -8785,6 +8809,49 @@ function ModuleEvidenceEmpty({ children = "Record more days to unlock this view.
   return <div className="module-evidence-empty"><strong>Not enough evidence yet</strong><span>{children}</span></div>;
 }
 
+function ReminderSettingsPanel({ reminders, status, onUpdate }) {
+  const settings = normalizeReminders(reminders);
+  const rows = [
+    ["habits", "Habit check-in", "Opens today's habit tracker."],
+    ["water", "Drink water", "Opens today's water field."],
+  ];
+
+  return (
+    <div className="settings-stack reminder-settings-panel">
+      <SettingsSection title="Daily reminders" meta={status === "granted" ? "Allowed" : status === "denied" ? "Blocked" : "Optional"}>
+        {rows.map(([kind, label, detail]) => (
+          <SettingsRow key={kind} label={label} detail={detail}>
+            <div className="reminder-controls">
+              <input
+                className="reminder-time"
+                type="time"
+                aria-label={`${label} time`}
+                value={settings[kind].time}
+                onChange={(event) => onUpdate(kind, { time: event.target.value })}
+              />
+              <button
+                type="button"
+                className={`settings-pill-toggle ${settings[kind].enabled ? "active" : ""}`}
+                aria-pressed={settings[kind].enabled}
+                onClick={() => onUpdate(kind, { enabled: !settings[kind].enabled })}
+              >
+                {settings[kind].enabled ? "On" : "Off"}
+              </button>
+            </div>
+          </SettingsRow>
+        ))}
+      </SettingsSection>
+      <div className="ai-disclosure">
+        {status === "webPreview"
+          ? "Saved for this demo. Your Android app will schedule these after you allow notifications."
+          : status === "denied"
+            ? "Notifications are blocked in Android settings. Archive left the reminder off."
+            : "Reminder previews stay private: habit names and health values are never shown on the lock screen."}
+      </div>
+    </div>
+  );
+}
+
 function ModuleStreakGrid({ months = 3, metricType = "neutral", context }) {
   const monthCount = clamp(Number(months) || 3, 1, 5);
   const cellCount = monthCount * 31;
@@ -9513,7 +9580,7 @@ function ModulePicker({ pageId, pageName, context, addedModuleIds = [], moduleTe
   );
 }
 
-function DailySheet({ habitNames, trackedHabits, entries, goals, watchData, connectedHealth, dailyDrafts, initialDate, title = "Add previous day", onClose, onSave, onSaveField, onDelete, onAddHabit, onDraftChange, onClearDraft }) {
+function DailySheet({ habitNames, trackedHabits, entries, goals, watchData, connectedHealth, dailyDrafts, initialDate, initialFocus = "", title = "Add previous day", onClose, onSave, onSaveField, onDelete, onAddHabit, onDraftChange, onClearDraft }) {
   const normalizedGoals = normalizeGoals(goals);
   const defaultWater = Math.round(normalizedGoals.waterTarget * 0.75);
   const yesterday = dateKey(addDays(new Date(), -1));
@@ -9550,6 +9617,7 @@ function DailySheet({ habitNames, trackedHabits, entries, goals, watchData, conn
   const [newHabit, setNewHabit] = useState("");
   const [isDragging, setIsDragging] = useState(false);
   const sheetRef = useRef(null);
+  const waterInputRef = useRef(null);
   const dragStartY = useRef(0);
   const dragLatestY = useRef(0);
   const dragPointerId = useRef(null);
@@ -9558,6 +9626,15 @@ function DailySheet({ habitNames, trackedHabits, entries, goals, watchData, conn
   useEffect(() => {
     if (hasAuthoritativeSleep) setSleepMode("sync");
   }, [hasAuthoritativeSleep, selectedDate]);
+
+  useEffect(() => {
+    if (initialFocus !== "water") return;
+    window.requestAnimationFrame(() => {
+      waterInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      waterInputRef.current?.focus({ preventScroll: true });
+      waterInputRef.current?.select();
+    });
+  }, [initialFocus]);
 
   useEffect(() => () => {
     if (dragFrame.current) window.cancelAnimationFrame(dragFrame.current);
@@ -9815,6 +9892,7 @@ function DailySheet({ habitNames, trackedHabits, entries, goals, watchData, conn
             <label className="quick-field">
               <span>Water ({waterUnitLabel(normalizedGoals)})</span>
               <input
+                ref={waterInputRef}
                 type="number"
                 min="0"
                 max={normalizedGoals.waterUnit === "l" ? "10" : "10000"}
@@ -10013,6 +10091,7 @@ export default function App() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [recordDate, setRecordDate] = useState(null);
+  const [dailySheetFocus, setDailySheetFocus] = useState("");
   const [modulePickerOpen, setModulePickerOpen] = useState(false);
   const [editingModule, setEditingModule] = useState(null);
   const [editingHabit, setEditingHabit] = useState(null);
@@ -10022,6 +10101,8 @@ export default function App() {
   const [pullRefreshState, setPullRefreshState] = useState("idle");
   const [pullRefreshMessage, setPullRefreshMessage] = useState("");
   const [homeWorkoutRequest, setHomeWorkoutRequest] = useState(null);
+  const [reminderStatus, setReminderStatus] = useState(() => localNotificationsAvailable() ? "prompt" : "webPreview");
+  const [pendingReminderDestination, setPendingReminderDestination] = useState(null);
   const backupNoticeTimer = useRef(null);
   const importInputRef = useRef(null);
   const appShellRef = useRef(null);
@@ -10051,6 +10132,7 @@ export default function App() {
   const connectedHealth = useMemo(() => normalizeConnectedHealth(state.connectedHealth), [state.connectedHealth]);
   const watchData = useMemo(() => normalizeWatchData(state.watchData), [state.watchData]);
   const continuity = useMemo(() => normalizeContinuity(state.continuity), [state.continuity]);
+  const reminders = useMemo(() => normalizeReminders(state.reminders), [state.reminders]);
   const pageModules = useMemo(() => normalizePageModules(state.pageModules), [state.pageModules]);
   const moduleTemplates = useMemo(() => normalizeModuleTemplates(state.moduleTemplates), [state.moduleTemplates]);
   const analyticalWorkout = useMemo(() => ({
@@ -10110,6 +10192,50 @@ export default function App() {
     }));
   }, []);
 
+  useEffect(() => {
+    let handle;
+    let cancelled = false;
+    listenForReminderActions((action) => {
+      const destination = notificationDestination(action);
+      if (destination) setPendingReminderDestination(destination);
+    }).then((listenerHandle) => {
+      if (cancelled) listenerHandle?.remove();
+      else handle = listenerHandle;
+    }).catch(() => {});
+    return () => {
+      cancelled = true;
+      handle?.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (launchPhase !== "ready" || !pendingReminderDestination) return;
+    const destination = pendingReminderDestination;
+    setPendingReminderDestination(null);
+
+    if (destination === "habits") {
+      changeActivePage("habit");
+      return;
+    }
+
+    changeActivePage("home");
+    transitionOverlay(() => {
+      setChoiceOpen(false);
+      setBackupOpen(false);
+      setHistoryOpen(false);
+      setRecordDate(dateKey(new Date()));
+      setDailySheetFocus("water");
+      setSheetOpen(true);
+    });
+  }, [launchPhase, pendingReminderDestination]);
+
+  useEffect(() => {
+    if (launchPhase !== "ready") return;
+    syncLocalReminders(reminders)
+      .then((result) => setReminderStatus(result.status))
+      .catch(() => setReminderStatus("error"));
+  }, [launchPhase]);
+
   const changeActivePage = (nextPage) => {
     if (activePage === nextPage) {
       setPageMotion("center");
@@ -10159,6 +10285,7 @@ export default function App() {
     transitionOverlay(() => {
       setChoiceOpen(false);
       setRecordDate(dateKey(addDays(new Date(), -1)));
+      setDailySheetFocus("");
       setSheetOpen(true);
     });
   };
@@ -10167,6 +10294,7 @@ export default function App() {
     transitionOverlay(() => {
       setHistoryOpen(false);
       setRecordDate(date);
+      setDailySheetFocus("");
       setSheetOpen(true);
     });
   };
@@ -10989,6 +11117,36 @@ export default function App() {
     }, "close");
   };
 
+  const updateReminder = async (kind, patch) => {
+    const current = normalizeReminders(latestStateRef.current.reminders);
+    let next = normalizeReminders({
+      ...current,
+      [kind]: { ...current[kind], ...patch },
+    });
+
+    if (patch.enabled === true && localNotificationsAvailable()) {
+      try {
+        const permission = await notificationPermission({ request: true });
+        setReminderStatus(permission);
+        if (permission !== "granted") {
+          next = normalizeReminders({ ...next, [kind]: { ...next[kind], enabled: false } });
+        }
+      } catch {
+        setReminderStatus("denied");
+        next = normalizeReminders({ ...next, [kind]: { ...next[kind], enabled: false } });
+      }
+    }
+
+    setTrackerState((tracker) => ({ ...tracker, reminders: next }));
+    try {
+      const result = await syncLocalReminders(next);
+      setReminderStatus(result.status);
+    } catch {
+      setReminderStatus("error");
+      showBackupNotice("Archive could not update reminders.", "error");
+    }
+  };
+
   const saveDailyField = ({ date, field, value, metadata = {} }) => {
     transitionOverlay(() => {
       setTrackerState((current) => {
@@ -11068,6 +11226,7 @@ export default function App() {
     transitionOverlay(() => {
       setChoiceOpen(false);
       setRecordDate(dateKey(new Date()));
+      setDailySheetFocus("");
       setSheetOpen(true);
     });
   };
@@ -11202,6 +11361,7 @@ export default function App() {
   const aiSettingsAction = useEventCallback(updateAISettings);
   const geminiKeyAction = useEventCallback(updateGeminiApiKey);
   const connectedHealthAction = useEventCallback(updateConnectedHealth);
+  const reminderAction = useEventCallback(updateReminder);
   const checkConnectedHealthAction = useEventCallback(checkConnectedHealth);
   const openConnectedHealthAction = useEventCallback(openConnectedHealthSettings);
   const requestConnectedHealthAction = useEventCallback(requestConnectedHealthPermissions);
@@ -11222,7 +11382,7 @@ export default function App() {
     sleep: <MemoSleepPage weekDays={weekDays} goals={goals} onAdd={addChoiceAction} onCustomize={modulePickerAction} onBackup={backupAction} onHistory={historyAction} modules={pageModules.sleep} moduleContext={moduleContext} onRemoveModule={removePageModuleAction} onEditModule={editPageModuleAction} onReorderModule={reorderPageModuleAction} />,
     stats: <MemoStatsPage entries={state.entries} habitNames={trackedHabitNames} goals={goals} onAdd={addChoiceAction} onCustomize={modulePickerAction} onBackup={backupAction} onHistory={historyAction} onEditDate={recordDateAction} modules={pageModules.stats} moduleContext={moduleContext} onRemoveModule={removePageModuleAction} onEditModule={editPageModuleAction} onReorderModule={reorderPageModuleAction} />,
     coach: <MemoCoachPage analytics={coachAnalytics} workout={state.workout} aiSettings={aiSettings} geminiApiKey={geminiApiKey} coachMessages={state.coachMessages} onSaveMessages={coachMessagesAction} onApplyProposal={coachProposalAction} />,
-    settings: <MemoSettingsPage goals={goals} onUpdateGoals={goalsAction} aiSettings={aiSettings} geminiApiKey={geminiApiKey} connectedHealth={connectedHealth} watchData={watchData} onUpdateConnectedHealth={connectedHealthAction} onCheckConnectedHealth={checkConnectedHealthAction} onOpenConnectedHealthSettings={openConnectedHealthAction} onRequestConnectedHealthPermissions={requestConnectedHealthAction} onUpdateAISettings={aiSettingsAction} onUpdateGeminiApiKey={geminiKeyAction} />,
+    settings: <MemoSettingsPage goals={goals} onUpdateGoals={goalsAction} aiSettings={aiSettings} geminiApiKey={geminiApiKey} connectedHealth={connectedHealth} watchData={watchData} onUpdateConnectedHealth={connectedHealthAction} onCheckConnectedHealth={checkConnectedHealthAction} onOpenConnectedHealthSettings={openConnectedHealthAction} onRequestConnectedHealthPermissions={requestConnectedHealthAction} onUpdateAISettings={aiSettingsAction} onUpdateGeminiApiKey={geminiKeyAction} reminders={reminders} reminderStatus={reminderStatus} onUpdateReminder={reminderAction} />,
   };
 
   return (
@@ -11280,6 +11440,7 @@ export default function App() {
             connectedHealth={connectedHealth}
             dailyDrafts={continuity.dailyDrafts}
             initialDate={recordDate}
+            initialFocus={dailySheetFocus}
             title={state.entries.some((entry) => entry.date === recordDate) ? "Edit record" : "Add record"}
             onClose={() => transitionOverlay(() => setSheetOpen(false), "close")}
             onSave={saveEntry}

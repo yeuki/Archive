@@ -80,6 +80,13 @@ The center Home control is surrounded by two expandable navigation groups. These
 - Every mutation is reviewable; invalid suggestions are shown as skipped with a reason.
 - The Gemini API key is optional, local, and excluded from normal backups.
 
+### Use gentle reminders
+
+- Habit and water reminders are optional, independent, and off by default.
+- Enabling a reminder asks for the Android notification permission at that moment.
+- Tapping a reminder completes the normal launch experience, then opens the relevant logging surface directly.
+- Lock-screen copy is generic and does not reveal habit names or personal health values.
+
 ## Data ownership and privacy
 
 - App state is persisted locally in browser/Capacitor storage.

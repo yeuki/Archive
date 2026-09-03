@@ -113,3 +113,10 @@ This is a compact record of accepted and rejected product/technical directions. 
 - **Decision:** Home chooses one dominant continuation from real local state and routes it directly to the relevant task. Quick capture persists only the named field, interrupted drafts are recoverable, and analytical surfaces remain empty until their explicit evidence threshold is met.
 - **Rationale:** Archive earns return use by reducing effort and making automatic capture visible, not by inventing personal values, manufacturing a backlog, or escalating reminders.
 - **Consequence:** Continuity rules remain platform-neutral and testable. Notifications, widgets, AI prioritization, and additional Health Connect triggers are separate future decisions rather than adjacent retention work.
+
+## D-017 — Keep reminders local, optional, and destination-specific
+
+- **Status:** Accepted
+- **Decision:** Archive may schedule independent daily habit and water reminders only after explicit opt-in. Notification copy stays generic, taps wait for the existing launch sequence, and each tap opens its exact logging surface. Scheduling uses ordinary repeating notifications without exact-alarm privileges.
+- **Rationale:** A gentle prompt can reduce logging friction without exposing personal information, interrupting launch reconciliation, or turning Archive into an escalation system.
+- **Consequence:** Reminder preferences travel in local backups, browser preview remains non-notifying, and notification handling cannot introduce new Health Connect reads. Delivery and cold-start behavior require physical-device validation before release.

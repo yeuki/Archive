@@ -10,6 +10,7 @@ const scripts = [
   "test:performance",
   "test:habit",
   "test:continuity",
+  "test:reminders",
   "build",
 ];
 
