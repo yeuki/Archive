@@ -43,6 +43,9 @@ The center Home control is surrounded by two expandable navigation groups. These
 - A synced sleep record supersedes a conflicting manual record.
 - A sleep session is attributed to the calendar day before its wake date, independent of the clock hour.
 - Historical records remain editable and are not deleted when a habit is disabled.
+- Home selects one deterministic continuation from real local state: active workout, workout summary, today's scheduled routine, next pending habit, hydration, or a calm caught-up state.
+- Contextual Home actions route directly to their task. Hydration supports remembered increments and exact undo without recording or altering habits or sleep.
+- Unfinished daily-sheet values survive interruption as a local draft, and the sheet also offers explicit water-only and sleep-only saves.
 
 ### Understand patterns
 
@@ -50,6 +53,8 @@ The center Home control is surrounded by two expandable navigation groups. These
 - Modules can be added from a gallery, configured, removed, and reordered.
 - A visualization must retain an understandable value, date span, and detail path; visual polish cannot obscure meaning.
 - Semantic colors identify Habit, Sleep, Water, and Move consistently.
+- Personal relationships and weekly reflections are evidence-gated and disclose recorded-day coverage; insufficient history produces an explanatory empty state rather than sample values.
+- Home may summarize a launch reconciliation or a return after absence, but it does not convert historical gaps into a required backlog.
 
 ### Plan and complete training
 

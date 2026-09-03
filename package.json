@@ -13,6 +13,7 @@
     "test:motion": "node ./scripts/verify-motion-system.mjs",
     "test:performance": "node ./scripts/verify-performance-system.mjs",
     "test:habit": "node ./scripts/verify-habit-hold-deck.mjs",
+    "test:continuity": "node ./scripts/verify-continuity-system.mjs",
     "test:workspace": "node ./scripts/verify-workspace.mjs",
     "verify": "node ./scripts/verify-all.mjs",
     "preview": "vite preview --host 127.0.0.1",

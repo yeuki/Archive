@@ -23,6 +23,13 @@ import {
   workoutLogFromSession,
   workoutSessionStats,
 } from "./workoutSession.js";
+import {
+  addWaterToEntries,
+  buildWeeklyReflection,
+  chooseHomeContinuation,
+  normalizeContinuity,
+  restoreWaterInEntries,
+} from "./continuity.js";
 
 const loadWorkoutMode = () => import("./WorkoutMode.jsx");
 const loadBodyMapVisual = () => import("./BodyMapVisual.jsx");
@@ -2221,6 +2228,7 @@ function normalizeTrackerState(rawState = {}) {
     connectedHealth: normalizeConnectedHealth(rawState.connectedHealth),
     watchData,
     coachMessages: normalizeCoachMessages(rawState.coachMessages),
+    continuity: normalizeContinuity(rawState.continuity),
   };
 }
 
@@ -2373,6 +2381,7 @@ function loadInitialState() {
     connectedHealth: normalizeConnectedHealth(),
     watchData: normalizeWatchData(),
     coachMessages: normalizeCoachMessages(),
+    continuity: normalizeContinuity(),
   };
 }
 
@@ -5130,9 +5139,6 @@ function MetricBalance({ weekDays, habitNames, goals }) {
     ["Habits", metricAverage(entries, (entry) => habitPercent(entry, habitNames))],
     ["Sleep", metricAverage(entries, (entry) => sleepScore(entry, goals))],
     ["Water", metricAverage(entries, (entry) => waterPercent(entry, goals))],
-    ["Move", metricAverage(entries, (entry) => (
-      isDailyFieldRecorded(entry, "habits") ? (entry.habits?.Workout ? 100 : 0) : null
-    ))],
   ];
 
   return (
@@ -5151,7 +5157,7 @@ function MetricBalance({ weekDays, habitNames, goals }) {
   );
 }
 
-function HomePage({ weekDays, habitNames, goals, onAdd, onCustomize, onBackup, onHistory, modules, moduleContext, onRemoveModule, onEditModule, onReorderModule }) {
+function HomePage({ weekDays, habitNames, goals, workout, continuity, onAdd, onCustomize, onBackup, onHistory, onContinuation, onQuickWater, onCustomWater, onDismissReflection, modules, moduleContext, onRemoveModule, onEditModule, onReorderModule }) {
   const scores = weekDays.map((day) => entryScore(day.entry, habitNames, goals));
   const recordedScores = scores.filter(Number.isFinite);
   const averageValue = Math.round(average(recordedScores));
@@ -5165,56 +5171,27 @@ function HomePage({ weekDays, habitNames, goals, onAdd, onCustomize, onBackup, o
   const hasTodayScore = Number.isFinite(todayScore);
   const todayHasHabits = isDailyFieldRecorded(todayEntry, "habits");
   const todayHasWater = isDailyFieldRecorded(todayEntry, "water");
-  const todayHasSleep = isDailyFieldRecorded(todayEntry, "sleep");
-  const todayIsComplete = todayHasHabits && todayHasWater && todayHasSleep;
+  const todayIsComplete = todayHasHabits && todayHasWater;
   const heroScore = hasTodayScore ? Math.round(todayScore) : 0;
   const dateLabel = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
-  const insightCopy = !recordedScores.length
-    ? "Your first daily record will become the starting point for trends across habits, sleep, water, and movement."
-    : averageValue >= 75
-      ? "Your week is trending strongly. Protect the routines that are keeping sleep, hydration, and habits in balance."
-      : "A complete record today will make your weekly patterns clearer and help Archive surface more useful signals.";
-  const attention = !todayEntry || !hasAnyDailyField(todayEntry)
-    ? {
-        title: "Today's record is ready",
-        copy: "A complete entry keeps your habits, sleep, hydration, and movement timeline connected.",
-        actionLabel: "Record",
-        status: "active",
-      }
-    : !todayHasWater
-      ? {
-          title: "Hydration is still unrecorded",
-          copy: "Your habit progress is safe. Add water whenever it is convenient.",
-          actionLabel: "Continue",
-          status: "active",
-        }
-      : todayEntry.water < goals.waterTarget
-      ? {
-          title: "Hydration is still below target",
-          copy: `${formatWaterVolume(todayEntry.water, goals)} recorded toward ${formatWaterVolume(goals.waterTarget, goals)}.`,
-          actionLabel: "Update",
-          status: "attention",
-        }
-      : !todayHasSleep
-        ? {
-            title: "Sleep is still unrecorded",
-            copy: "Your saved habits and hydration remain complete while sleep waits for watch sync or manual entry.",
-            actionLabel: "Continue",
-            status: "active",
-          }
-        : todayEntry.sleep < goals.sleepTarget
-        ? {
-            title: "Sleep is below your target",
-            copy: `${formatSleepHours(todayEntry.sleep)} recorded against a ${formatSleepHours(goals.sleepTarget)} target.`,
-            actionLabel: "Review",
-            status: "attention",
-          }
-        : {
-            title: "Today is fully recorded",
-            copy: "Archive has enough information to keep this week's summary and comparisons current.",
-            actionLabel: "Review",
-            status: "complete",
-          };
+  const scheduledRoutine = scheduledRoutineForDay(workout);
+  const attention = chooseHomeContinuation({ todayEntry, habitNames, goals, workout, scheduledRoutine });
+  const weeklyReflection = buildWeeklyReflection(moduleContext.entries);
+  const weekKey = dateKey(startOfWeek(new Date()));
+  const showReflection = weeklyReflection.available && continuity.dismissedWeeklyReview !== weekKey;
+  const previousOpenMs = Date.parse(continuity.previousOpenAt || "");
+  const returnDays = Number.isFinite(previousOpenMs) ? Math.floor((Date.now() - previousOpenMs) / 86400000) : 0;
+  const syncMs = Date.parse(moduleContext.connectedHealth.lastSyncAt || "");
+  const importedSinceOpen = Number.isFinite(previousOpenMs)
+    ? moduleContext.watchData.workouts.filter((item) => Date.parse(item.updatedAt || item.endedAt || item.startedAt || "") > previousOpenMs).length
+    : 0;
+  const insightCopy = returnDays >= 3
+    ? `Welcome back. Archive kept your local records intact${moduleContext.connectedHealth.enabled ? " and reconciled available watch data at launch" : ""}. Nothing needs to be backfilled unless you choose to review it.`
+    : Number.isFinite(previousOpenMs) && Number.isFinite(syncMs) && syncMs > previousOpenMs
+      ? `${importedSinceOpen ? `${importedSinceOpen} source-attributed workout${importedSinceOpen === 1 ? "" : "s"} arrived. ` : ""}${moduleContext.connectedHealth.sourceName || "Health Connect"} refreshed at launch.`
+    : recordedScores.length
+      ? `${recordedScores.length} recorded ${recordedScores.length === 1 ? "day" : "days"} support this week's summary. Archive will wait for more evidence before drawing a relationship.`
+      : "Your first real record will become the baseline. Archive will not invent history while it waits.";
 
   return (
     <div className="screen canvas-screen home-canvas-screen">
@@ -5228,8 +5205,8 @@ function HomePage({ weekDays, habitNames, goals, onAdd, onCustomize, onBackup, o
         progressLabel={hasTodayScore ? "today" : "unlogged"}
         footLabel={recordedScores.length ? `Weekly average ${averageValue}` : "Your baseline begins with one record"}
         footValue={recordedScores.length ? `Best ${bestDay}` : "No data yet"}
-        actionLabel={todayIsComplete ? "Review today" : hasTodayScore ? "Continue today" : "Record today"}
-        onAction={onAdd}
+        actionLabel={attention.actionLabel || "Review today"}
+        onAction={() => attention.actionLabel ? onContinuation(attention.kind) : onHistory()}
         className="home-canvas-hero"
       >
         <BarChart values={scores} labels={DAY_LABELS} metricType="home" />
@@ -5237,13 +5214,26 @@ function HomePage({ weekDays, habitNames, goals, onAdd, onCustomize, onBackup, o
 
       <PageSection eyebrow="Today" title="For you" meta={todayIsComplete ? "Up to date" : "1 item"} className="for-you-section">
         <GuidedHighlight
-          eyebrow={hasTodayScore ? "Daily guidance" : "Needs attention"}
+          eyebrow={attention.eyebrow}
           title={attention.title}
           copy={attention.copy}
           actionLabel={attention.actionLabel}
-          onAction={onAdd}
+          onAction={attention.actionLabel ? () => onContinuation(attention.kind) : undefined}
           status={attention.status}
         />
+        {attention.kind === "water" && (
+          <div className="quick-water-panel panel" aria-label="Quick water capture">
+            <div>
+              <small>Preferred amount</small>
+              <strong>{formatWaterVolume(continuity.preferredWaterMl, goals)}</strong>
+            </div>
+            <div className="quick-water-actions">
+              <button type="button" onClick={() => onQuickWater(continuity.preferredWaterMl)}>+{formatWaterVolume(continuity.preferredWaterMl, goals)}</button>
+              <button type="button" onClick={() => onQuickWater(continuity.preferredWaterMl === 250 ? 500 : 250)}>+{formatWaterVolume(continuity.preferredWaterMl === 250 ? 500 : 250, goals)}</button>
+              <button type="button" className="quiet" onClick={onCustomWater}>Custom</button>
+            </div>
+          </div>
+        )}
         <div className="panel insight canvas-insight">
           <span className="insight-mark" aria-hidden="true">✦</span>
           <div>
@@ -5251,34 +5241,29 @@ function HomePage({ weekDays, habitNames, goals, onAdd, onCustomize, onBackup, o
             <p>{insightCopy}</p>
           </div>
         </div>
+        {showReflection && (
+          <div className="panel weekly-reflection">
+            <SectionTitle title={weeklyReflection.title} meta={`${weeklyReflection.coverage} recorded days`} />
+            <p>{weeklyReflection.copy}</p>
+            <button type="button" className="ghost-btn" onClick={() => onDismissReflection(weekKey)}>Not now</button>
+          </div>
+        )}
       </PageSection>
 
       <PageSection eyebrow="Overview" title="This week" meta="Last 7 days" className="summary-section">
         <div className="stat-grid">
           <StatCard label="Avg value" value={averageValue || "--"} index={0} />
           <StatCard label="Best day" value={bestDay || "--"} index={1} />
-          <StatCard label="Vs previous" value={`${delta >= 0 ? "\u2191" : "\u2193"} ${Math.abs(delta)}`} index={2} />
+          <StatCard label="Vs previous" value={recordedScores.length >= 2 ? `${delta >= 0 ? "\u2191" : "\u2193"} ${Math.abs(delta)}` : "--"} index={2} />
         </div>
       </PageSection>
 
       <PageSection eyebrow="Analysis" title="Patterns" meta="7-day signals" className="patterns-section">
         <MetricBalance weekDays={weekDays} habitNames={habitNames} goals={goals} />
-        <div className="panel correlation-list">
-          <SectionTitle title="Correlations" meta="signals" />
-          <div className="correlation-row">
-            <div>
-              <p>Sleep to habit completion</p>
-              <small>7h+ sleep is linked with better next-day completion.</small>
-            </div>
-            <span className="correlation-score">+.42</span>
-          </div>
-          <div className="correlation-row">
-            <div>
-              <p>Water to energy rating</p>
-              <small>Water target consistency is the most uneven input.</small>
-            </div>
-            <span className="correlation-score mid">+.28</span>
-          </div>
+        <div className="panel correlation-list evidence-empty">
+          <SectionTitle title="Relationships" meta="evidence gated" />
+          <p>Archive needs at least 7 paired recorded days before showing a personal relationship.</p>
+          <small>{recordedScores.length} of 7 days currently support comparison.</small>
         </div>
       </PageSection>
 
@@ -7361,7 +7346,7 @@ function WorkoutSettingsView({ workout, routine, workoutActions, onSetSchedule, 
   );
 }
 
-function WorkoutPage({ workout, onWorkoutChange, onAdd, onBackup, modules, moduleContext, onRemoveModule, onEditModule, onReorderModule }) {
+function WorkoutPage({ workout, onWorkoutChange, homeRequest, onAdd, onBackup, modules, moduleContext, onRemoveModule, onEditModule, onReorderModule }) {
   const data = workout;
   const selectedRoutine = useMemo(() => (
     data.routines.find((routine) => routine.id === data.selectedRoutineId) ?? data.routines[0]
@@ -7523,6 +7508,16 @@ function WorkoutPage({ workout, onWorkoutChange, onAdd, onBackup, modules, modul
       setWorkoutModeOpen(true);
     }, { kind: "workout-mode", direction: "open" });
   };
+
+  useEffect(() => {
+    if (!homeRequest?.id) return;
+    if ((homeRequest.kind === "active-workout" || homeRequest.kind === "workout-summary") && activeSession) {
+      loadWorkoutMode();
+      setWorkoutModeOpen(true);
+      return;
+    }
+    if (homeRequest.kind === "scheduled-workout" && scheduledRoutine && !activeSession) startWorkout(scheduledRoutine);
+  }, [homeRequest?.id]);
 
   const selectRoutineAction = useEventCallback(selectRoutine);
   const updateRoutineAction = useEventCallback(updateRoutine);
@@ -8786,12 +8781,17 @@ function VariableAreaChart({ values, labels, gradientId, label, maxValue = 100, 
   );
 }
 
-function ModuleStreakGrid({ months = 3, metricType = "neutral" }) {
+function ModuleEvidenceEmpty({ children = "Record more days to unlock this view." }) {
+  return <div className="module-evidence-empty"><strong>Not enough evidence yet</strong><span>{children}</span></div>;
+}
+
+function ModuleStreakGrid({ months = 3, metricType = "neutral", context }) {
   const monthCount = clamp(Number(months) || 3, 1, 5);
   const cellCount = monthCount * 31;
-  const cells = Array.from({ length: cellCount }, (_, index) => {
-    const score = clamp(Math.round(66 + Math.sin(index / 8) * 18 + (((index * 17) % 37) - 18)), 8, 96);
-    return { score, key: index };
+  const days = buildRecentDays(context.entries, cellCount);
+  const cells = days.map((day, index) => {
+    const score = moduleMetricScore(day, context);
+    return { score, key: `${day.date}-${index}`, date: day.date };
   });
   const monthLabels = Array.from({ length: monthCount }, (_, index) => {
     const date = addDays(new Date(), -((monthCount - index - 1) * 31));
@@ -8805,16 +8805,25 @@ function ModuleStreakGrid({ months = 3, metricType = "neutral" }) {
       </div>
       <div className="module-streak-grid" style={{ gridAutoColumns: monthCount >= 4 ? "10px" : "13px" }}>
         {cells.map((cell) => (
-          <span key={cell.key} style={{ "--tone": toneForScore(cell.score, metricType) }} />
+          <span key={cell.key} title={Number.isFinite(cell.score) ? `${cell.date}: ${Math.round(cell.score)}%` : `${cell.date}: no record`} className={Number.isFinite(cell.score) ? "" : "empty"} style={{ "--tone": Number.isFinite(cell.score) ? toneForScore(cell.score, metricType) : "#f1f1f1" }} />
         ))}
       </div>
     </div>
   );
 }
 
-function ModuleDistribution({ metricType = "sleep" }) {
-  const values = [22, 54, 68, 92, 84, 58, 36, 18];
+function ModuleDistribution({ context, metricType = "sleep" }) {
   const labels = ["5h", "6h", "6.5", "7h", "7.5", "8h", "8.5", "9h"];
+  const sleeps = context.entries.filter((entry) => isDailyFieldRecorded(entry, "sleep")).map((entry) => Number(entry.sleep)).filter(Number.isFinite);
+  if (sleeps.length < 3) return <ModuleEvidenceEmpty>Record at least 3 sleep sessions to see a distribution.</ModuleEvidenceEmpty>;
+  const bins = [5, 6, 6.5, 7, 7.5, 8, 8.5, 9];
+  const counts = bins.map(() => 0);
+  sleeps.forEach((hours) => {
+    const nearest = bins.reduce((best, value, index) => Math.abs(value - hours) < Math.abs(bins[best] - hours) ? index : best, 0);
+    counts[nearest] += 1;
+  });
+  const max = Math.max(...counts, 1);
+  const values = counts.map((count) => Math.round((count / max) * 100));
   return <ModuleBars values={values} labels={labels} metricType={metricType} />;
 }
 
@@ -8824,10 +8833,6 @@ function ModuleStack({ context }) {
     ["Habits", metricAverage(entries, (entry) => habitPercent(entry, context.habitNames))],
     ["Water", metricAverage(entries, (entry) => waterPercent(entry, context.goals))],
     ["Sleep", metricAverage(entries, (entry) => sleepScore(entry, context.goals))],
-    ["Move", metricAverage(entries, (entry) => (
-      isDailyFieldRecorded(entry, "habits") ? (entry.habits?.Workout ? 100 : 0) : null
-    ))],
-    ["Energy", 69],
   ];
 
   return (
@@ -8845,42 +8850,21 @@ function ModuleStack({ context }) {
 
 function ModuleRing({ context }) {
   const scores = context.weekDays.map((day) => entryScore(day.entry, context.habitNames, context.goals)).filter(Number.isFinite);
-  const score = Math.round(average(scores)) || 74;
+  if (!scores.length) return <ModuleEvidenceEmpty>Record at least one daily field to calculate a score.</ModuleEvidenceEmpty>;
+  const score = Math.round(average(scores));
+  const entries = context.weekDays.map((day) => day.entry).filter(Boolean);
+  const breakdown = [
+    ["Habits", metricAverage(entries, (entry) => habitPercent(entry, context.habitNames))],
+    ["Sleep", metricAverage(entries, (entry) => sleepScore(entry, context.goals))],
+    ["Water", metricAverage(entries, (entry) => waterPercent(entry, context.goals))],
+  ];
 
   return (
     <div className="module-ring-layout">
       <div className="module-score-ring" style={{ "--value": `${score}%` }}><strong>{score}</strong></div>
       <div className="module-ring-list">
-        <span><small>Habits</small><b>31</b></span>
-        <span><small>Sleep</small><b>24</b></span>
-        <span><small>Water</small><b>12</b></span>
-        <span><small>Move</small><b>7</b></span>
+        {breakdown.map(([label, value]) => <span key={label}><small>{label}</small><b>{Number.isFinite(value) ? Math.round(value) : "--"}</b></span>)}
       </div>
-    </div>
-  );
-}
-
-function ModuleScatter() {
-  return (
-    <svg className="module-scatter" viewBox="0 0 320 170" role="img" aria-label="Correlation scatter plot">
-      <line className="grid-line" x1="30" y1="132" x2="292" y2="132" />
-      <line className="grid-line" x1="30" y1="94" x2="292" y2="94" />
-      <line className="grid-line" x1="30" y1="56" x2="292" y2="56" />
-      <path className="line" d="M44 128 C92 112, 144 96, 188 76 C220 62, 253 51, 284 42" />
-      {[["54", "124"], ["86", "116"], ["126", "104"], ["150", "92"], ["176", "84"], ["212", "64"], ["246", "58"], ["278", "44"]].map(([cx, cy]) => (
-        <circle className="point" cx={cx} cy={cy} r="4" key={`${cx}-${cy}`} />
-      ))}
-    </svg>
-  );
-}
-
-function ModuleMatrix() {
-  const values = ["1.0", ".28", ".42", ".18", ".28", "1.0", ".21", ".33", ".42", ".21", "1.0", ".36", ".18", ".33", ".36", "1.0"];
-  return (
-    <div className="module-matrix">
-      {values.map((value, index) => (
-        <span key={`${value}-${index}`} style={{ "--tone": toneForScore(Math.abs(Number(value)) * 100, "stats") }}>{value}</span>
-      ))}
     </div>
   );
 }
@@ -8888,11 +8872,14 @@ function ModuleMatrix() {
 function ModuleDeltaTimeline({ context }) {
   const scores = context.weekDays.map((day) => entryScore(day.entry, context.habitNames, context.goals));
   const rows = DAY_NAMES.slice(0, 5).map((label, index) => {
-    const score = scores[index] ?? 60 + index * 4;
-    const previous = scores[index - 1] ?? score - 3;
+    const score = scores[index];
+    const previous = scores[index - 1];
+    if (!Number.isFinite(score) || !Number.isFinite(previous)) return null;
     const delta = Math.round(score - previous);
     return { label, delta, position: clamp(50 + delta * 4, 5, 100) };
-  });
+  }).filter(Boolean);
+
+  if (!rows.length) return <ModuleEvidenceEmpty>Record two consecutive days to see exact changes.</ModuleEvidenceEmpty>;
 
   return (
     <div className="module-timeline">
@@ -8924,11 +8911,9 @@ function moduleAreaSeries(recentDays, context) {
   const normalizedGoals = normalizeGoals(context.goals);
 
   if (context.metricType === "sleep") {
-    const fallbackSleep = [6.5, 7.2, 6.8, 8, 7.6, 8.3, 7.8, 8.1, 7.4, 8.2];
-    const values = recentDays.map((day, index) => (
-      isDailyFieldRecorded(day.entry, "sleep") ? day.entry.sleep : fallbackSleep[index % fallbackSleep.length]
-    ));
-    const maxValue = Math.max(10, Math.ceil(Math.max(...values, normalizedGoals.sleepTarget, normalizedGoals.sleepMax)));
+    const values = recentDays.map((day) => isDailyFieldRecorded(day.entry, "sleep") ? day.entry.sleep : null);
+    const recorded = values.filter(Number.isFinite);
+    const maxValue = Math.max(10, Math.ceil(Math.max(...recorded, normalizedGoals.sleepTarget, normalizedGoals.sleepMax)));
     return {
       values,
       maxValue,
@@ -8937,9 +8922,8 @@ function moduleAreaSeries(recentDays, context) {
     };
   }
 
-  const fallbackScores = [52, 66, 43, 74, 91, 58, 82, 69, 77, 63];
   return {
-    values: recentDays.map((day, index) => moduleMetricScore(day, context) ?? fallbackScores[index % fallbackScores.length]),
+    values: recentDays.map((day) => moduleMetricScore(day, context)),
     maxValue: 100,
     targetValue: null,
     targetLabel: "",
@@ -8949,19 +8933,23 @@ function moduleAreaSeries(recentDays, context) {
 function ModuleVisual({ moduleId, context, instanceId, settings = {} }) {
   const dayCount = clamp(Number(settings.days) || 7, 5, 10);
   const recentDays = buildRecentDays(context.entries, dayCount);
-  const fallbackScores = [52, 66, 43, 74, 91, 58, 82];
-  const dailyScores = recentDays.map((day, index) => moduleMetricScore(day, context) ?? fallbackScores[index % fallbackScores.length]);
+  const dailyScores = recentDays.map((day) => moduleMetricScore(day, context));
   const areaSeries = moduleAreaSeries(recentDays, context);
   const labels = recentDays.map((day) => day.label);
+  const recordedScoreCount = dailyScores.filter(Number.isFinite).length;
 
   switch (moduleId) {
     case "daily-histogram":
+      if (!recordedScoreCount) return <ModuleEvidenceEmpty />;
       return <ModuleBars values={dailyScores} labels={labels} metricType={context.metricType} />;
     case "area-line":
+      if (areaSeries.values.filter(Number.isFinite).length < 2) return <ModuleEvidenceEmpty>Record at least 2 days to draw a truthful trend.</ModuleEvidenceEmpty>;
+      {
+        const recordedSeries = areaSeries.values.map((value, index) => ({ value, label: labels[index] })).filter((item) => Number.isFinite(item.value));
       return (
         <VariableAreaChart
-          values={areaSeries.values}
-          labels={labels}
+          values={recordedSeries.map((item) => item.value)}
+          labels={recordedSeries.map((item) => item.label)}
           gradientId={`moduleArea-${instanceId}`}
           label="Recorded days area line"
           maxValue={areaSeries.maxValue}
@@ -8970,18 +8958,19 @@ function ModuleVisual({ moduleId, context, instanceId, settings = {} }) {
           metricType={context.metricType}
         />
       );
+      }
     case "streak-grid":
-      return <ModuleStreakGrid months={settings.months} metricType={context.metricType} />;
+      return <ModuleStreakGrid months={settings.months} metricType={context.metricType} context={context} />;
     case "sleep-distribution":
-      return <ModuleDistribution metricType="sleep" />;
+      return <ModuleDistribution context={context} metricType="sleep" />;
     case "metric-stack":
       return <ModuleStack context={context} />;
     case "score-ring":
       return <ModuleRing context={context} />;
     case "correlation-scatter":
-      return <ModuleScatter />;
+      return <ModuleEvidenceEmpty>Record at least 7 paired days before Archive draws a relationship.</ModuleEvidenceEmpty>;
     case "correlation-matrix":
-      return <ModuleMatrix />;
+      return <ModuleEvidenceEmpty>Record at least 7 paired days before Archive builds a relationship matrix.</ModuleEvidenceEmpty>;
     case "delta-timeline":
       return <ModuleDeltaTimeline context={context} />;
     case "workout-routine-builder": {
@@ -9524,22 +9513,23 @@ function ModulePicker({ pageId, pageName, context, addedModuleIds = [], moduleTe
   );
 }
 
-function DailySheet({ habitNames, trackedHabits, entries, goals, watchData, connectedHealth, initialDate, title = "Add previous day", onClose, onSave, onDelete, onAddHabit }) {
+function DailySheet({ habitNames, trackedHabits, entries, goals, watchData, connectedHealth, dailyDrafts, initialDate, title = "Add previous day", onClose, onSave, onSaveField, onDelete, onAddHabit, onDraftChange, onClearDraft }) {
   const normalizedGoals = normalizeGoals(goals);
   const defaultWater = Math.round(normalizedGoals.waterTarget * 0.75);
   const yesterday = dateKey(addDays(new Date(), -1));
   const [selectedDate, setSelectedDate] = useState(initialDate ?? yesterday);
   const existingEntry = useMemo(() => entries.find((entry) => entry.date === selectedDate), [entries, selectedDate]);
+  const initialDraft = dailyDrafts?.[initialDate ?? yesterday];
   const watchSleep = useMemo(() => watchSleepRecordForDate(watchData, selectedDate), [watchData, selectedDate]);
   const visibleHabitNames = useMemo(() => {
     const existingHabits = existingEntry?.habits ? Object.keys(existingEntry.habits) : [];
     return habitNames.filter((habit) => trackedHabits.includes(habit) || existingHabits.includes(habit));
   }, [existingEntry, habitNames, trackedHabits]);
   const [habitDraft, setHabitDraft] = useState(() => visibleHabitNames.reduce((map, habit) => {
-    map[habit] = existingEntry?.habits?.[habit] ?? false;
+    map[habit] = initialDraft?.habits?.[habit] ?? existingEntry?.habits?.[habit] ?? false;
     return map;
   }, {}));
-  const [water, setWater] = useState(() => waterInputValue(
+  const [water, setWater] = useState(() => initialDraft?.water || waterInputValue(
     isDailyFieldRecorded(existingEntry, "water") ? existingEntry.water : defaultWater,
     normalizedGoals,
   ));
@@ -9551,11 +9541,11 @@ function DailySheet({ habitNames, trackedHabits, entries, goals, watchData, conn
   const initialSleepMode = hasAuthoritativeSleep
     ? "sync"
     : isDailyFieldRecorded(existingEntry, "sleep") && Number(existingEntry?.sleep) > 0 ? "manual" : "sync";
-  const [sleepMode, setSleepMode] = useState(initialSleepMode);
+  const [sleepMode, setSleepMode] = useState(initialDraft?.sleepMode ?? initialSleepMode);
   const [manualSleep, setManualSleep] = useState(() => (
     initialSleepMode === "manual" && isDailyFieldRecorded(existingEntry, "sleep") && Number(existingEntry?.sleep) > 0
       ? String(existingEntry.sleep)
-      : ""
+      : initialDraft?.manualSleep ?? ""
   ));
   const [newHabit, setNewHabit] = useState("");
   const [isDragging, setIsDragging] = useState(false);
@@ -9573,9 +9563,14 @@ function DailySheet({ habitNames, trackedHabits, entries, goals, watchData, conn
     if (dragFrame.current) window.cancelAnimationFrame(dragFrame.current);
   }, []);
 
+  useEffect(() => {
+    onDraftChange(selectedDate, { habits: habitDraft, water: String(water), sleepMode, manualSleep: String(manualSleep), updatedAt: new Date().toISOString() });
+  }, [habitDraft, manualSleep, selectedDate, sleepMode, water]);
+
   const syncDate = (nextDate) => {
     setSelectedDate(nextDate);
     const entry = entries.find((item) => item.date === nextDate);
+    const nextDraft = dailyDrafts?.[nextDate];
     const nextWatchSleep = watchSleepRecordForDate(watchData, nextDate);
     const nextHasAuthoritativeSleep = nextWatchSleep.available
       || (isDailyFieldRecorded(entry, "sleep") && entry?.sleepSource === "sync" && Number(entry.sleep) > 0);
@@ -9585,15 +9580,15 @@ function DailySheet({ habitNames, trackedHabits, entries, goals, watchData, conn
     const existingHabits = entry?.habits ? Object.keys(entry.habits) : [];
     const nextVisibleHabits = habitNames.filter((habit) => trackedHabits.includes(habit) || existingHabits.includes(habit));
     setHabitDraft(nextVisibleHabits.reduce((map, habit) => {
-      map[habit] = entry?.habits?.[habit] ?? false;
+      map[habit] = nextDraft?.habits?.[habit] ?? entry?.habits?.[habit] ?? false;
       return map;
     }, {}));
-    setWater(waterInputValue(isDailyFieldRecorded(entry, "water") ? entry.water : defaultWater, normalizedGoals));
-    setSleepMode(nextSleepMode);
+    setWater(nextDraft?.water || waterInputValue(isDailyFieldRecorded(entry, "water") ? entry.water : defaultWater, normalizedGoals));
+    setSleepMode(nextDraft?.sleepMode ?? nextSleepMode);
     setManualSleep(
-      nextSleepMode === "manual" && isDailyFieldRecorded(entry, "sleep") && Number(entry?.sleep) > 0
+      nextDraft?.manualSleep ?? (nextSleepMode === "manual" && isDailyFieldRecorded(entry, "sleep") && Number(entry?.sleep) > 0
         ? String(entry.sleep)
-        : "",
+        : ""),
     );
   };
 
@@ -9638,6 +9633,33 @@ function DailySheet({ habitNames, trackedHabits, entries, goals, watchData, conn
         sleep: true,
       },
     });
+    onClearDraft(selectedDate);
+  };
+
+  const saveWaterOnly = () => {
+    onSaveField({ date: selectedDate, field: "water", value: waterInputToMl(water, normalizedGoals) });
+    onClearDraft(selectedDate);
+  };
+
+  const saveSleepOnly = () => {
+    const resolvedSleepMode = hasAuthoritativeSleep ? "sync" : sleepMode;
+    const parsedManualSleep = Number(manualSleep);
+    const value = resolvedSleepMode === "sync"
+      ? (watchSleep.available ? watchSleep.hours : storedSyncedSleep)
+      : (Number.isFinite(parsedManualSleep) ? clamp(parsedManualSleep, 0, 14) : 0);
+    onSaveField({
+      date: selectedDate,
+      field: "sleep",
+      value,
+      metadata: resolvedSleepMode === "sync" ? {
+        sleepSource: "sync",
+        sleepSyncedAt: watchSleep.updatedAt || connectedHealth?.lastSyncAt || existingEntry?.sleepSyncedAt || "",
+        sleepSessionIds: watchSleep.sessionIds.length ? watchSleep.sessionIds : (existingEntry?.sleepSessionIds ?? []),
+        sleepProvider: watchSleep.provider || "healthConnect",
+        sleepOrigin: watchSleep.source || DEFAULT_CONNECTED_HEALTH.sourceName,
+      } : { sleepSource: "manual" },
+    });
+    onClearDraft(selectedDate);
   };
 
   const selectManualSleep = () => {
@@ -9801,6 +9823,7 @@ function DailySheet({ habitNames, trackedHabits, entries, goals, watchData, conn
                 onChange={(event) => setWater(event.target.value)}
               />
             </label>
+            <button type="button" className="field-save-btn water" onClick={saveWaterOnly}>Save water only</button>
           </div>
 
           <div className="entry-section sleep-entry-section">
@@ -9860,11 +9883,12 @@ function DailySheet({ habitNames, trackedHabits, entries, goals, watchData, conn
                 <small>Fallback only when no watch record exists. This remains filed under {recordDayName}.</small>
               </label>
             )}
+            <button type="button" className="field-save-btn sleep" onClick={saveSleepOnly} disabled={(sleepMode === "manual" && !manualSleep) || (sleepMode === "sync" && !hasSyncedSleep)}>Save sleep only</button>
           </div>
 
           <div className="sheet-footer-actions">
             {existingEntry && (
-              <button className="delete-report" onClick={() => onDelete(selectedDate)}>
+              <button className="delete-report" onClick={() => { onClearDraft(selectedDate); onDelete(selectedDate); }}>
                 Delete record
               </button>
             )}
@@ -9997,6 +10021,7 @@ export default function App() {
   const [launchPhase, setLaunchPhase] = useState("syncing");
   const [pullRefreshState, setPullRefreshState] = useState("idle");
   const [pullRefreshMessage, setPullRefreshMessage] = useState("");
+  const [homeWorkoutRequest, setHomeWorkoutRequest] = useState(null);
   const backupNoticeTimer = useRef(null);
   const importInputRef = useRef(null);
   const appShellRef = useRef(null);
@@ -10006,6 +10031,7 @@ export default function App() {
   const launchSyncPromiseRef = useRef(null);
   const pullRefreshActionRef = useRef(null);
   const pullRefreshBlockedRef = useRef(true);
+  const lastWaterActionRef = useRef(null);
   const usesNativePageMotion = typeof document !== "undefined" && typeof document.startViewTransition === "function";
   latestStateRef.current = state;
   pullRefreshBlockedRef.current = launchPhase !== "ready"
@@ -10024,6 +10050,7 @@ export default function App() {
   const aiSettings = useMemo(() => normalizeAISettings(state.aiSettings), [state.aiSettings]);
   const connectedHealth = useMemo(() => normalizeConnectedHealth(state.connectedHealth), [state.connectedHealth]);
   const watchData = useMemo(() => normalizeWatchData(state.watchData), [state.watchData]);
+  const continuity = useMemo(() => normalizeContinuity(state.continuity), [state.continuity]);
   const pageModules = useMemo(() => normalizePageModules(state.pageModules), [state.pageModules]);
   const moduleTemplates = useMemo(() => normalizeModuleTemplates(state.moduleTemplates), [state.moduleTemplates]);
   const analyticalWorkout = useMemo(() => ({
@@ -10070,6 +10097,18 @@ export default function App() {
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
   }, [activePage]);
+
+  useEffect(() => {
+    const openedAt = new Date().toISOString();
+    setTrackerState((current) => ({
+      ...current,
+      continuity: normalizeContinuity({
+        ...current.continuity,
+        previousOpenAt: current.continuity?.lastOpenedAt || "",
+        lastOpenedAt: openedAt,
+      }),
+    }));
+  }, []);
 
   const changeActivePage = (nextPage) => {
     if (activePage === nextPage) {
@@ -10139,9 +10178,9 @@ export default function App() {
     });
   };
 
-  const showBackupNotice = (message, type = "success") => {
+  const showBackupNotice = (message, type = "success", action = null) => {
     if (backupNoticeTimer.current) window.clearTimeout(backupNoticeTimer.current);
-    setBackupNotice({ message, type });
+    setBackupNotice({ message, type, action });
     backupNoticeTimer.current = window.setTimeout(() => {
       setBackupNotice(null);
       backupNoticeTimer.current = null;
@@ -10950,6 +10989,96 @@ export default function App() {
     }, "close");
   };
 
+  const saveDailyField = ({ date, field, value, metadata = {} }) => {
+    transitionOverlay(() => {
+      setTrackerState((current) => {
+        const index = current.entries.findIndex((entry) => entry.date === date);
+        const existing = index >= 0 ? current.entries[index] : null;
+        const base = {
+          ...(existing ?? {}),
+          date,
+          habits: existing?.habits ?? Object.fromEntries(current.habitNames.map((habit) => [habit, false])),
+          water: Number(existing?.water) || 0,
+          sleep: Number(existing?.sleep) || 0,
+          recordedFields: normalizeRecordedFields(existing),
+        };
+        const nextEntry = setDailyFieldRecorded({ ...base, [field]: value, ...metadata }, field, true);
+        const entries = index >= 0
+          ? current.entries.map((entry, entryIndex) => entryIndex === index ? nextEntry : entry)
+          : [...current.entries, nextEntry];
+        return { ...current, entries: entries.sort((a, b) => a.date.localeCompare(b.date)) };
+      }, { immediate: true });
+      setSheetOpen(false);
+    }, "close");
+  };
+
+  const saveDailyDraft = (date, draft) => {
+    setTrackerState((current) => ({
+      ...current,
+      continuity: normalizeContinuity({
+        ...current.continuity,
+        dailyDrafts: { ...current.continuity?.dailyDrafts, [date]: draft },
+      }),
+    }));
+  };
+
+  const clearDailyDraft = (date) => {
+    setTrackerState((current) => {
+      const dailyDrafts = { ...(current.continuity?.dailyDrafts ?? {}) };
+      delete dailyDrafts[date];
+      return { ...current, continuity: normalizeContinuity({ ...current.continuity, dailyDrafts }) };
+    });
+  };
+
+  const addQuickWater = (amount) => {
+    const today = dateKey(new Date());
+    const previousEntry = state.entries.find((entry) => entry.date === today) ?? null;
+    lastWaterActionRef.current = { date: today, previousEntry };
+    setTrackerState((current) => ({
+      ...current,
+      entries: addWaterToEntries(current.entries, { date: today, amount, habitNames: current.habitNames }),
+      continuity: normalizeContinuity({ ...current.continuity, preferredWaterMl: amount }),
+    }), { immediate: true });
+    showBackupNotice(`${formatWaterVolume(amount, goals)} added to today.`, "success", { label: "Undo", onClick: () => {
+      const restore = lastWaterActionRef.current;
+      if (!restore) return;
+      setTrackerState((current) => ({
+        ...current,
+        entries: restoreWaterInEntries(current.entries, restore),
+      }), { immediate: true });
+      lastWaterActionRef.current = null;
+      showBackupNotice("Water entry restored.");
+    } });
+  };
+
+  const handleHomeContinuation = (kind) => {
+    if (["active-workout", "workout-summary", "scheduled-workout"].includes(kind)) {
+      setHomeWorkoutRequest({ id: Date.now(), kind });
+      changeActivePage("workout");
+      return;
+    }
+    if (kind === "habit") {
+      changeActivePage("habit");
+      return;
+    }
+    if (kind === "water") addQuickWater(state.continuity.preferredWaterMl);
+  };
+
+  const openTodayRecord = () => {
+    transitionOverlay(() => {
+      setChoiceOpen(false);
+      setRecordDate(dateKey(new Date()));
+      setSheetOpen(true);
+    });
+  };
+
+  const dismissWeeklyReflection = (weekKey) => {
+    setTrackerState((current) => ({
+      ...current,
+      continuity: normalizeContinuity({ ...current.continuity, dismissedWeeklyReview: weekKey }),
+    }));
+  };
+
   const deleteEntry = (date) => {
     transitionOverlay(() => {
       setTrackerState((current) => ({
@@ -11076,11 +11205,18 @@ export default function App() {
   const checkConnectedHealthAction = useEventCallback(checkConnectedHealth);
   const openConnectedHealthAction = useEventCallback(openConnectedHealthSettings);
   const requestConnectedHealthAction = useEventCallback(requestConnectedHealthPermissions);
+  const homeContinuationAction = useEventCallback(handleHomeContinuation);
+  const quickWaterAction = useEventCallback(addQuickWater);
+  const customWaterAction = useEventCallback(openTodayRecord);
+  const dismissReflectionAction = useEventCallback(dismissWeeklyReflection);
+  const saveDailyFieldAction = useEventCallback(saveDailyField);
+  const saveDailyDraftAction = useEventCallback(saveDailyDraft);
+  const clearDailyDraftAction = useEventCallback(clearDailyDraft);
 
   const pages = {
-    workout: <MemoWorkoutPage workout={state.workout} onWorkoutChange={workoutChangeAction} onAdd={modulePickerAction} onBackup={backupAction} modules={pageModules.workout} moduleContext={moduleContext} onRemoveModule={removePageModuleAction} onEditModule={editPageModuleAction} onReorderModule={reorderPageModuleAction} />,
+    workout: <MemoWorkoutPage workout={state.workout} onWorkoutChange={workoutChangeAction} homeRequest={homeWorkoutRequest} onAdd={modulePickerAction} onBackup={backupAction} modules={pageModules.workout} moduleContext={moduleContext} onRemoveModule={removePageModuleAction} onEditModule={editPageModuleAction} onReorderModule={reorderPageModuleAction} />,
     workoutHistory: <MemoWorkoutHistoryPage workout={state.workout} watchData={watchData} onWorkoutChange={workoutChangeAction} />,
-    home: <MemoHomePage weekDays={weekDays} habitNames={trackedHabitNames} goals={goals} onAdd={addChoiceAction} onCustomize={modulePickerAction} onBackup={backupAction} onHistory={historyAction} modules={pageModules.home} moduleContext={moduleContext} onRemoveModule={removePageModuleAction} onEditModule={editPageModuleAction} onReorderModule={reorderPageModuleAction} />,
+    home: <MemoHomePage weekDays={weekDays} habitNames={trackedHabitNames} goals={goals} workout={state.workout} continuity={continuity} onAdd={addChoiceAction} onCustomize={modulePickerAction} onBackup={backupAction} onHistory={historyAction} onContinuation={homeContinuationAction} onQuickWater={quickWaterAction} onCustomWater={customWaterAction} onDismissReflection={dismissReflectionAction} modules={pageModules.home} moduleContext={moduleContext} onRemoveModule={removePageModuleAction} onEditModule={editPageModuleAction} onReorderModule={reorderPageModuleAction} />,
     habit: <MemoHabitPage weekDays={weekDays} habitNames={state.habitNames} trackedHabits={trackedHabitNames} goals={goals} onAdd={addChoiceAction} onCustomize={modulePickerAction} onBackup={backupAction} onHistory={historyAction} modules={pageModules.habit} moduleContext={moduleContext} onSetHabitCompletion={habitCompletionAction} onToggleHabitTracking={toggleHabitAction} onRenameHabit={renameHabitAction} onReorderHabit={reorderHabitAction} onRemoveModule={removePageModuleAction} onEditModule={editPageModuleAction} onReorderModule={reorderPageModuleAction} />,
     water: <MemoWaterPage weekDays={weekDays} goals={goals} onAdd={addChoiceAction} onCustomize={modulePickerAction} onBackup={backupAction} onHistory={historyAction} modules={pageModules.water} moduleContext={moduleContext} onRemoveModule={removePageModuleAction} onEditModule={editPageModuleAction} onReorderModule={reorderPageModuleAction} />,
     sleep: <MemoSleepPage weekDays={weekDays} goals={goals} onAdd={addChoiceAction} onCustomize={modulePickerAction} onBackup={backupAction} onHistory={historyAction} modules={pageModules.sleep} moduleContext={moduleContext} onRemoveModule={removePageModuleAction} onEditModule={editPageModuleAction} onReorderModule={reorderPageModuleAction} />,
@@ -11108,7 +11244,7 @@ export default function App() {
           accept="application/json,.json"
           onChange={importBackup}
         />
-        {backupNotice && !choiceOpen && !backupOpen && <div className={`backup-toast ${backupNotice.type}`}>{backupNotice.message}</div>}
+        {backupNotice && !choiceOpen && !backupOpen && <div className={`backup-toast ${backupNotice.type}`} role="status"><span>{backupNotice.message}</span>{backupNotice.action && <button type="button" onClick={backupNotice.action.onClick}>{backupNotice.action.label}</button>}</div>}
         {choiceOpen && (
           <AddChoiceSheet
             onRecord={openRecordDay}
@@ -11142,12 +11278,16 @@ export default function App() {
             goals={goals}
             watchData={watchData}
             connectedHealth={connectedHealth}
+            dailyDrafts={continuity.dailyDrafts}
             initialDate={recordDate}
             title={state.entries.some((entry) => entry.date === recordDate) ? "Edit record" : "Add record"}
             onClose={() => transitionOverlay(() => setSheetOpen(false), "close")}
             onSave={saveEntry}
+            onSaveField={saveDailyFieldAction}
             onDelete={deleteEntry}
             onAddHabit={addHabit}
+            onDraftChange={saveDailyDraftAction}
+            onClearDraft={clearDailyDraftAction}
           />
         )}
         {modulePickerOpen && (

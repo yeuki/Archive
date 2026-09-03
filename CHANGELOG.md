@@ -6,6 +6,9 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 
 ### Added
 
+- Added deterministic Home continuity that prioritizes exact workout resume, workout review, today's scheduled routine, the next pending habit, hydration, and a calm caught-up state.
+- Added one-tap hydration increments with remembered preference and exact undo, plus water-only and sleep-only saves that preserve all unrelated daily fields.
+- Added bounded, backup-compatible daily-entry drafts, factual launch/return context, evidence-gated weekly reflection, and a dedicated continuity regression suite.
 - Added a deterministic performance regression suite covering coalesced persistence, urgent durability, isolated scroll chrome, memoized rendering boundaries, bounded navigation glass, one-time chart reveals, and lazy feature chunks.
 - Added lazy loading for the focused Workout Mode and detailed body-map renderer so neither payload blocks Archive's initial JavaScript evaluation.
 - Added rich, source-attributed Health Connect workout ingestion on the stable Android API, preserving session identity, type/title, device provenance, durations, attributable distance/calorie/heart-rate/speed/elevation/cadence metrics, laps, segments, repetitions, and route availability when supplied.
@@ -15,6 +18,9 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 
 ### Changed
 
+- Changed contextual Home prompts to route directly to Workout Mode, the Habit Hold Deck, or hydration capture instead of the general action sheet.
+- Replaced fixed Home correlations and synthetic optional-module values with real-record calculations or explicit evidence requirements.
+- Changed Home completion language so expected-later sleep is never presented as an overdue task and returning users are not shown a historical failure backlog.
 - Changed ordinary local-state persistence to coalesce rapid updates and serialize during browser idle time, with lifecycle flushes on backgrounding or page exit and immediate writes for imports, completed-set transitions, workout pause/rest progression, start, finish, and discard.
 - Isolated scroll-reactive top and bottom chrome from root React state, throttled interactive glass lighting to animation frames, and temporarily replaces live backdrop sampling with the same layered translucent material while the dock or document is moving.
 - Memoized normalized health, goals, module, workout, and Coach inputs by their source slices; active-set edits no longer rebuild routine/history structures or recompute hidden Coach analytics.
