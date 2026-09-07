@@ -1,10 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Capacitor, registerPlugin } from "@capacitor/core";
-import { renderBodyMapSvg } from "./assets/bodymap.js";
 import pencilIcon from "./assets/pencil-icon.png";
 import HabitHoldDeck from "./HabitHoldDeck.jsx";
-import WorkoutMode from "./WorkoutMode.jsx";
 import { runArchiveTransition, useFlipLayout } from "./motion.js";
+import {
+  chartRevealKey,
+  createStatePersistence,
+  useChartReveal,
+  useEventCallback,
+} from "./runtimePerformance.js";
 import {
   hasAnyDailyField,
   isDailyFieldRecorded,
@@ -19,6 +23,11 @@ import {
   workoutLogFromSession,
   workoutSessionStats,
 } from "./workoutSession.js";
+
+const loadWorkoutMode = () => import("./WorkoutMode.jsx");
+const loadBodyMapVisual = () => import("./BodyMapVisual.jsx");
+const WorkoutMode = lazy(loadWorkoutMode);
+const BodyMapVisual = lazy(loadBodyMapVisual);
 
 const DAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"];
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -89,7 +98,7 @@ const DEFAULT_GOALS = {
 };
 const STORAGE_KEY = "archive-productivity-tracker";
 const GEMINI_KEY_STORAGE_KEY = "archive-productivity-tracker-gemini-key";
-const BACKUP_VERSION = 3;
+const BACKUP_VERSION = 4;
 const ConnectedHealthNative = registerPlugin("ConnectedHealth");
 const DEFAULT_AI_SETTINGS = {
   useGemini: false,
@@ -104,12 +113,16 @@ const WATCH_METRIC_DEFINITIONS = [
   { id: "exercise", label: "Exercise sessions", unit: "workouts", cadence: "as completed", category: "Training", defaultEnabled: true },
   { id: "distance", label: "Distance", unit: "m", cadence: "daily", category: "Movement", defaultEnabled: true },
   { id: "activeCalories", label: "Active calories", unit: "kcal", cadence: "daily", category: "Energy", defaultEnabled: true },
+  { id: "totalCalories", label: "Total calories", unit: "kcal", cadence: "daily", category: "Energy", defaultEnabled: true },
   { id: "heartRate", label: "Heart rate", unit: "bpm", cadence: "samples", category: "Vitals", defaultEnabled: true },
   { id: "heartRateVariability", label: "HRV", unit: "ms", cadence: "samples", category: "Recovery", defaultEnabled: true },
   { id: "floors", label: "Floors climbed", unit: "floors", cadence: "daily", category: "Movement", defaultEnabled: false },
+  { id: "speed", label: "Workout speed", unit: "m/s", cadence: "per workout", category: "Training", defaultEnabled: true },
+  { id: "elevation", label: "Workout elevation", unit: "m", cadence: "per workout", category: "Training", defaultEnabled: true },
+  { id: "cadence", label: "Workout cadence", unit: "steps/min", cadence: "per workout", category: "Training", defaultEnabled: true },
 ];
-const HEALTH_DATA_SCHEMA_VERSION = 1;
-const HEALTH_POLICY_VERSION = "archive-health-1";
+const HEALTH_DATA_SCHEMA_VERSION = 2;
+const HEALTH_POLICY_VERSION = "archive-health-2";
 const HEALTH_SYNC_WINDOW_DAYS = 30;
 const LAUNCH_MINIMUM_VISIBLE_MS = 420;
 const LAUNCH_SYNC_TIMEOUT_MS = 9000;
@@ -173,6 +186,9 @@ const DEFAULT_CONNECTED_HEALTH = {
   lastCheckedAt: "",
   lastSyncAt: "",
   permissionsGranted: false,
+  canSync: false,
+  partialPermissions: false,
+  workoutPermissionGranted: false,
   grantedPermissions: [],
   missingPermissions: [],
   requestedPermissions: [],
@@ -888,7 +904,7 @@ function normalizeAISettings(settings = {}) {
 
 function normalizeConnectedHealth(settings = {}) {
   const source = settings && typeof settings === "object" ? settings : {};
-  const statusOptions = new Set(["notChecked", "available", "unavailable", "error", "opened", "webPreview", "permissionsNeeded", "synced"]);
+  const statusOptions = new Set(["notChecked", "available", "partial", "unavailable", "error", "opened", "webPreview", "permissionsNeeded", "synced"]);
   const automaticStatusOptions = new Set(["off", "scheduled", "running", "captured", "synced", "permissionNeeded", "foregroundOnly", "error"]);
   const rawMetrics = source.metrics ?? {};
   const metrics = Object.fromEntries(WATCH_METRIC_DEFINITIONS.map((metric) => {
@@ -910,6 +926,9 @@ function normalizeConnectedHealth(settings = {}) {
     lastCheckedAt: typeof source.lastCheckedAt === "string" ? source.lastCheckedAt : "",
     lastSyncAt: typeof source.lastSyncAt === "string" ? source.lastSyncAt : "",
     permissionsGranted: Boolean(source.permissionsGranted ?? source.allGranted),
+    canSync: Boolean(source.canSync ?? source.permissionsGranted ?? source.allGranted),
+    partialPermissions: Boolean(source.partialPermissions),
+    workoutPermissionGranted: Boolean(source.workoutPermissionGranted),
     grantedPermissions: uniqueStrings(source.grantedPermissions).slice(0, 40),
     missingPermissions: uniqueStrings(source.missingPermissions ?? source.deniedPermissions).slice(0, 40),
     requestedPermissions: uniqueStrings(source.requestedPermissions).slice(0, 40),
@@ -1127,6 +1146,73 @@ function normalizeHealthSystem(data = {}) {
   };
 }
 
+function nullableNumber(value, minimum = -Infinity, maximum = Infinity) {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= minimum && parsed <= maximum ? parsed : null;
+}
+
+function normalizeAvailabilityMap(value = {}, defaults = {}) {
+  const source = value && typeof value === "object" ? value : {};
+  return Object.fromEntries(Object.entries(defaults).map(([key, fallback]) => (
+    [key, source[key] === undefined ? Boolean(fallback) : Boolean(source[key])]
+  )));
+}
+
+function normalizeWatchLap(lap = {}, index = 0) {
+  const source = lap && typeof lap === "object" ? lap : {};
+  const startedAt = normalizeTimestamp(source.startedAt ?? source.startTime);
+  const endedAt = normalizeTimestamp(source.endedAt ?? source.endTime);
+  const durationSeconds = nullableNumber(source.durationSeconds, 0, 172800);
+  const distanceMeters = nullableNumber(source.distanceMeters ?? source.distance, 0, 1000000);
+  if (!startedAt && !endedAt && durationSeconds === null && distanceMeters === null) return null;
+  return {
+    index: Math.max(1, Math.round(nullableNumber(source.index, 1, 10000) ?? index + 1)),
+    startedAt,
+    endedAt,
+    durationSeconds,
+    distanceMeters,
+  };
+}
+
+function normalizeWatchSegment(segment = {}, index = 0) {
+  const source = segment && typeof segment === "object" ? segment : {};
+  const startedAt = normalizeTimestamp(source.startedAt ?? source.startTime);
+  const endedAt = normalizeTimestamp(source.endedAt ?? source.endTime);
+  const typeCode = nullableNumber(source.typeCode ?? source.segmentType, 0, 100000);
+  const providedType = String(source.type ?? source.label ?? "").trim().slice(0, 100);
+  const durationSeconds = nullableNumber(source.durationSeconds, 0, 172800);
+  const repetitions = nullableNumber(source.repetitions ?? source.reps, 0, 100000);
+  const weightKg = nullableNumber(source.weightKg ?? source.weightKilograms, 0, 10000);
+  const setIndex = nullableNumber(source.setIndex, 0, 10000);
+  const rpe = nullableNumber(source.rpe ?? source.rateOfPerceivedExertion, 0, 10);
+  if (
+    !startedAt
+    && !endedAt
+    && typeCode === null
+    && !providedType
+    && durationSeconds === null
+    && repetitions === null
+    && weightKg === null
+    && setIndex === null
+    && rpe === null
+  ) return null;
+  const type = providedType || (typeCode === null ? "Exercise" : `Exercise type ${typeCode}`);
+  return {
+    index: Math.max(1, Math.round(nullableNumber(source.index, 1, 10000) ?? index + 1)),
+    typeCode: typeCode === null ? null : Math.round(typeCode),
+    type,
+    startedAt,
+    endedAt,
+    durationSeconds,
+    repetitions: repetitions === null ? null : Math.round(repetitions),
+    weightKg,
+    setIndex: setIndex === null ? null : Math.round(setIndex),
+    rpe,
+    isRest: Boolean(source.isRest) || /^(rest|pause)$/i.test(type),
+  };
+}
+
 function normalizeWatchDailySummary(summary = {}, context = DEFAULT_HEALTH_SYSTEM) {
   const source = summary && typeof summary === "object" ? summary : {};
   if (!validDateKey(source.date)) return null;
@@ -1148,6 +1234,16 @@ function normalizeWatchDailySummary(summary = {}, context = DEFAULT_HEALTH_SYSTE
     restingHeartRate: positiveNumber(source.restingHeartRate, 0, 0, 250),
     averageHeartRate: positiveNumber(source.averageHeartRate, 0, 0, 250),
     hrvMs: positiveNumber(source.hrvMs ?? source.heartRateVariability, 0, 0, 500),
+    fieldAvailability: normalizeAvailabilityMap(source.fieldAvailability, {
+      steps: Object.prototype.hasOwnProperty.call(source, "steps"),
+      distance: Object.prototype.hasOwnProperty.call(source, "distanceMeters") || Object.prototype.hasOwnProperty.call(source, "distance"),
+      activeCalories: Object.prototype.hasOwnProperty.call(source, "activeCalories"),
+      totalCalories: Object.prototype.hasOwnProperty.call(source, "totalCalories"),
+      floors: Object.prototype.hasOwnProperty.call(source, "floors"),
+      heartRate: Object.prototype.hasOwnProperty.call(source, "averageHeartRate"),
+      hrv: Object.prototype.hasOwnProperty.call(source, "hrvMs") || Object.prototype.hasOwnProperty.call(source, "heartRateVariability"),
+      sleep: Object.prototype.hasOwnProperty.call(source, "sleepMinutes"),
+    }),
     timezone,
     importedAt: normalizeTimestamp(source.importedAt ?? context.lastReconciledAt ?? updatedAt),
     updatedAt,
@@ -1166,7 +1262,7 @@ function normalizeWatchSession(session = {}, index = 0, type = "session", contex
   const providedDate = validDateKey(source.date) ? source.date : "";
   const id = String(source.id ?? source.sourceId ?? fallbackId).trim().slice(0, 120) || fallbackId;
 
-  return {
+  const baseSession = {
     id,
     provider,
     source: String(source.source ?? source.sourceName ?? DEFAULT_CONNECTED_HEALTH.sourceName).trim().slice(0, 60) || DEFAULT_CONNECTED_HEALTH.sourceName,
@@ -1176,12 +1272,104 @@ function normalizeWatchSession(session = {}, index = 0, type = "session", contex
     endedAt,
     durationMinutes: Math.round(positiveNumber(source.durationMinutes ?? source.duration, 0, 0, 1440)),
     type: String(source.type ?? type).trim().slice(0, 60) || type,
-    distanceMeters: positiveNumber(source.distanceMeters ?? source.distance, 0, 0, 1000000),
-    activeCalories: positiveNumber(source.activeCalories, 0, 0, 20000),
-    averageHeartRate: positiveNumber(source.averageHeartRate, 0, 0, 250),
+    distanceMeters: type === "exercise"
+      ? nullableNumber(source.distanceMeters ?? source.distance, 0, 1000000)
+      : positiveNumber(source.distanceMeters ?? source.distance, 0, 0, 1000000),
+    activeCalories: type === "exercise"
+      ? nullableNumber(source.activeCalories, 0, 20000)
+      : positiveNumber(source.activeCalories, 0, 0, 20000),
+    averageHeartRate: type === "exercise"
+      ? nullableNumber(source.averageHeartRate, 0, 250)
+      : positiveNumber(source.averageHeartRate, 0, 0, 250),
     notes: String(source.notes ?? "").trim().slice(0, 500),
     timezone,
     importedAt: normalizeTimestamp(source.importedAt ?? context.lastReconciledAt),
+  };
+
+  if (type !== "exercise") return baseSession;
+
+  const laps = (Array.isArray(source.laps) ? source.laps : [])
+    .map(normalizeWatchLap)
+    .filter(Boolean);
+  const segments = (Array.isArray(source.segments) ? source.segments : [])
+    .map(normalizeWatchSegment)
+    .filter(Boolean);
+  const healthConnectRecordId = String(source.healthConnectRecordId ?? (source.identityVersion >= 2 ? source.id : "")).trim().slice(0, 160);
+  const metricPermissions = normalizeAvailabilityMap(source.metricPermissions, {
+    distance: baseSession.distanceMeters !== null,
+    activeCalories: baseSession.activeCalories !== null,
+    totalCalories: Object.prototype.hasOwnProperty.call(source, "totalCalories"),
+    heartRate: baseSession.averageHeartRate !== null,
+    speed: Object.prototype.hasOwnProperty.call(source, "averageSpeedMetersPerSecond")
+      || Object.prototype.hasOwnProperty.call(source, "maximumSpeedMetersPerSecond"),
+    elevation: Object.prototype.hasOwnProperty.call(source, "elevationGainedMeters"),
+    cadence: Object.prototype.hasOwnProperty.call(source, "averageCadence")
+      || Object.prototype.hasOwnProperty.call(source, "maximumCadence"),
+  });
+  const metricAvailability = normalizeAvailabilityMap(source.metricAvailability, {
+    distance: baseSession.distanceMeters !== null,
+    activeCalories: baseSession.activeCalories !== null,
+    totalCalories: nullableNumber(source.totalCalories, 0, 30000) !== null,
+    heartRate: baseSession.averageHeartRate !== null,
+    speed: nullableNumber(source.averageSpeedMetersPerSecond, 0, 100) !== null,
+    elevation: nullableNumber(source.elevationGainedMeters, 0, 100000) !== null,
+    cadence: nullableNumber(source.averageCadence, 0, 1000) !== null,
+  });
+  const sourceDevice = source.sourceDevice && typeof source.sourceDevice === "object"
+    ? {
+      type: String(source.sourceDevice.type ?? "unknown").trim().slice(0, 40) || "unknown",
+      manufacturer: String(source.sourceDevice.manufacturer ?? "").trim().slice(0, 80),
+      model: String(source.sourceDevice.model ?? "").trim().slice(0, 100),
+    }
+    : null;
+  const routeStatus = ["none", "available", "consentRequired", "loaded", "unknown"].includes(source.routeStatus)
+    ? source.routeStatus
+    : "unknown";
+  const startedMilliseconds = Date.parse(startedAt);
+  const endedMilliseconds = Date.parse(endedAt);
+  const timestampDurationSeconds = Number.isFinite(startedMilliseconds)
+    && Number.isFinite(endedMilliseconds)
+    && endedMilliseconds >= startedMilliseconds
+    ? Math.round((endedMilliseconds - startedMilliseconds) / 1000)
+    : null;
+  const elapsedDurationSeconds = nullableNumber(source.elapsedDurationSeconds, 0, 604800)
+    ?? timestampDurationSeconds
+    ?? (baseSession.durationMinutes > 0 ? baseSession.durationMinutes * 60 : null);
+
+  return {
+    ...baseSession,
+    external: true,
+    identityVersion: Math.round(nullableNumber(source.identityVersion, 1, 100) ?? (healthConnectRecordId ? 2 : 1)),
+    recordType: String(source.recordType ?? "exerciseSession").trim().slice(0, 60) || "exerciseSession",
+    healthConnectRecordId,
+    clientRecordId: String(source.clientRecordId ?? "").trim().slice(0, 160),
+    clientRecordVersion: nullableNumber(source.clientRecordVersion, 0, Number.MAX_SAFE_INTEGER),
+    lastModifiedAt: normalizeTimestamp(source.lastModifiedAt ?? source.updatedAt),
+    recordingMethod: ["active", "automatic", "manual", "unknown"].includes(source.recordingMethod)
+      ? source.recordingMethod
+      : "unknown",
+    sourceDevice,
+    title: String(source.title ?? "").trim().slice(0, 160),
+    typeCode: nullableNumber(source.typeCode ?? source.exerciseType, 0, 100000),
+    startZoneOffset: String(source.startZoneOffset ?? "").trim().slice(0, 20),
+    endZoneOffset: String(source.endZoneOffset ?? "").trim().slice(0, 20),
+    elapsedDurationSeconds,
+    activeDurationSeconds: nullableNumber(source.activeDurationSeconds, 0, 604800),
+    restDurationSeconds: nullableNumber(source.restDurationSeconds, 0, 604800),
+    totalCalories: nullableNumber(source.totalCalories, 0, 30000),
+    minimumHeartRate: nullableNumber(source.minimumHeartRate, 0, 250),
+    maximumHeartRate: nullableNumber(source.maximumHeartRate, 0, 250),
+    averageSpeedMetersPerSecond: nullableNumber(source.averageSpeedMetersPerSecond, 0, 100),
+    maximumSpeedMetersPerSecond: nullableNumber(source.maximumSpeedMetersPerSecond, 0, 100),
+    elevationGainedMeters: nullableNumber(source.elevationGainedMeters, 0, 100000),
+    averageCadence: nullableNumber(source.averageCadence, 0, 1000),
+    maximumCadence: nullableNumber(source.maximumCadence, 0, 1000),
+    routeStatus,
+    laps,
+    segments,
+    metricsComplete: Boolean(source.metricsComplete),
+    metricPermissions,
+    metricAvailability,
   };
 }
 
@@ -1219,6 +1407,12 @@ function dailySummaryIdentity(summary) {
 }
 
 function sessionIdentity(session) {
+  if (session?.healthConnectRecordId) {
+    return [session.provider, session.source, session.recordType ?? "session", session.healthConnectRecordId].join("|");
+  }
+  if (session?.clientRecordId) {
+    return [session.provider, session.source, session.recordType ?? "session", "client", session.clientRecordId].join("|");
+  }
   if (session?.startedAt || session?.endedAt) {
     return [session.provider, session.source, session.type, session.startedAt, session.endedAt].join("|");
   }
@@ -1293,6 +1487,10 @@ function normalizeWatchDataDetailed(data = {}) {
       summariesByDate.set(date, {
         ...summary,
         sleepMinutes: sleepMinutesByStartDate.get(date) ?? 0,
+        fieldAvailability: {
+          ...(summary.fieldAvailability ?? {}),
+          sleep: sleepMinutesByStartDate.has(date),
+        },
       });
     });
 
@@ -1425,6 +1623,40 @@ function mergeIncompleteLayer(existing = [], incoming = [], identity) {
   return dedupeWatchItems([...existing, ...incoming], identity).items;
 }
 
+function mergeIncompleteDailyLayer(existing = [], incoming = []) {
+  const byDate = new Map(existing.map((item) => [dailySummaryIdentity(item), item]));
+  const fields = {
+    steps: "steps",
+    distance: "distanceMeters",
+    activeCalories: "activeCalories",
+    totalCalories: "totalCalories",
+    floors: "floors",
+    heartRate: "averageHeartRate",
+    hrv: "hrvMs",
+    sleep: "sleepMinutes",
+  };
+
+  incoming.forEach((item) => {
+    const identity = dailySummaryIdentity(item);
+    const previous = byDate.get(identity);
+    if (!previous) {
+      byDate.set(identity, item);
+      return;
+    }
+    const availability = {
+      ...(previous.fieldAvailability ?? {}),
+      ...(item.fieldAvailability ?? {}),
+    };
+    const merged = { ...previous, ...item, fieldAvailability: availability };
+    Object.entries(fields).forEach(([availabilityKey, valueKey]) => {
+      if (item.fieldAvailability?.[availabilityKey] === false) merged[valueKey] = previous[valueKey];
+    });
+    byDate.set(identity, merged);
+  });
+
+  return [...byDate.values()];
+}
+
 function mergeWatchData(currentData = {}, incomingData = {}) {
   const currentDetailed = normalizeWatchDataDetailed(currentData);
   const incomingDetailed = normalizeWatchDataDetailed(incomingData);
@@ -1457,7 +1689,7 @@ function mergeWatchData(currentData = {}, incomingData = {}) {
       ...current.dailySummaries.filter((item) => !dateFallsWithin(item.date, system.syncWindow.startDate, system.syncWindow.endDate)),
       ...incoming.dailySummaries,
     ]
-    : mergeIncompleteLayer(current.dailySummaries, incoming.dailySummaries, dailySummaryIdentity);
+    : mergeIncompleteDailyLayer(current.dailySummaries, incoming.dailySummaries);
   const sleepSessions = complete.sleepSessions
     ? [
       ...current.sleepSessions.filter((item) => !sessionFallsWithinWindow(item, system, "sleep")),
@@ -2142,14 +2374,6 @@ function loadInitialState() {
     watchData: normalizeWatchData(),
     coachMessages: normalizeCoachMessages(),
   };
-}
-
-function saveState(nextState) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(nextState));
-  } catch {
-    // The app can still run without persistence.
-  }
 }
 
 function loadGeminiApiKey() {
@@ -4262,14 +4486,25 @@ function buildRecentDays(entries, count) {
 
 function useTrackerState() {
   const [state, setState] = useState(loadInitialState);
+  const stateRef = useRef(state);
+  const persistenceRef = useRef(null);
+  if (!persistenceRef.current) {
+    persistenceRef.current = createStatePersistence({ storageKey: STORAGE_KEY });
+  }
+  stateRef.current = state;
 
-  const updateState = (updater) => {
-    setState((current) => {
-      const next = typeof updater === "function" ? updater(current) : updater;
-      saveState(next);
-      return next;
-    });
-  };
+  useEffect(() => persistenceRef.current.attachLifecycle(), []);
+
+  const updateState = useCallback((updater, options = {}) => {
+    const current = stateRef.current;
+    const next = typeof updater === "function" ? updater(current) : updater;
+    if (Object.is(next, current)) return current;
+
+    stateRef.current = next;
+    setState(next);
+    persistenceRef.current.schedule(next, options);
+    return next;
+  }, []);
 
   return [state, updateState];
 }
@@ -4313,7 +4548,7 @@ function chartPoints(days, getValue, maxValue = 100) {
 }
 
 function AreaChart({ days, getValue, gradientId, label, maxValue = 100, targetValue = null, targetLabel = "", metricType = "neutral", valueSuffix = "" }) {
-  const points = chartPoints(days, getValue, maxValue);
+  const points = useMemo(() => chartPoints(days, getValue, maxValue), [days, getValue, maxValue]);
   const [activePointIndex, setActivePointIndex] = useState(null);
   const linePath = buildSmoothPath(points);
   const areaPath = points.length
@@ -4321,6 +4556,11 @@ function AreaChart({ days, getValue, gradientId, label, maxValue = 100, targetVa
     : "";
   const targetY = Number.isFinite(targetValue) ? chartY(targetValue, maxValue, 22, 170) : null;
   const activePoint = Number.isInteger(activePointIndex) ? points[activePointIndex] : null;
+  const revealChart = useChartReveal(chartRevealKey(
+    `area:${gradientId}`,
+    points.map((point) => point.value),
+    points.map((point) => point.day),
+  ));
   const selectNearestPoint = (event) => {
     if (!points.length) return;
     const bounds = event.currentTarget.getBoundingClientRect();
@@ -4338,7 +4578,7 @@ function AreaChart({ days, getValue, gradientId, label, maxValue = 100, targetVa
   return (
     <>
       <svg
-        className={`area-chart ${activePoint ? "is-scrubbing" : ""}`}
+        className={`area-chart ${revealChart ? "chart-reveal" : "chart-static"} ${activePoint ? "is-scrubbing" : ""}`}
         viewBox="0 0 320 190"
         role="img"
         aria-label={label}
@@ -4378,7 +4618,7 @@ function AreaChart({ days, getValue, gradientId, label, maxValue = 100, targetVa
           </>
         )}
         {linePath && <path className="line" d={linePath} pathLength="1" />}
-        {linePath && points.length > 1 && (
+        {revealChart && linePath && points.length > 1 && (
           <circle className="line-runner" r="4.5" aria-hidden="true">
             <animateMotion path={linePath} begin="80ms" dur="620ms" fill="freeze" />
             <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.12;0.82;1" begin="80ms" dur="700ms" fill="freeze" />
@@ -4416,8 +4656,9 @@ function AreaChart({ days, getValue, gradientId, label, maxValue = 100, targetVa
 }
 
 function BarChart({ values, labels, className = "bar-chart", metricType = "neutral" }) {
+  const revealChart = useChartReveal(chartRevealKey(`bars:${className}:${metricType}`, values, labels));
   return (
-    <div className={className}>
+    <div className={`${className} ${revealChart ? "chart-reveal" : "chart-static"}`}>
       {values.map((score, index) => {
         const realScore = Number.isFinite(score) ? Math.round(score) : null;
         const height = realScore ? clamp(realScore, 16, 96) : 16;
@@ -4647,7 +4888,11 @@ function BottomNav({ activePage, onPageChange }) {
     return null;
   };
   const [expandedGroup, setExpandedGroup] = useState(() => pageGroup(activePage));
+  const chromeRef = useRef(null);
   const navRef = useRef(null);
+  const navMotionTimerRef = useRef(0);
+  const glassFrameRef = useRef(0);
+  const glassPointRef = useRef({ x: 0, y: 0 });
   const groups = {
     productivity: [
       { page: "workout", label: "Workout", icon: "workout" },
@@ -4663,6 +4908,62 @@ function BottomNav({ activePage, onPageChange }) {
     ],
   };
   const activeGroup = pageGroup(activePage);
+
+  useEffect(() => {
+    const chrome = chromeRef.current;
+    if (!chrome) return undefined;
+    const shell = chrome.closest(".app-shell");
+    let frameId = 0;
+    let scrollSettleTimer = 0;
+    let lastPosition = Math.max(0, window.scrollY || document.documentElement.scrollTop || 0);
+
+    const updateChrome = () => {
+      frameId = 0;
+      const currentPosition = Math.max(0, window.scrollY || document.documentElement.scrollTop || 0);
+      const movement = currentPosition - lastPosition;
+      chrome.classList.add("is-scrolling");
+      if (currentPosition < 44 || movement < -8) {
+        chrome.classList.remove("chrome-compact");
+        shell?.classList.remove("chrome-compact");
+      }
+      if (currentPosition >= 44 && movement > 8) {
+        chrome.classList.add("chrome-compact");
+        shell?.classList.add("chrome-compact");
+      }
+      lastPosition = currentPosition;
+
+      window.clearTimeout(scrollSettleTimer);
+      scrollSettleTimer = window.setTimeout(() => chrome.classList.remove("is-scrolling"), 150);
+    };
+
+    const handleScroll = () => {
+      if (!frameId) frameId = window.requestAnimationFrame(updateChrome);
+    };
+
+    chrome.classList.remove("chrome-compact", "is-scrolling");
+    shell?.classList.remove("chrome-compact");
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      if (frameId) window.cancelAnimationFrame(frameId);
+      window.clearTimeout(scrollSettleTimer);
+      shell?.classList.remove("chrome-compact");
+    };
+  }, [activePage]);
+
+  useEffect(() => () => {
+    window.clearTimeout(navMotionTimerRef.current);
+    if (glassFrameRef.current) window.cancelAnimationFrame(glassFrameRef.current);
+  }, []);
+
+  const markNavMoving = () => {
+    const chrome = chromeRef.current;
+    if (!chrome) return;
+    chrome.classList.add("nav-moving");
+    window.clearTimeout(navMotionTimerRef.current);
+    navMotionTimerRef.current = window.setTimeout(() => chrome.classList.remove("nav-moving"), 560);
+  };
+
   useEffect(() => {
     const nav = navRef.current;
     if (!nav) return undefined;
@@ -4699,17 +5000,24 @@ function BottomNav({ activePage, onPageChange }) {
   }, [activePage, expandedGroup]);
 
   const updateGlassLight = (event) => {
-    const nav = navRef.current;
-    if (!nav) return;
-    const bounds = nav.querySelector(".nav-shell")?.getBoundingClientRect() || nav.getBoundingClientRect();
-    const x = Math.max(0, Math.min(100, ((event.clientX - bounds.left) / bounds.width) * 100));
-    const y = Math.max(0, Math.min(100, ((event.clientY - bounds.top) / bounds.height) * 100));
-    nav.style.setProperty("--glass-light-x", `${x}%`);
-    nav.style.setProperty("--glass-light-y", `${y}%`);
+    glassPointRef.current = { x: event.clientX, y: event.clientY };
+    if (glassFrameRef.current) return;
+    glassFrameRef.current = window.requestAnimationFrame(() => {
+      glassFrameRef.current = 0;
+      const nav = navRef.current;
+      if (!nav) return;
+      const bounds = nav.querySelector(".nav-shell")?.getBoundingClientRect() || nav.getBoundingClientRect();
+      const x = Math.max(0, Math.min(100, ((glassPointRef.current.x - bounds.left) / bounds.width) * 100));
+      const y = Math.max(0, Math.min(100, ((glassPointRef.current.y - bounds.top) / bounds.height) * 100));
+      nav.style.setProperty("--glass-light-x", `${x}%`);
+      nav.style.setProperty("--glass-light-y", `${y}%`);
+    });
   };
   const settleGlassLight = () => {
     const nav = navRef.current;
     if (!nav) return;
+    if (glassFrameRef.current) window.cancelAnimationFrame(glassFrameRef.current);
+    glassFrameRef.current = 0;
     nav.classList.remove("is-touching");
     nav.style.removeProperty("--glass-light-x");
     nav.style.removeProperty("--glass-light-y");
@@ -4719,10 +5027,12 @@ function BottomNav({ activePage, onPageChange }) {
     navRef.current?.classList.add("is-touching");
   };
   const selectPage = (page) => {
+    markNavMoving();
     setExpandedGroup(pageGroup(page));
     onPageChange(page);
   };
   const toggleGroup = (group) => {
+    markNavMoving();
     setExpandedGroup((current) => (current === group ? null : group));
   };
   const renderPageButton = ({ page, label, icon }, index) => {
@@ -4745,51 +5055,53 @@ function BottomNav({ activePage, onPageChange }) {
   };
 
   return (
-    <nav
-      ref={navRef}
-      className={`bottom-nav metric-${activePage} ${expandedGroup ? `expanded ${expandedGroup}` : "collapsed"}`}
-      aria-label="Primary"
-      onPointerMove={updateGlassLight}
-      onPointerDown={pressGlass}
-      onPointerUp={settleGlassLight}
-      onPointerCancel={settleGlassLight}
-      onPointerLeave={settleGlassLight}
-    >
-      <span className="nav-shell" aria-hidden="true">
-        <span className="nav-refraction" />
-        <span className="nav-specular" />
-        <span className="nav-caustic" />
-      </span>
-      <span className="nav-selection-lens" aria-hidden="true" />
-      <div className={`nav-group productivity ${expandedGroup === "productivity" ? "open" : ""}`}>
-        {groups.productivity.map(renderPageButton)}
+    <div ref={chromeRef} className="navigation-chrome">
+      <nav
+        ref={navRef}
+        className={`bottom-nav metric-${activePage} ${expandedGroup ? `expanded ${expandedGroup}` : "collapsed"}`}
+        aria-label="Primary"
+        onPointerMove={updateGlassLight}
+        onPointerDown={pressGlass}
+        onPointerUp={settleGlassLight}
+        onPointerCancel={settleGlassLight}
+        onPointerLeave={settleGlassLight}
+      >
+        <span className="nav-shell" aria-hidden="true">
+          <span className="nav-refraction" />
+          <span className="nav-specular" />
+          <span className="nav-caustic" />
+        </span>
+        <span className="nav-selection-lens" aria-hidden="true" />
+        <div className={`nav-group productivity ${expandedGroup === "productivity" ? "open" : ""}`}>
+          {groups.productivity.map(renderPageButton)}
+          <button
+            className={`nav-icon nav-category ${activeGroup === "productivity" ? "active" : ""}`}
+            aria-label="Productivity pages"
+            aria-expanded={expandedGroup === "productivity"}
+            onClick={() => toggleGroup("productivity")}
+          >
+            <NavIcon type="workout" />
+          </button>
+        </div>
         <button
-          className={`nav-icon nav-category ${activeGroup === "productivity" ? "active" : ""}`}
-          aria-label="Productivity pages"
-          aria-expanded={expandedGroup === "productivity"}
-          onClick={() => toggleGroup("productivity")}
-        >
-          <NavIcon type="workout" />
-        </button>
-      </div>
-      <button
-        className={`home-logo ${activePage === "home" ? "active" : ""}`}
-        aria-label="Home"
-        aria-current={activePage === "home" ? "page" : undefined}
-        onClick={() => selectPage("home")}
-      />
-      <div className={`nav-group health ${expandedGroup === "health" ? "open" : ""}`}>
-        <button
-          className={`nav-icon nav-category ${activeGroup === "health" ? "active" : ""}`}
-          aria-label="Health pages"
-          aria-expanded={expandedGroup === "health"}
-          onClick={() => toggleGroup("health")}
-        >
-          <NavIcon type="health" />
-        </button>
-        {groups.health.map(renderPageButton)}
-      </div>
-    </nav>
+          className={`home-logo ${activePage === "home" ? "active" : ""}`}
+          aria-label="Home"
+          aria-current={activePage === "home" ? "page" : undefined}
+          onClick={() => selectPage("home")}
+        />
+        <div className={`nav-group health ${expandedGroup === "health" ? "open" : ""}`}>
+          <button
+            className={`nav-icon nav-category ${activeGroup === "health" ? "active" : ""}`}
+            aria-label="Health pages"
+            aria-expanded={expandedGroup === "health"}
+            onClick={() => toggleGroup("health")}
+          >
+            <NavIcon type="health" />
+          </button>
+          {groups.health.map(renderPageButton)}
+        </div>
+      </nav>
+    </div>
   );
 }
 
@@ -5787,15 +6099,14 @@ function BodyMapPanel({ workout }) {
   const analysis = buildFocusAnalysis(workout);
   const values = bodyMapValuesFromAnalysis(analysis);
   const priorityRows = analysis.rows.slice(0, 4);
-  const svg = renderBodyMapSvg({
-    values,
-    title: `${analysis.aesthetic.shortName} muscle diagram`,
-  });
+  const title = `${analysis.aesthetic.shortName} muscle diagram`;
 
   return (
     <div className="panel bodymap-panel">
       <SectionTitle title="Muscle diagram" meta={analysis.aesthetic.shortName} />
-      <div className="bodymap-shell" dangerouslySetInnerHTML={{ __html: svg }} />
+      <Suspense fallback={<div className="bodymap-shell bodymap-loading" role="status" aria-label="Loading muscle diagram" />}>
+        <BodyMapVisual values={values} title={title} />
+      </Suspense>
       <div className="bodymap-legend">
         {priorityRows.map((row) => (
           <span key={row.muscle}>
@@ -6283,23 +6594,244 @@ function ExerciseLibrary({ exercises, onAddExercise }) {
   );
 }
 
-function WorkoutHistoryPanel({ workouts }) {
+function isExternalWorkout(workout) {
+  return workout?.historyKind === "external" || workout?.external === true;
+}
+
+function externalWorkoutTitle(workout) {
+  const title = String(workout?.title ?? "").trim();
+  const type = String(workout?.type ?? "").trim();
+  if (title && !/^exercise session$/i.test(title)) return title;
+  if (type && !/^exercise$/i.test(type)) return type;
+  return "Recorded workout";
+}
+
+function historyWorkoutTitle(workout) {
+  return isExternalWorkout(workout)
+    ? externalWorkoutTitle(workout)
+    : String(workout?.routineName ?? "Workout").trim() || "Workout";
+}
+
+function externalWorkoutSetCount(workout) {
+  return (workout?.segments ?? []).filter((segment) => (
+    !segment.isRest && Number(segment.repetitions) > 0
+  )).length;
+}
+
+function externalWorkoutVolume(workout) {
+  return (workout?.segments ?? []).reduce((total, segment) => {
+    const weight = Number(segment.weightKg);
+    const repetitions = Number(segment.repetitions);
+    return total + (!segment.isRest && weight > 0 && repetitions > 0 ? weight * repetitions : 0);
+  }, 0);
+}
+
+function historyWorkoutSetCount(workout) {
+  return isExternalWorkout(workout) ? externalWorkoutSetCount(workout) : workoutSetCount(workout);
+}
+
+function historyWorkoutVolume(workout) {
+  return isExternalWorkout(workout) ? externalWorkoutVolume(workout) : workoutVolume(workout);
+}
+
+function historyWorkoutDurationMinutes(workout) {
+  if (!isExternalWorkout(workout)) return Math.max(0, Math.round(Number(workout?.duration) || 0));
+  const elapsedSeconds = nullableNumber(workout?.elapsedDurationSeconds, 0, 604800);
+  return elapsedSeconds === null
+    ? Math.max(0, Math.round(Number(workout?.durationMinutes) || 0))
+    : Math.max(0, Math.round(elapsedSeconds / 60));
+}
+
+function combinedWorkoutHistory(manualWorkouts = [], connectedWorkouts = []) {
+  const manual = manualWorkouts.map((workout, index) => ({
+    ...workout,
+    historyKind: "manual",
+    historyKey: `manual:${workout.id || `${workout.date}-${index}`}`,
+  }));
+  const external = connectedWorkouts
+    .filter((workout) => validDateKey(workout.date))
+    .map((workout, index) => ({
+      ...workout,
+      historyKind: "external",
+      historyKey: `health:${workout.healthConnectRecordId || workout.id || `${workout.date}-${index}`}`,
+    }));
+  return [...manual, ...external];
+}
+
+function formatExternalDuration(seconds, fallbackMinutes = 0) {
+  const directSeconds = nullableNumber(seconds, 0, 604800);
+  const fallback = nullableNumber(fallbackMinutes, 0, 10080);
+  if (directSeconds === null && (fallback === null || fallback <= 0)) return "";
+  const totalSeconds = Math.max(0, Math.round(directSeconds ?? fallback * 60));
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const remainder = totalSeconds % 60;
+  if (hours) return `${hours}h ${minutes}m`;
+  return remainder ? `${minutes}m ${remainder}s` : `${minutes}m`;
+}
+
+function formatExternalDistance(meters) {
+  const value = nullableNumber(meters, 0, 1000000);
+  if (value === null) return "";
+  return value >= 1000 ? `${(value / 1000).toFixed(value >= 10000 ? 1 : 2)} km` : `${Math.round(value)} m`;
+}
+
+function formatExternalPace(distanceMeters, seconds) {
+  const distance = nullableNumber(distanceMeters, 1, 1000000);
+  const duration = nullableNumber(seconds, 1, 604800);
+  if (distance === null || duration === null) return "";
+  const paceSeconds = Math.round(duration / (distance / 1000));
+  if (!Number.isFinite(paceSeconds) || paceSeconds <= 0 || paceSeconds > 3600) return "";
+  return `${Math.floor(paceSeconds / 60)}:${String(paceSeconds % 60).padStart(2, "0")} /km`;
+}
+
+function externalWorkoutMetricItems(workout) {
+  const items = [];
+  const distance = nullableNumber(workout?.distanceMeters, 0, 1000000);
+  const activeSeconds = nullableNumber(workout?.activeDurationSeconds, 1, 604800)
+    ?? nullableNumber(workout?.elapsedDurationSeconds, 1, 604800);
+  const pace = formatExternalPace(distance, activeSeconds);
+  const pushNumber = (label, value, formatter) => {
+    const parsed = nullableNumber(value);
+    if (parsed !== null) items.push({ label, value: formatter(parsed) });
+  };
+
+  if (distance !== null) items.push({ label: "Distance", value: formatExternalDistance(distance) });
+  if (pace) items.push({ label: "Average pace", value: pace });
+  pushNumber("Active calories", workout?.activeCalories, (value) => `${Math.round(value)} kcal`);
+  if (workout?.activeCalories === null || workout?.activeCalories === undefined) {
+    pushNumber("Total calories", workout?.totalCalories, (value) => `${Math.round(value)} kcal`);
+  }
+  pushNumber("Average heart rate", workout?.averageHeartRate, (value) => `${Math.round(value)} bpm`);
+  pushNumber("Maximum heart rate", workout?.maximumHeartRate, (value) => `${Math.round(value)} bpm`);
+  if (!pace) {
+    pushNumber("Average speed", workout?.averageSpeedMetersPerSecond, (value) => `${(value * 3.6).toFixed(1)} km/h`);
+  }
+  pushNumber("Elevation gained", workout?.elevationGainedMeters, (value) => `${Math.round(value)} m`);
+  pushNumber("Average cadence", workout?.averageCadence, (value) => `${Math.round(value)} /min`);
+  return items;
+}
+
+function ExternalWorkoutHistorySession({ workout, workoutIndex, totalWorkouts }) {
+  const sourceLabel = healthOriginLabel(workout.source);
+  const metricItems = externalWorkoutMetricItems(workout);
+  const setCount = externalWorkoutSetCount(workout);
+  const hasStrengthShape = /strength|weight|resistance/i.test(`${workout.type} ${workout.title}`);
+  const unavailablePermissions = Object.entries(workout.metricPermissions ?? {})
+    .filter(([, available]) => available === false)
+    .map(([metric]) => metric);
+  const sessionTime = workout.startedAt
+    ? new Date(workout.startedAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
+    : "Time unavailable";
+  const deviceLabel = [workout.sourceDevice?.manufacturer, workout.sourceDevice?.model]
+    .filter(Boolean)
+    .join(" ");
+  const routeCopy = workout.routeStatus === "available"
+    ? "A route is available in Health Connect; Archive preserves its availability without copying coordinates."
+    : workout.routeStatus === "consentRequired"
+      ? "A route exists, but Android requires separate user consent before coordinates can be read."
+      : "";
+
+  return (
+    <article className="workout-history-session external-workout-session" style={{ "--session-index": workoutIndex }}>
+      <div className="workout-history-session-head">
+        <div>
+          <span>{sourceLabel} {totalWorkouts > 1 ? `· Workout ${workoutIndex + 1}` : ""}</span>
+          <strong>{externalWorkoutTitle(workout)}</strong>
+          <small>
+            {sessionTime} · {formatExternalDuration(workout.elapsedDurationSeconds, workout.durationMinutes) || "Duration unavailable"}
+            {deviceLabel ? ` · ${deviceLabel}` : ""}
+          </small>
+        </div>
+        <b className="external-workout-source-mark" aria-label={`Imported from ${sourceLabel}`}>HC</b>
+      </div>
+
+      {metricItems.length > 0 && (
+        <div className="external-workout-metrics">
+          {metricItems.map((metric) => (
+            <div className="external-workout-metric" key={metric.label}>
+              <small>{metric.label}</small>
+              <strong>{metric.value}</strong>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {workout.laps?.length > 0 && (
+        <details className="external-workout-detail-group" open={workout.laps.length <= 4}>
+          <summary><span>Laps</span><b>{workout.laps.length}</b></summary>
+          <div className="external-workout-detail-list">
+            {workout.laps.map((lap) => (
+              <div className="external-workout-detail-row" key={`lap-${lap.index}-${lap.startedAt}`}>
+                <span>Lap {lap.index}</span>
+                <strong>{formatExternalDistance(lap.distanceMeters) || "Distance unavailable"}</strong>
+                <small>{formatExternalDuration(lap.durationSeconds) || "Time unavailable"}</small>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+
+      {workout.segments?.length > 0 && (
+        <details className="external-workout-detail-group" open={workout.segments.length <= 6}>
+          <summary><span>Segments {setCount ? `· ${setCount} recorded sets` : ""}</span><b>{workout.segments.length}</b></summary>
+          <div className="external-workout-detail-list">
+            {workout.segments.map((segment) => (
+              <div className={`external-workout-detail-row ${segment.isRest ? "rest" : ""}`} key={`segment-${segment.index}-${segment.startedAt}`}>
+                <span>{segment.type || `Segment ${segment.index}`}</span>
+                <strong>
+                  {segment.repetitions !== null ? `${segment.repetitions} reps` : formatExternalDuration(segment.durationSeconds) || "Duration unavailable"}
+                </strong>
+                <small>
+                  {segment.weightKg !== null ? `${segment.weightKg} kg` : segment.repetitions !== null ? formatExternalDuration(segment.durationSeconds) : ""}
+                </small>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+
+      {routeCopy && <p className="external-workout-note">{routeCopy}</p>}
+      {hasStrengthShape && !workout.segments?.length && (
+        <p className="external-workout-note">
+          {sourceLabel} shared the strength session, but no exercise or set segments were available through Health Connect.
+        </p>
+      )}
+      {!metricItems.length && !workout.laps?.length && !workout.segments?.length && (
+        <p className="external-workout-note">
+          {unavailablePermissions.length
+            ? "The session imported successfully. Additional metrics need optional Health Connect permissions."
+            : `${sourceLabel} shared the completed session without additional attributable workout details.`}
+        </p>
+      )}
+      {workout.notes && <p className="workout-history-notes">{workout.notes}</p>}
+    </article>
+  );
+}
+
+function WorkoutHistoryPanel({ workouts, connectedWorkouts = [] }) {
   const [query, setQuery] = useState("");
-  const filteredWorkouts = [...workouts]
+  const historyWorkouts = useMemo(() => combinedWorkoutHistory(workouts, connectedWorkouts), [connectedWorkouts, workouts]);
+  const filteredWorkouts = useMemo(() => [...historyWorkouts]
     .sort((a, b) => b.date.localeCompare(a.date))
-    .filter((workout) => `${workout.routineName} ${workout.notes} ${workout.date}`.toLowerCase().includes(query.trim().toLowerCase()));
+    .filter((workout) => `${historyWorkoutTitle(workout)} ${workout.notes} ${workout.date} ${workout.source}`.toLowerCase().includes(query.trim().toLowerCase())), [historyWorkouts, query]);
 
   return (
     <div className="panel workout-history-panel">
-      <SectionTitle title="Workout history" meta={`${workouts.length} saved`} />
+      <SectionTitle title="Workout history" meta={`${historyWorkouts.length} saved`} />
       <input className="library-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search history" />
       <div className="workout-history-list">
         {filteredWorkouts.slice(0, 8).map((workout) => (
-          <div className="history-row workout-history-row" key={workout.id}>
+          <div className="history-row workout-history-row" key={workout.historyKey}>
             <span>{formatShortDate(workout.date)}</span>
             <div>
-              <strong>{workout.routineName}</strong>
-              <small>{workoutSetCount(workout)} sets / {Math.round(workoutVolume(workout))} volume / {workout.duration} min</small>
+              <strong>{historyWorkoutTitle(workout)}</strong>
+              <small>
+                {isExternalWorkout(workout) ? `${healthOriginLabel(workout.source)} / ` : ""}
+                {historyWorkoutSetCount(workout) ? `${historyWorkoutSetCount(workout)} sets / ` : ""}
+                {historyWorkoutDurationMinutes(workout) ? `${historyWorkoutDurationMinutes(workout)} min` : "Duration unavailable"}
+              </small>
             </div>
           </div>
         ))}
@@ -6309,9 +6841,13 @@ function WorkoutHistoryPanel({ workouts }) {
   );
 }
 
-function WorkoutHistoryPage({ workout, onWorkoutChange }) {
-  const data = normalizeWorkoutState(workout);
-  const sortedWorkouts = [...data.workouts].sort((a, b) => b.date.localeCompare(a.date));
+function WorkoutHistoryPage({ workout, watchData, onWorkoutChange }) {
+  const data = workout;
+  const connectedWorkouts = useMemo(() => normalizeWatchData(watchData).workouts, [watchData]);
+  const sortedWorkouts = useMemo(() => (
+    combinedWorkoutHistory(data.workouts, connectedWorkouts).sort((a, b) => b.date.localeCompare(a.date))
+  ), [connectedWorkouts, data.workouts]);
+  const historyWorkouts = sortedWorkouts;
   const latestWorkout = sortedWorkouts[0] ?? null;
   const now = new Date();
   const today = dateKey(now);
@@ -6324,11 +6860,11 @@ function WorkoutHistoryPage({ workout, onWorkoutChange }) {
   const [backfillDraft, setBackfillDraft] = useState(null);
   const workoutsByDate = useMemo(() => {
     const grouped = new Map();
-    data.workouts.forEach((savedWorkout) => {
+    historyWorkouts.forEach((savedWorkout) => {
       grouped.set(savedWorkout.date, [...(grouped.get(savedWorkout.date) ?? []), savedWorkout]);
     });
     return grouped;
-  }, [data.workouts]);
+  }, [historyWorkouts]);
   const firstDayOffset = (viewMonth.getDay() + 6) % 7;
   const daysInMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 0).getDate();
   const monthCells = Array.from({ length: 42 }, (_, index) => {
@@ -6338,7 +6874,7 @@ function WorkoutHistoryPage({ workout, onWorkoutChange }) {
     const workouts = workoutsByDate.get(date) ?? [];
     const scheduledRoutine = date < today ? scheduledRoutineForDate(data, date) : null;
     const scheduledCompleted = scheduledRoutine
-      ? workouts.some((savedWorkout) => workoutMatchesRoutine(savedWorkout, scheduledRoutine))
+      ? workouts.some((savedWorkout) => !isExternalWorkout(savedWorkout) && workoutMatchesRoutine(savedWorkout, scheduledRoutine))
       : false;
     return {
       date,
@@ -6356,8 +6892,8 @@ function WorkoutHistoryPage({ workout, onWorkoutChange }) {
   const monthAdherence = monthPlannedDays
     ? ((monthPlannedDays - monthMissedDays) / monthPlannedDays) * 100
     : clamp((monthCompletedDays / 12) * 100, 0, 100);
-  const monthSetTotal = monthWorkouts.reduce((total, savedWorkout) => total + workoutSetCount(savedWorkout), 0);
-  const monthVolumeTotal = Math.round(monthWorkouts.reduce((total, savedWorkout) => total + workoutVolume(savedWorkout), 0));
+  const monthSetTotal = monthWorkouts.reduce((total, savedWorkout) => total + historyWorkoutSetCount(savedWorkout), 0);
+  const monthVolumeTotal = Math.round(monthWorkouts.reduce((total, savedWorkout) => total + historyWorkoutVolume(savedWorkout), 0));
   const monthLabel = viewMonth.toLocaleDateString(undefined, { month: "long", year: "numeric" });
   const latestMonthWorkout = [...monthWorkouts].sort((a, b) => b.date.localeCompare(a.date))[0] ?? null;
   const selectedWorkouts = selectedDate ? workoutsByDate.get(selectedDate) ?? [] : [];
@@ -6365,7 +6901,7 @@ function WorkoutHistoryPage({ workout, onWorkoutChange }) {
     ? scheduledRoutineForDate(data, selectedDate)
     : null;
   const selectedScheduledCompleted = selectedScheduledRoutine
-    ? selectedWorkouts.some((savedWorkout) => workoutMatchesRoutine(savedWorkout, selectedScheduledRoutine))
+    ? selectedWorkouts.some((savedWorkout) => !isExternalWorkout(savedWorkout) && workoutMatchesRoutine(savedWorkout, selectedScheduledRoutine))
     : false;
   const selectedMissedRoutine = selectedScheduledRoutine && !selectedScheduledCompleted
     ? selectedScheduledRoutine
@@ -6519,8 +7055,15 @@ function WorkoutHistoryPage({ workout, onWorkoutChange }) {
           )}
           {selectedWorkouts.length ? (
             <div className="workout-day-sessions">
-              {selectedWorkouts.map((savedWorkout, workoutIndex) => (
-                <article className="workout-history-session" style={{ "--session-index": workoutIndex }} key={savedWorkout.id}>
+              {selectedWorkouts.map((savedWorkout, workoutIndex) => isExternalWorkout(savedWorkout) ? (
+                <ExternalWorkoutHistorySession
+                  workout={savedWorkout}
+                  workoutIndex={workoutIndex}
+                  totalWorkouts={selectedWorkouts.length}
+                  key={savedWorkout.historyKey}
+                />
+              ) : (
+                <article className="workout-history-session" style={{ "--session-index": workoutIndex }} key={savedWorkout.historyKey ?? savedWorkout.id}>
                   <div className="workout-history-session-head">
                     <div>
                       <span>Workout {selectedWorkouts.length > 1 ? workoutIndex + 1 : ""}</span>
@@ -6565,10 +7108,10 @@ function WorkoutHistoryPage({ workout, onWorkoutChange }) {
           ) : !selectedMissedRoutine && (
             <GuidedHighlight
               eyebrow="Archive"
-              title={data.workouts.length ? "Choose a marked day" : "Your training story starts here"}
-              copy={data.workouts.length
+              title={historyWorkouts.length ? "Choose a marked day" : "Your training story starts here"}
+              copy={historyWorkouts.length
                 ? "Black squares contain completed sessions. Outlined squares let you record a missed scheduled workout."
-                : "Finished workouts and missed scheduled days will appear here with every set preserved."}
+                : "Finished Archive workouts and imported Health Connect sessions will appear here without changing your active workout."}
               status="quiet"
             />
           )}
@@ -6819,18 +7362,30 @@ function WorkoutSettingsView({ workout, routine, workoutActions, onSetSchedule, 
 }
 
 function WorkoutPage({ workout, onWorkoutChange, onAdd, onBackup, modules, moduleContext, onRemoveModule, onEditModule, onReorderModule }) {
-  const data = normalizeWorkoutState(workout);
-  const selectedRoutine = data.routines.find((routine) => routine.id === data.selectedRoutineId) ?? data.routines[0];
+  const data = workout;
+  const selectedRoutine = useMemo(() => (
+    data.routines.find((routine) => routine.id === data.selectedRoutineId) ?? data.routines[0]
+  ), [data.routines, data.selectedRoutineId]);
   const activeSession = data.activeSession;
   const [workoutModeOpen, setWorkoutModeOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const scheduledRoutine = scheduledRoutineForDay(data);
-  const nextWorkout = nextScheduledWorkout(data);
+  const scheduledRoutine = useMemo(() => scheduledRoutineForDay(data), [data.routines, data.schedule]);
+  const nextWorkout = useMemo(() => nextScheduledWorkout(data), [data.routines, data.schedule]);
   const todayRoutine = scheduledRoutine ?? selectedRoutine;
   const heroRoutine = scheduledRoutine ?? nextWorkout?.routine ?? selectedRoutine;
-  const heroScore = heroRoutine ? routineScore(heroRoutine, data.exercises) : null;
+  const heroScore = useMemo(() => (
+    heroRoutine ? routineScore(heroRoutine, data.exercises) : null
+  ), [data.exercises, heroRoutine]);
   const activeSessionStats = activeSession ? workoutSessionStats(activeSession) : null;
-  const focusAnalysis = buildFocusAnalysis(data);
+  const focusAnalysis = useMemo(() => buildFocusAnalysis(data), [
+    data.equipmentProfileId,
+    data.exercises,
+    data.routines,
+    data.schedule,
+    data.selectedAestheticId,
+    data.selectedRoutineId,
+    data.workouts,
+  ]);
   const equipmentProfile = EQUIPMENT_PROFILES.find((profile) => profile.id === data.equipmentProfileId) ?? EQUIPMENT_PROFILES[0];
   const heroScheduleLabel = scheduledRoutine
     ? "Scheduled today"
@@ -6847,6 +7402,19 @@ function WorkoutPage({ workout, onWorkoutChange, onAdd, onBackup, modules, modul
   useEffect(() => {
     if (!activeSession) setWorkoutModeOpen(false);
   }, [activeSession?.id]);
+
+  useEffect(() => {
+    const preload = () => {
+      loadWorkoutMode();
+      if (modules.some((module) => module.moduleId === "workout-muscle-diagram")) loadBodyMapVisual();
+    };
+    if (typeof window.requestIdleCallback === "function") {
+      const handle = window.requestIdleCallback(preload, { timeout: 900 });
+      return () => window.cancelIdleCallback(handle);
+    }
+    const handle = window.setTimeout(preload, 180);
+    return () => window.clearTimeout(handle);
+  }, [modules]);
 
   const updateRoutine = (nextRoutine) => {
     onWorkoutChange((current) => ({
@@ -6901,7 +7469,7 @@ function WorkoutPage({ workout, onWorkoutChange, onAdd, onBackup, modules, modul
     }));
   };
 
-  const updateActiveSession = (updater) => {
+  const updateActiveSession = (updater, options = {}) => {
     onWorkoutChange((current) => ({
       ...current,
       activeSession: normalizeActiveWorkoutSession(
@@ -6909,7 +7477,10 @@ function WorkoutPage({ workout, onWorkoutChange, onAdd, onBackup, modules, modul
           ? updater(normalizeActiveWorkoutSession(current.activeSession))
           : updater,
       ),
-    }));
+    }), {
+      activeSessionOnly: true,
+      immediate: options.immediate !== false,
+    });
   };
 
   const saveWorkout = (session) => {
@@ -6926,12 +7497,12 @@ function WorkoutPage({ workout, onWorkoutChange, onAdd, onBackup, modules, modul
             normalizeWorkoutLog(workoutLog, current.exercises, current.routines, current.workouts.length),
           ].sort((a, b) => a.date.localeCompare(b.date));
       return { ...current, workouts, activeSession: null };
-    });
+    }, { immediate: true });
     setWorkoutModeOpen(false);
   };
 
   const discardWorkout = () => {
-    onWorkoutChange((current) => ({ ...current, activeSession: null }));
+    onWorkoutChange((current) => ({ ...current, activeSession: null }), { immediate: true });
     setWorkoutModeOpen(false);
   };
 
@@ -6947,20 +7518,31 @@ function WorkoutPage({ workout, onWorkoutChange, onAdd, onBackup, modules, modul
         ...current,
         selectedRoutineId: routine.id,
         activeSession: session,
-      }));
+      }), { immediate: true });
       setSettingsOpen(false);
       setWorkoutModeOpen(true);
     }, { kind: "workout-mode", direction: "open" });
   };
 
-  const workoutActions = {
-    selectRoutine,
-    updateRoutine,
-    createRoutine,
-    addExercise,
-    setAesthetic,
-    setEquipmentProfile,
-  };
+  const selectRoutineAction = useEventCallback(selectRoutine);
+  const updateRoutineAction = useEventCallback(updateRoutine);
+  const createRoutineAction = useEventCallback(createRoutine);
+  const addExerciseAction = useEventCallback(addExercise);
+  const setScheduleAction = useEventCallback(setSchedule);
+  const setAestheticAction = useEventCallback(setAesthetic);
+  const setEquipmentProfileAction = useEventCallback(setEquipmentProfile);
+  const workoutActions = useMemo(() => ({
+    selectRoutine: selectRoutineAction,
+    updateRoutine: updateRoutineAction,
+    createRoutine: createRoutineAction,
+    addExercise: addExerciseAction,
+    setAesthetic: setAestheticAction,
+    setEquipmentProfile: setEquipmentProfileAction,
+  }), [addExerciseAction, createRoutineAction, selectRoutineAction, setAestheticAction, setEquipmentProfileAction, updateRoutineAction]);
+  const workoutModuleContext = useMemo(() => ({
+    ...moduleContext,
+    workoutActions,
+  }), [moduleContext, workoutActions]);
 
   return (
     <div className="screen canvas-screen workout-canvas-screen">
@@ -7004,7 +7586,7 @@ function WorkoutPage({ workout, onWorkoutChange, onAdd, onBackup, modules, modul
         meta={focusAnalysis.aesthetic.shortName}
         className="workout-focus-section"
       >
-        <BuildFocusPanel workout={data} showHeading={false} />
+        <MemoBuildFocusPanel workout={moduleContext.workout} showHeading={false} />
       </PageSection>
 
       <PageSection
@@ -7022,9 +7604,9 @@ function WorkoutPage({ workout, onWorkoutChange, onAdd, onBackup, modules, modul
         />
       </PageSection>
 
-      <PinnedModulesSection
+      <MemoPinnedModulesSection
         modules={modules}
-        context={{ ...moduleContext, workout: data, workoutActions }}
+        context={workoutModuleContext}
         onCustomize={onAdd}
         onRemoveModule={onRemoveModule}
         onEditModule={onEditModule}
@@ -7035,21 +7617,23 @@ function WorkoutPage({ workout, onWorkoutChange, onAdd, onBackup, modules, modul
           workout={data}
           routine={selectedRoutine}
           workoutActions={workoutActions}
-          onSetSchedule={setSchedule}
-          onSetAesthetic={setAesthetic}
-          onSetEquipmentProfile={setEquipmentProfile}
+          onSetSchedule={setScheduleAction}
+          onSetAesthetic={setAestheticAction}
+          onSetEquipmentProfile={setEquipmentProfileAction}
           onClose={() => runArchiveTransition(() => setSettingsOpen(false), { kind: "overlay", direction: "close" })}
         />
       )}
       {workoutModeOpen && activeSession && (
-        <WorkoutMode
-          session={activeSession}
-          exercises={data.exercises}
-          onChange={updateActiveSession}
-          onLeave={() => setWorkoutModeOpen(false)}
-          onFinish={saveWorkout}
-          onDiscard={discardWorkout}
-        />
+        <Suspense fallback={<div className="workout-mode-loading" role="status" aria-label="Opening Workout Mode" />}>
+          <WorkoutMode
+            session={activeSession}
+            exercises={data.exercises}
+            onChange={updateActiveSession}
+            onLeave={() => setWorkoutModeOpen(false)}
+            onFinish={saveWorkout}
+            onDiscard={discardWorkout}
+          />
+        </Suspense>
       )}
     </div>
   );
@@ -7058,6 +7642,7 @@ function WorkoutPage({ workout, onWorkoutChange, onAdd, onBackup, modules, modul
 function connectedHealthStatusLabel(settings) {
   const normalized = normalizeConnectedHealth(settings);
   if (normalized.status === "synced") return "Synced";
+  if (normalized.status === "partial") return "Partial";
   if (normalized.status === "permissionsNeeded") return "Needs permission";
   if (normalized.enabled && normalized.status === "available") return "Ready";
   if (normalized.status === "available") return "Available";
@@ -7072,6 +7657,7 @@ function connectedHealthStatusDetail(settings) {
   const normalized = normalizeConnectedHealth(settings);
   if (normalized.statusMessage) return normalized.statusMessage;
   if (normalized.status === "synced") return "Archive imported the latest available Health Connect records.";
+  if (normalized.status === "partial") return "Archive imported granted data. Review optional permissions to fill remaining workout fields.";
   if (normalized.status === "permissionsNeeded") return "Review Health Connect permissions so Archive can import watch data.";
   if (normalized.status === "available") return "Health Connect can be used as the bridge for Samsung Health now and other sources later.";
   if (normalized.status === "webPreview") return "This setting is visible in the browser, but watch sync runs inside the Android app.";
@@ -7148,9 +7734,9 @@ function SettingsPage({
   onUpdateAISettings,
   onUpdateGeminiApiKey,
 }) {
-  const normalizedGoals = normalizeGoals(goals);
-  const normalizedHealth = normalizeConnectedHealth(connectedHealth);
-  const normalizedAI = normalizeAISettings(aiSettings);
+  const normalizedGoals = useMemo(() => normalizeGoals(goals), [goals]);
+  const normalizedHealth = useMemo(() => normalizeConnectedHealth(connectedHealth), [connectedHealth]);
+  const normalizedAI = useMemo(() => normalizeAISettings(aiSettings), [aiSettings]);
   const healthStatus = connectedHealthStatusLabel(normalizedHealth);
 
   return (
@@ -7231,14 +7817,14 @@ function ConnectedHealthPanel({
   onRequestPermissions,
 }) {
   const [busyAction, setBusyAction] = useState("");
-  const settings = normalizeConnectedHealth(connectedHealth);
-  const data = normalizeWatchData(watchData);
+  const settings = useMemo(() => normalizeConnectedHealth(connectedHealth), [connectedHealth]);
+  const data = useMemo(() => normalizeWatchData(watchData), [watchData]);
   const enabledMetrics = WATCH_METRIC_DEFINITIONS.filter((metric) => settings.metrics[metric.id]);
   const statusLabel = connectedHealthStatusLabel(settings);
   const requestedPermissionCount = settings.requestedPermissions.length || WATCH_METRIC_DEFINITIONS.length;
-  const grantedPermissionCount = settings.permissionsGranted
-    ? requestedPermissionCount
-    : Math.min(settings.grantedPermissions.length, requestedPermissionCount);
+  const grantedPermissionCount = settings.grantedPermissions.length
+    ? Math.min(settings.grantedPermissions.length, requestedPermissionCount)
+    : settings.permissionsGranted ? requestedPermissionCount : 0;
   const healthSystem = data.healthSystem;
   const integrity = healthSystem.integrity;
   const freshness = healthDataFreshness(healthSystem.lastReconciledAt || settings.lastSyncAt);
@@ -7262,6 +7848,18 @@ function ConnectedHealthPanel({
       ?? data.workouts.at(-1)?.source
       ?? data.dailySummaries.at(-1)?.source,
   );
+  const garminWorkouts = data.workouts.filter((workout) => /garmin/i.test(String(workout.source ?? "")));
+  const workoutsWithSegments = data.workouts.filter((workout) => workout.segments?.length > 0);
+  const workoutsWithLaps = data.workouts.filter((workout) => workout.laps?.length > 0);
+  const workoutsWithMetrics = data.workouts.filter((workout) => (
+    Object.values(workout.metricAvailability ?? {}).some(Boolean)
+  ));
+  const workoutsWithRoutes = data.workouts.filter((workout) => (
+    workout.routeStatus === "available" || workout.routeStatus === "consentRequired"
+  ));
+  const latestConnectedWorkout = [...data.workouts].sort((a, b) => (
+    String(b.startedAt || b.date).localeCompare(String(a.startedAt || a.date))
+  ))[0] ?? null;
 
   const runAction = async (actionName, action) => {
     if (!action) return;
@@ -7297,7 +7895,7 @@ function ConnectedHealthPanel({
         <SettingsRow
           label="Source"
           value="Health Connect"
-          detail="Samsung Health now; Garmin and HealthKit can map here later."
+          detail="Samsung Health and Garmin Connect can share supported records through Android's health-data layer."
         />
         <SettingsRow label="Import">
           <button
@@ -7320,7 +7918,7 @@ function ConnectedHealthPanel({
         />
         <SettingsRow
           label="Permissions"
-          value={settings.permissionsGranted ? "Granted" : "Needed"}
+          value={settings.permissionsGranted ? "Granted" : settings.canSync ? "Partial" : "Needed"}
           detail={`${grantedPermissionCount}/${requestedPermissionCount} Health Connect data types granted`}
         />
         <SettingsRow
@@ -7371,7 +7969,7 @@ function ConnectedHealthPanel({
           >
             <span>
               <strong>{busyAction === "open" ? "Opening..." : "Open Health Connect"}</strong>
-              <small>Use this to let Samsung Health share steps, sleep, workouts, and vitals.</small>
+              <small>Review which providers and data types can share steps, sleep, workouts, and vitals.</small>
             </span>
             <b>Open</b>
           </button>
@@ -7431,6 +8029,23 @@ function ConnectedHealthPanel({
           detail={`${data.sleepSessions.length} sleep sessions / ${data.workouts.length} workouts`}
         />
         <SettingsRow
+          label="Imported workouts"
+          value={`${data.workouts.length}`}
+          detail={`${garminWorkouts.length} from Garmin Connect · ${workoutsWithMetrics.length} with attributed metrics`}
+        />
+        <SettingsRow
+          label="Workout detail"
+          value={`${workoutsWithSegments.length} segmented`}
+          detail={`${workoutsWithLaps.length} with laps · ${workoutsWithRoutes.length} with a route reference`}
+        />
+        {latestConnectedWorkout && (
+          <SettingsRow
+            label="Latest workout"
+            value={healthOriginLabel(latestConnectedWorkout.source)}
+            detail={`${formatShortDate(latestConnectedWorkout.date)} · ${externalWorkoutTitle(latestConnectedWorkout)}`}
+          />
+        )}
+        <SettingsRow
           label="Samples"
           value={`${data.samples.heartRate.length} HR`}
           detail={`${data.samples.heartRateVariability.length} HRV · rolling ${healthSystem.sampleRetention.limitPerMetric}-sample retention per metric`}
@@ -7457,7 +8072,7 @@ function ConnectedHealthPanel({
         </div>
       </SettingsSection>
       <div className="ai-disclosure">
-        Health Connect import is read-only. Samsung Health must share data with Health Connect; launch Archive or pull down from the top of a main page to import the latest records.
+        Health Connect import is read-only. Your health provider must first share records with Health Connect; launch Archive or pull down from the top of a main page to import the latest records.
       </div>
     </div>
   );
@@ -8094,8 +8709,9 @@ const MODULES = [
 ];
 
 function ModuleBars({ values, labels, metricType = "neutral" }) {
+  const revealChart = useChartReveal(chartRevealKey(`module-bars:${metricType}`, values, labels));
   return (
-    <div className="module-bars" style={{ gridTemplateColumns: `repeat(${values.length}, 1fr)` }}>
+    <div className={`module-bars ${revealChart ? "chart-reveal" : "chart-static"}`} style={{ gridTemplateColumns: `repeat(${values.length}, 1fr)` }}>
       {values.map((value, index) => {
         const score = Number.isFinite(value) ? Math.round(value) : 0;
         return (
@@ -8130,10 +8746,11 @@ function VariableAreaChart({ values, labels, gradientId, label, maxValue = 100, 
     ? `${linePath} L${points[points.length - 1].x} ${bottom} L${points[0].x} ${bottom} Z`
     : "";
   const targetY = Number.isFinite(targetValue) ? chartY(targetValue, scaleMax, top, bottom) : null;
+  const revealChart = useChartReveal(chartRevealKey(`variable-area:${gradientId}`, values, labels));
 
   return (
     <>
-      <svg className="area-chart" viewBox="0 0 320 170" role="img" aria-label={label}>
+      <svg className={`area-chart ${revealChart ? "chart-reveal" : "chart-static"}`} viewBox="0 0 320 170" role="img" aria-label={label}>
         <defs>
           <linearGradient id={gradientId} x1="0" y1={bottom} x2="0" y2={top} gradientUnits="userSpaceOnUse">
             <stop offset="0" stopColor="#ffffff" />
@@ -8152,7 +8769,7 @@ function VariableAreaChart({ values, labels, gradientId, label, maxValue = 100, 
           </>
         )}
         {linePath && <path className="line" d={linePath} pathLength="1" />}
-        {linePath && points.length > 1 && (
+        {revealChart && linePath && points.length > 1 && (
           <circle className="line-runner" r="4.5" aria-hidden="true">
             <animateMotion path={linePath} begin="80ms" dur="620ms" fill="freeze" />
             <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.12;0.82;1" begin="80ms" dur="700ms" fill="freeze" />
@@ -8399,7 +9016,8 @@ function ModuleVisual({ moduleId, context, instanceId, settings = {} }) {
     }
     case "workout-history": {
       const workout = normalizeWorkoutState(context.workout);
-      return <WorkoutHistoryPanel workouts={workout.workouts} />;
+      const connectedWorkouts = normalizeWatchData(context.watchData).workouts;
+      return <WorkoutHistoryPanel workouts={workout.workouts} connectedWorkouts={connectedWorkouts} />;
     }
     case "workout-exercise-library": {
       const workout = normalizeWorkoutState(context.workout);
@@ -9331,10 +9949,25 @@ function PullRefreshIndicator({ state, message }) {
   );
 }
 
+const MemoBottomNav = memo(BottomNav);
+const MemoBuildFocusPanel = memo(BuildFocusPanel);
+const MemoPinnedModulesSection = memo(PinnedModulesSection);
+const MemoHomePage = memo(HomePage);
+const MemoWorkoutPage = memo(WorkoutPage);
+const MemoWorkoutHistoryPage = memo(WorkoutHistoryPage);
+const MemoHabitPage = memo(HabitPage);
+const MemoWaterPage = memo(WaterPage);
+const MemoSleepPage = memo(SleepPage);
+const MemoStatsPage = memo(StatsPage);
+const MemoCoachPage = memo(CoachPage);
+const MemoSettingsPage = memo(SettingsPage);
+const MemoPullRefreshIndicator = memo(PullRefreshIndicator);
+
 export {
   applyCoachActionsToWorkout,
   buildFocusAnalysis,
   coachIntent,
+  combinedWorkoutHistory,
   createCoachWorkoutProposal,
   mergeWatchData,
   mergeWatchSleepIntoEntries,
@@ -9351,7 +9984,6 @@ export default function App() {
   const [state, setTrackerState] = useTrackerState();
   const [activePage, setActivePage] = useState("home");
   const [pageMotion, setPageMotion] = useState("center");
-  const [chromeCompact, setChromeCompact] = useState(false);
   const [choiceOpen, setChoiceOpen] = useState(false);
   const [backupOpen, setBackupOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -9369,12 +10001,12 @@ export default function App() {
   const importInputRef = useRef(null);
   const appShellRef = useRef(null);
   const launchScreenRef = useRef(null);
-  const lastScrollPosition = useRef(0);
   const latestStateRef = useRef(state);
   const healthSyncInFlightRef = useRef(null);
   const launchSyncPromiseRef = useRef(null);
   const pullRefreshActionRef = useRef(null);
   const pullRefreshBlockedRef = useRef(true);
+  const usesNativePageMotion = typeof document !== "undefined" && typeof document.startViewTransition === "function";
   latestStateRef.current = state;
   pullRefreshBlockedRef.current = launchPhase !== "ready"
     || choiceOpen
@@ -9385,18 +10017,44 @@ export default function App() {
     || Boolean(editingModule)
     || Boolean(editingHabit);
   const weekDays = useMemo(() => buildWeek(state.entries), [state.entries]);
-  const trackedHabitNames = (state.trackedHabits ?? state.habitNames).filter((habit) => state.habitNames.includes(habit));
-  const goals = normalizeGoals(state.goals);
-  const aiSettings = normalizeAISettings(state.aiSettings);
-  const connectedHealth = normalizeConnectedHealth(state.connectedHealth);
-  const watchData = normalizeWatchData(state.watchData);
-  const pageModules = normalizePageModules(state.pageModules);
-  const moduleTemplates = normalizeModuleTemplates(state.moduleTemplates);
-  const coachAnalytics = useMemo(() => buildCoachAnalytics(state), [state]);
-  const editedModuleDefinition = editingModule ? MODULES.find((module) => module.id === editingModule.moduleId) : null;
-  const editedModuleSettings = editingModule?.source === "template"
-    ? moduleTemplates[editingModule.moduleId]
-    : (pageModules[editingModule?.page] ?? []).find((module) => module.instanceId === editingModule?.instanceId)?.settings;
+  const trackedHabitNames = useMemo(() => (
+    (state.trackedHabits ?? state.habitNames).filter((habit) => state.habitNames.includes(habit))
+  ), [state.habitNames, state.trackedHabits]);
+  const goals = useMemo(() => normalizeGoals(state.goals), [state.goals]);
+  const aiSettings = useMemo(() => normalizeAISettings(state.aiSettings), [state.aiSettings]);
+  const connectedHealth = useMemo(() => normalizeConnectedHealth(state.connectedHealth), [state.connectedHealth]);
+  const watchData = useMemo(() => normalizeWatchData(state.watchData), [state.watchData]);
+  const pageModules = useMemo(() => normalizePageModules(state.pageModules), [state.pageModules]);
+  const moduleTemplates = useMemo(() => normalizeModuleTemplates(state.moduleTemplates), [state.moduleTemplates]);
+  const analyticalWorkout = useMemo(() => ({
+    ...state.workout,
+    activeSession: null,
+  }), [
+    state.workout.equipmentProfileId,
+    state.workout.exercises,
+    state.workout.routines,
+    state.workout.schedule,
+    state.workout.selectedAestheticId,
+    state.workout.selectedRoutineId,
+    state.workout.workouts,
+  ]);
+  const coachAnalytics = useMemo(() => buildCoachAnalytics({
+    entries: state.entries,
+    habitNames: state.habitNames,
+    trackedHabits: state.trackedHabits,
+    goals,
+    workout: analyticalWorkout,
+    connectedHealth,
+    watchData,
+  }), [state.entries, state.habitNames, state.trackedHabits, goals, analyticalWorkout, connectedHealth, watchData]);
+  const editedModuleDefinition = useMemo(() => (
+    editingModule ? MODULES.find((module) => module.id === editingModule.moduleId) : null
+  ), [editingModule]);
+  const editedModuleSettings = useMemo(() => (
+    editingModule?.source === "template"
+      ? moduleTemplates[editingModule.moduleId]
+      : (pageModules[editingModule?.page] ?? []).find((module) => module.instanceId === editingModule?.instanceId)?.settings
+  ), [editingModule, moduleTemplates, pageModules]);
   const moduleContext = useMemo(() => ({
     entries: state.entries,
     habitNames: trackedHabitNames,
@@ -9404,52 +10062,18 @@ export default function App() {
     trackedHabits: trackedHabitNames,
     goals,
     weekDays,
-    workout: state.workout,
+    workout: analyticalWorkout,
     connectedHealth,
     watchData,
-  }), [state.entries, state.habitNames, trackedHabitNames, goals, weekDays, state.workout, connectedHealth, watchData]);
+  }), [state.entries, state.habitNames, trackedHabitNames, goals, weekDays, analyticalWorkout, connectedHealth, watchData]);
 
   useEffect(() => {
-    let frameId = 0;
-
-    const updateChrome = () => {
-      frameId = 0;
-      const currentPosition = Math.max(0, window.scrollY || document.documentElement.scrollTop || 0);
-      const movement = currentPosition - lastScrollPosition.current;
-
-      if (currentPosition < 44) {
-        setChromeCompact(false);
-      } else if (movement > 8) {
-        setChromeCompact(true);
-      } else if (movement < -8) {
-        setChromeCompact(false);
-      }
-
-      lastScrollPosition.current = currentPosition;
-    };
-
-    const handleScroll = () => {
-      if (!frameId) frameId = window.requestAnimationFrame(updateChrome);
-    };
-
-    lastScrollPosition.current = Math.max(0, window.scrollY || 0);
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => {
-      window.removeEventListener("scroll", handleScroll);
-      if (frameId) window.cancelAnimationFrame(frameId);
-    };
-  }, []);
-
-  useEffect(() => {
-    setChromeCompact(false);
-    lastScrollPosition.current = 0;
     window.scrollTo({ top: 0, behavior: "auto" });
   }, [activePage]);
 
   const changeActivePage = (nextPage) => {
     if (activePage === nextPage) {
       setPageMotion("center");
-      setChromeCompact(false);
       window.scrollTo({ top: 0, behavior: "smooth" });
       return;
     }
@@ -9541,7 +10165,7 @@ export default function App() {
     try {
       const text = await file.text();
       const importedState = parseBackupPayload(JSON.parse(text));
-      setTrackerState(importedState);
+      setTrackerState(importedState, { immediate: true });
       setChoiceOpen(false);
       setBackupOpen(false);
       showBackupNotice("Backup imported.");
@@ -9712,14 +10336,29 @@ export default function App() {
         : null;
       const nativeStatus = permissionStatus ?? status;
       const permissionsGranted = Boolean(nativeStatus?.allGranted ?? nativeStatus?.permissionsGranted);
+      const canSync = Boolean(
+        nativeStatus?.canSync
+          ?? (permissionsGranted || (Array.isArray(nativeStatus?.grantedPermissions) && nativeStatus.grantedPermissions.length > 0)),
+      );
+      const partialPermissions = Boolean(
+        nativeStatus?.partialPermissions ?? (canSync && !permissionsGranted),
+      );
+      const healthConnectAvailable = Boolean(status?.status === "available" || status?.available);
       updateConnectedHealth({
-        status: nativeStatus?.status === "permissionsNeeded"
-          ? "permissionsNeeded"
-          : status?.status === "available" || status?.available ? "available" : "unavailable",
+        status: !healthConnectAvailable
+          ? "unavailable"
+          : !canSync
+            ? "permissionsNeeded"
+            : partialPermissions
+              ? "partial"
+              : "available",
         statusMessage: String(nativeStatus?.message ?? status?.message ?? "").trim(),
         platform: String(nativeStatus?.platform ?? status?.platform ?? Capacitor.getPlatform?.() ?? "android"),
         lastCheckedAt: checkedAt,
         permissionsGranted,
+        canSync,
+        partialPermissions,
+        workoutPermissionGranted: Boolean(nativeStatus?.workoutPermissionGranted),
         grantedPermissions: nativeStatus?.grantedPermissions ?? [],
         missingPermissions: nativeStatus?.missingPermissions ?? [],
         requestedPermissions: nativeStatus?.requestedPermissions ?? [],
@@ -9755,15 +10394,25 @@ export default function App() {
     try {
       const result = await ConnectedHealthNative.requestHealthPermissions();
       const permissionsGranted = Boolean(result?.allGranted ?? result?.permissionsGranted);
+      const canSync = Boolean(
+        result?.canSync
+          ?? (permissionsGranted || (Array.isArray(result?.grantedPermissions) && result.grantedPermissions.length > 0)),
+      );
+      const partialPermissions = Boolean(result?.partialPermissions ?? (canSync && !permissionsGranted));
       updateConnectedHealth({
         enabled: true,
-        status: permissionsGranted ? "available" : "permissionsNeeded",
+        status: !canSync ? "permissionsNeeded" : partialPermissions ? "partial" : "available",
         statusMessage: String(result?.message ?? (permissionsGranted
           ? "Health Connect permissions are granted."
-          : "Archive still needs Health Connect permission before it can import watch data.")).trim(),
+          : canSync
+            ? "Archive can import granted Health Connect data; optional permissions remain available."
+            : "Archive still needs Health Connect permission before it can import watch data.")).trim(),
         platform: String(result?.platform ?? Capacitor.getPlatform?.() ?? "android"),
         lastCheckedAt: requestedAt,
         permissionsGranted,
+        canSync,
+        partialPermissions,
+        workoutPermissionGranted: Boolean(result?.workoutPermissionGranted),
         grantedPermissions: result?.grantedPermissions ?? [],
         missingPermissions: result?.missingPermissions ?? [],
         requestedPermissions: result?.requestedPermissions ?? [],
@@ -9791,6 +10440,17 @@ export default function App() {
       const currentConnectedHealth = normalizeConnectedHealth(current.connectedHealth);
       const syncedAt = typeof result?.syncedAt === "string" ? result.syncedAt : checkedAt;
       const reconciledWatchData = mergeWatchData(current.watchData, result);
+      const permissionsGranted = Boolean(result?.allGranted ?? result?.permissionsGranted);
+      const canSync = Boolean(result?.canSync ?? result?.synced ?? permissionsGranted);
+      const partialPermissions = Boolean(result?.partialPermissions ?? (canSync && !permissionsGranted));
+      const nextStatus = result?.synced
+        ? partialPermissions ? "partial" : "synced"
+        : canSync
+          ? partialPermissions ? "partial" : "available"
+          : "permissionsNeeded";
+      const nextStatusMessage = partialPermissions
+        ? String(result?.message || statusMessage || "Archive imported the Health Connect data currently permitted.").trim()
+        : String(statusMessage || result?.message || "Health Connect data synced.").trim();
 
       return {
         ...current,
@@ -9799,13 +10459,18 @@ export default function App() {
           ...currentConnectedHealth,
           ...nativeAutomaticHealthPatch(result),
           enabled: true,
-          status: result?.synced ? "synced" : "available",
-          statusMessage: String(statusMessage || result?.message || "Health Connect data synced.").trim(),
+          status: nextStatus,
+          statusMessage: nextStatusMessage,
           platform: String(result?.platform ?? Capacitor.getPlatform?.() ?? "android"),
           lastCheckedAt: checkedAt,
           lastSyncAt: syncedAt,
           ...(Number(result?.days) >= 30 ? { lastForegroundSyncAt: syncedAt } : {}),
-          permissionsGranted: true,
+          permissionsGranted,
+          canSync,
+          partialPermissions,
+          workoutPermissionGranted: Boolean(
+            result?.workoutPermissionGranted ?? currentConnectedHealth.workoutPermissionGranted,
+          ),
           grantedPermissions: result?.grantedPermissions ?? currentConnectedHealth.grantedPermissions,
           missingPermissions: result?.missingPermissions ?? [],
           requestedPermissions: result?.requestedPermissions ?? currentConnectedHealth.requestedPermissions,
@@ -9860,8 +10525,10 @@ export default function App() {
           trigger,
         });
         const permissionsGranted = Boolean(result?.allGranted ?? result?.permissionsGranted);
+        const canSync = Boolean(result?.canSync ?? result?.synced ?? permissionsGranted);
+        const partialPermissions = Boolean(result?.partialPermissions ?? (canSync && !permissionsGranted));
 
-        if (result?.needsPermissions || !permissionsGranted) {
+        if (!result?.synced && (result?.needsPermissions || !canSync)) {
           const message = String(result?.message ?? "Archive needs Health Connect permissions before syncing watch data.").trim();
           updateConnectedHealth({
             enabled: true,
@@ -9870,6 +10537,9 @@ export default function App() {
             platform: String(result?.platform ?? Capacitor.getPlatform?.() ?? "android"),
             lastCheckedAt: checkedAt,
             permissionsGranted,
+            canSync,
+            partialPermissions,
+            workoutPermissionGranted: Boolean(result?.workoutPermissionGranted),
             grantedPermissions: result?.grantedPermissions ?? [],
             missingPermissions: result?.missingPermissions ?? [],
             requestedPermissions: result?.requestedPermissions ?? [],
@@ -9881,13 +10551,15 @@ export default function App() {
           return { ok: false, status: "permissionsNeeded", message };
         }
 
-        const statusMessage = trigger === "launch"
-          ? "Health data refreshed while Archive opened."
-          : "Health data refreshed with pull-to-refresh.";
+        const statusMessage = partialPermissions
+          ? String(result?.message ?? "Archive refreshed the Health Connect data currently permitted.").trim()
+          : trigger === "launch"
+            ? "Health data refreshed while Archive opened."
+            : "Health data refreshed with pull-to-refresh.";
         reconcileConnectedHealthSnapshot(result, { checkedAt, statusMessage });
         return {
           ok: true,
-          status: result?.synced ? "synced" : "available",
+          status: partialPermissions ? "partial" : result?.synced ? "synced" : "available",
           message: statusMessage,
         };
       } catch (error) {
@@ -10220,15 +10892,22 @@ export default function App() {
     saveGeminiApiKey(nextKey);
   };
 
-  const updateWorkoutData = (updater) => {
+  const updateWorkoutData = (updater, options = {}) => {
     setTrackerState((current) => {
-      const currentWorkout = normalizeWorkoutState(current.workout);
+      const currentWorkout = options.activeSessionOnly
+        ? current.workout
+        : normalizeWorkoutState(current.workout);
       const nextWorkout = typeof updater === "function" ? updater(currentWorkout) : updater;
       return {
         ...current,
-        workout: normalizeWorkoutState(nextWorkout),
+        workout: options.activeSessionOnly
+          ? {
+              ...nextWorkout,
+              activeSession: normalizeActiveWorkoutSession(nextWorkout.activeSession),
+            }
+          : normalizeWorkoutState(nextWorkout),
       };
-    });
+    }, { immediate: Boolean(options.immediate) });
   };
 
   const applyCoachProposal = (proposal) => {
@@ -10374,30 +11053,54 @@ export default function App() {
     }, "close");
   };
 
+  const navigatePage = useEventCallback(changeActivePage);
+  const addChoiceAction = useEventCallback(openAddChoice);
+  const modulePickerAction = useEventCallback(openModulePicker);
+  const backupAction = useEventCallback(openBackupChoice);
+  const historyAction = useEventCallback(openHistory);
+  const recordDateAction = useEventCallback(openRecordForDate);
+  const editPageModuleAction = useEventCallback(openPageModuleEditor);
+  const removePageModuleAction = useEventCallback(removeModuleFromCurrentPage);
+  const reorderPageModuleAction = useEventCallback(reorderModuleOnCurrentPage);
+  const workoutChangeAction = useEventCallback(updateWorkoutData);
+  const habitCompletionAction = useEventCallback(setHabitCompletion);
+  const toggleHabitAction = useEventCallback(toggleHabitTracking);
+  const renameHabitAction = useEventCallback((habit) => transitionOverlay(() => setEditingHabit(habit)));
+  const reorderHabitAction = useEventCallback(reorderHabit);
+  const coachMessagesAction = useEventCallback(saveCoachMessages);
+  const coachProposalAction = useEventCallback(applyCoachProposal);
+  const goalsAction = useEventCallback(updateGoals);
+  const aiSettingsAction = useEventCallback(updateAISettings);
+  const geminiKeyAction = useEventCallback(updateGeminiApiKey);
+  const connectedHealthAction = useEventCallback(updateConnectedHealth);
+  const checkConnectedHealthAction = useEventCallback(checkConnectedHealth);
+  const openConnectedHealthAction = useEventCallback(openConnectedHealthSettings);
+  const requestConnectedHealthAction = useEventCallback(requestConnectedHealthPermissions);
+
   const pages = {
-    workout: <WorkoutPage workout={state.workout} onWorkoutChange={updateWorkoutData} onAdd={openModulePicker} onBackup={openBackupChoice} modules={pageModules.workout} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
-    workoutHistory: <WorkoutHistoryPage workout={state.workout} onWorkoutChange={updateWorkoutData} />,
-    home: <HomePage weekDays={weekDays} habitNames={trackedHabitNames} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.home} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
-    habit: <HabitPage weekDays={weekDays} habitNames={state.habitNames} trackedHabits={trackedHabitNames} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.habit} moduleContext={moduleContext} onSetHabitCompletion={setHabitCompletion} onToggleHabitTracking={toggleHabitTracking} onRenameHabit={(habit) => transitionOverlay(() => setEditingHabit(habit))} onReorderHabit={reorderHabit} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
-    water: <WaterPage weekDays={weekDays} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.water} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
-    sleep: <SleepPage weekDays={weekDays} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onBackup={openBackupChoice} onHistory={openHistory} modules={pageModules.sleep} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
-    stats: <StatsPage entries={state.entries} habitNames={trackedHabitNames} goals={goals} onAdd={openAddChoice} onCustomize={openModulePicker} onBackup={openBackupChoice} onHistory={openHistory} onEditDate={openRecordForDate} modules={pageModules.stats} moduleContext={moduleContext} onRemoveModule={removeModuleFromCurrentPage} onEditModule={openPageModuleEditor} onReorderModule={reorderModuleOnCurrentPage} />,
-    coach: <CoachPage analytics={coachAnalytics} workout={state.workout} aiSettings={aiSettings} geminiApiKey={geminiApiKey} coachMessages={state.coachMessages} onSaveMessages={saveCoachMessages} onApplyProposal={applyCoachProposal} />,
-    settings: <SettingsPage goals={goals} onUpdateGoals={updateGoals} aiSettings={aiSettings} geminiApiKey={geminiApiKey} connectedHealth={connectedHealth} watchData={watchData} onUpdateConnectedHealth={updateConnectedHealth} onCheckConnectedHealth={checkConnectedHealth} onOpenConnectedHealthSettings={openConnectedHealthSettings} onRequestConnectedHealthPermissions={requestConnectedHealthPermissions} onUpdateAISettings={updateAISettings} onUpdateGeminiApiKey={updateGeminiApiKey} />,
+    workout: <MemoWorkoutPage workout={state.workout} onWorkoutChange={workoutChangeAction} onAdd={modulePickerAction} onBackup={backupAction} modules={pageModules.workout} moduleContext={moduleContext} onRemoveModule={removePageModuleAction} onEditModule={editPageModuleAction} onReorderModule={reorderPageModuleAction} />,
+    workoutHistory: <MemoWorkoutHistoryPage workout={state.workout} watchData={watchData} onWorkoutChange={workoutChangeAction} />,
+    home: <MemoHomePage weekDays={weekDays} habitNames={trackedHabitNames} goals={goals} onAdd={addChoiceAction} onCustomize={modulePickerAction} onBackup={backupAction} onHistory={historyAction} modules={pageModules.home} moduleContext={moduleContext} onRemoveModule={removePageModuleAction} onEditModule={editPageModuleAction} onReorderModule={reorderPageModuleAction} />,
+    habit: <MemoHabitPage weekDays={weekDays} habitNames={state.habitNames} trackedHabits={trackedHabitNames} goals={goals} onAdd={addChoiceAction} onCustomize={modulePickerAction} onBackup={backupAction} onHistory={historyAction} modules={pageModules.habit} moduleContext={moduleContext} onSetHabitCompletion={habitCompletionAction} onToggleHabitTracking={toggleHabitAction} onRenameHabit={renameHabitAction} onReorderHabit={reorderHabitAction} onRemoveModule={removePageModuleAction} onEditModule={editPageModuleAction} onReorderModule={reorderPageModuleAction} />,
+    water: <MemoWaterPage weekDays={weekDays} goals={goals} onAdd={addChoiceAction} onCustomize={modulePickerAction} onBackup={backupAction} onHistory={historyAction} modules={pageModules.water} moduleContext={moduleContext} onRemoveModule={removePageModuleAction} onEditModule={editPageModuleAction} onReorderModule={reorderPageModuleAction} />,
+    sleep: <MemoSleepPage weekDays={weekDays} goals={goals} onAdd={addChoiceAction} onCustomize={modulePickerAction} onBackup={backupAction} onHistory={historyAction} modules={pageModules.sleep} moduleContext={moduleContext} onRemoveModule={removePageModuleAction} onEditModule={editPageModuleAction} onReorderModule={reorderPageModuleAction} />,
+    stats: <MemoStatsPage entries={state.entries} habitNames={trackedHabitNames} goals={goals} onAdd={addChoiceAction} onCustomize={modulePickerAction} onBackup={backupAction} onHistory={historyAction} onEditDate={recordDateAction} modules={pageModules.stats} moduleContext={moduleContext} onRemoveModule={removePageModuleAction} onEditModule={editPageModuleAction} onReorderModule={reorderPageModuleAction} />,
+    coach: <MemoCoachPage analytics={coachAnalytics} workout={state.workout} aiSettings={aiSettings} geminiApiKey={geminiApiKey} coachMessages={state.coachMessages} onSaveMessages={coachMessagesAction} onApplyProposal={coachProposalAction} />,
+    settings: <MemoSettingsPage goals={goals} onUpdateGoals={goalsAction} aiSettings={aiSettings} geminiApiKey={geminiApiKey} connectedHealth={connectedHealth} watchData={watchData} onUpdateConnectedHealth={connectedHealthAction} onCheckConnectedHealth={checkConnectedHealthAction} onOpenConnectedHealthSettings={openConnectedHealthAction} onRequestConnectedHealthPermissions={requestConnectedHealthAction} onUpdateAISettings={aiSettingsAction} onUpdateGeminiApiKey={geminiKeyAction} />,
   };
 
   return (
     <>
       <main
         ref={appShellRef}
-        className={`app-shell ${chromeCompact ? "chrome-compact" : ""}`}
+        className="app-shell"
         aria-hidden={launchPhase !== "ready" ? "true" : undefined}
       >
-        <PullRefreshIndicator state={pullRefreshState} message={pullRefreshMessage} />
-        <div className={`page-stage page-${pageMotion} metric-${activePage}`} key={activePage}>
+        <MemoPullRefreshIndicator state={pullRefreshState} message={pullRefreshMessage} />
+        <div className={`page-stage page-${pageMotion} metric-${activePage} ${usesNativePageMotion ? "native-page-motion" : "css-page-motion"}`} key={activePage}>
           {pages[activePage]}
         </div>
-        <BottomNav activePage={activePage} onPageChange={changeActivePage} />
+        <MemoBottomNav activePage={activePage} onPageChange={navigatePage} />
         <input
           ref={importInputRef}
           className="backup-file-input"

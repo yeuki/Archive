@@ -64,6 +64,8 @@ coach message history and reviewable proposals
 
 State is normalized on load and import so supported older shapes remain usable. New fields require a default and a normalization path. Deleting or renaming a persisted field requires a migration and a recovery/backup consideration.
 
+Ordinary state changes use a short write-behind queue: rapid updates coalesce, and whole-state JSON serialization runs during browser idle time instead of inside the input event. The newest queued state is synchronously flushed when the app is hidden, the page exits, or the shell unmounts. Explicit backup imports and durable Workout Mode boundaries—start, completed-set progression, rest/pause transitions, finish, and discard—flush immediately. Value-wheel movement may remain queued until the next durable boundary so direct manipulation does not repeatedly serialize the health archive; lifecycle flushes still protect an interrupted session. The persisted shape and portable backup contract are unchanged.
+
 Daily records carry `recordedFields.habits`, `recordedFields.water`, and `recordedFields.sleep`. These booleans distinguish an explicitly recorded zero from a metric the user has not supplied yet. Legacy records without this metadata normalize as fully recorded, while new habit-only or watch-sleep-only writes mark only the field they actually contain. Derived scores, averages, pages, and coach context must exclude missing fields rather than converting them to zero.
 
 The optional Gemini key uses a separate local-storage entry and is excluded from normal JSON backups. No secret, personal export, or browser profile may enter Git.
@@ -80,6 +82,10 @@ User-facing reads have exactly two triggers:
 Permission review and Health Connect settings remain available because they are setup/recovery actions, not extra data-sync triggers. Compatibility handling may consume already-produced native state during launch, but must not create periodic, resume, navigation, or background polling.
 
 The health archive stores source/provider and import provenance. Reconciliation updates corrected records and removes provider records that no longer exist within the authoritative window. High-frequency samples remain bounded.
+
+Health Connect exercise sessions are stored as source-attributed, read-only external workouts. Stable Health Connect record identity is preferred so provider corrections replace the earlier local representation instead of creating a duplicate. Session metadata, attributable metrics, laps, segments, repetitions, device provenance, and route availability are retained when the stable Android API supplies them; absent values remain unknown. Raw route coordinates are not stored.
+
+Permissions are progressive. If Archive has at least one supported read grant, it reconciles the available layers and marks optional denied layers as partial rather than blocking the entire import. Per-record availability allows a missing permission to be distinguished from a provider that simply did not publish a value.
 
 ### Sleep policy
 
@@ -98,6 +104,7 @@ Routine configuration and active logging are separate experiences.
 - The active session can be paused, exited, restored, edited, skipped, or finished according to the focused flow.
 - A historical workout is appended only through **Finish workout**.
 - History keeps routine/exercise snapshots so later library edits do not rewrite the past.
+- Imported Health Connect sessions may appear alongside finished Archive workouts in the history calendar, but remain outside `workout.workouts` and can never create, mutate, resume, or finish an active Workout Mode session.
 
 Recent completed values provide defaults when an exercise is added to another routine. Any workout-schema change must preserve resume and historical normalization.
 
@@ -116,6 +123,8 @@ The coach may propose; it must not silently mutate application state.
 ## Motion and rendering
 
 Motion uses the shared CSS/runtime helpers and honors reduced motion. Scroll-bound UI should avoid expensive paint work, repeated layout reads/writes, and broad React rerenders. Prefer transforms/opacity, stable component keys, and one-time chart reveals.
+
+Scroll-reactive chrome is maintained imperatively inside the navigation boundary so a scroll threshold cannot rerender the active page. The true-capsule dock retains one bounded static blur at rest and uses its translucent gradient/rim layers without live backdrop sampling while scrolling or changing width. Native page transitions own page travel where supported; child surface entrances do not compete with the snapshot transition, and chart signatures reveal only once per in-memory presentation. Workout Mode and the detailed body-map renderer are lazy chunks loaded only near their coherent feature boundary.
 
 ## Build and release
 

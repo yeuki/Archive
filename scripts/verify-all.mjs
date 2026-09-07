@@ -7,6 +7,7 @@ const scripts = [
   "test:sleep",
   "test:workout",
   "test:motion",
+  "test:performance",
   "test:habit",
   "build",
 ];

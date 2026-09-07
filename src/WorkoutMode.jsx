@@ -646,15 +646,15 @@ export default function WorkoutMode({ session, exercises, onChange, onLeave, onF
       if (normalized?.status !== "resting" || normalized.rest?.paused || workoutRestRemainingSeconds(normalized) > 0) return normalized;
       workoutHaptic(18);
       return finishWorkoutSessionRest(normalized);
-    });
+    }, { immediate: true });
   }, [data?.rest?.paused, data?.status, onChange, remaining]);
 
   if (!data) return null;
 
-  const updateSession = (updater) => onChange((currentSession) => {
+  const updateSession = (updater, options = { immediate: true }) => onChange((currentSession) => {
     const normalized = normalizeActiveWorkoutSession(currentSession);
     return typeof updater === "function" ? updater(normalized) : updater;
-  });
+  }, options);
   const changePanel = (nextPanel, direction = nextPanel ? "open" : "close") => {
     runArchiveTransition(() => setPanel(nextPanel), { kind: "workout-sheet", direction });
   };
@@ -666,7 +666,10 @@ export default function WorkoutMode({ session, exercises, onChange, onLeave, onF
   };
   const patchCurrentSet = (patch) => {
     const cursor = data.cursor;
-    updateSession((currentSession) => patchWorkoutSessionSet(currentSession, cursor, patch));
+    updateSession(
+      (currentSession) => patchWorkoutSessionSet(currentSession, cursor, patch),
+      { immediate: false },
+    );
   };
   const completeCurrentSet = (status = "completed") => {
     const outcomeStatus = status === "completed" && current?.set.effort === "failed" ? "failed" : status;
@@ -826,7 +829,10 @@ export default function WorkoutMode({ session, exercises, onChange, onLeave, onF
             setEditCursor(null);
             setPanel("outline");
           }, { kind: "workout-sheet", direction: "backward" })}
-          onPatch={(patch) => updateSession((currentSession) => patchWorkoutSessionSet(currentSession, editCursor, patch))}
+          onPatch={(patch) => updateSession(
+            (currentSession) => patchWorkoutSessionSet(currentSession, editCursor, patch),
+            { immediate: false },
+          )}
         />
       )}
     </div>,
