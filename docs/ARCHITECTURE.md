@@ -15,6 +15,7 @@ React UI and domain state
         +-- Capacitor bridge
                 |
                 +-- Android Health Connect plugin
+                +-- Capacitor local-notifications plugin
                 +-- Android app lifecycle and system settings
 ```
 
@@ -37,6 +38,8 @@ There is no application backend or account service. GitHub stores source and rel
 | `src/App.jsx` | Application shell, page routing, state normalization/persistence, records, modules, health orchestration, and coach integration |
 | `src/HabitHoldDeck.jsx` | Focused, hold-to-complete habit interaction, chooser, completion feedback, and undo |
 | `src/dailyRecords.js` | Daily field-presence normalization and exact partial-record habit updates |
+| `src/reminders.js` | Reminder defaults, normalization, stable notification IDs, payloads, and destination validation |
+| `src/localNotifications.js` | Native permission, scheduling, cancellation, and notification-action adapter |
 | `src/WorkoutMode.jsx` | Focused live-workout experience and set/rest progression |
 | `src/workoutSession.js` | Active-session normalization, defaults, progression, and persistence helpers |
 | `src/motion.js` | Motion capability and reduced-motion helpers |
@@ -60,9 +63,12 @@ page/module configuration
 workout exercises, routines, schedule, profiles, history, and active session
 connected-health settings and canonical watch data
 coach message history and reviewable proposals
+continuity preferences, last-open timestamps, dismissed weekly reflection, and bounded daily drafts
 ```
 
 State is normalized on load and import so supported older shapes remain usable. New fields require a default and a normalization path. Deleting or renaming a persisted field requires a migration and a recovery/backup consideration.
+
+Home continuity is derived by deterministic rules in `src/continuity.js`. The module also owns normalized continuity preferences, independent hydration mutation/undo, and evidence thresholds. It remains platform-neutral and must not initiate Health Connect reads. Daily drafts are bounded during normalization and travel with the existing complete JSON backup.
 
 Ordinary state changes use a short write-behind queue: rapid updates coalesce, and whole-state JSON serialization runs during browser idle time instead of inside the input event. The newest queued state is synchronously flushed when the app is hidden, the page exits, or the shell unmounts. Explicit backup imports and durable Workout Mode boundaries—start, completed-set progression, rest/pause transitions, finish, and discard—flush immediately. Value-wheel movement may remain queued until the next durable boundary so direct manipulation does not repeatedly serialize the health archive; lifecycle flushes still protect an interrupted session. The persisted shape and portable backup contract are unchanged.
 
@@ -113,6 +119,8 @@ Recent completed values provide defaults when an exercise is added to another ro
 Page modules are configuration plus derived presentation. Module order, span, and options persist, while values are computed from canonical daily/workout/health records. Disabling a tracker or removing a module does not erase historical records.
 
 Cross-metric analytics must state their time range and tolerate missing data. Absence is not equivalent to zero unless the metric definition explicitly says so.
+
+Charts, scores, distributions, correlations, and weekly reflections must never substitute fixed or generated personal-looking values when canonical records are absent. Relationship surfaces remain explanatory empty states until their defined paired-data threshold is met.
 
 ## Coach boundary
 

@@ -6,6 +6,12 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 
 ### Added
 
+- Added opt-in daily habit and water reminders with independent times, privacy-safe notification copy, Android permission-on-enable, and tap-through routing after the existing launch transition.
+- Added deterministic reminder payload, normalization, and cold-start routing coverage plus browser-preview configuration that never creates browser notifications.
+- Added deterministic Home continuity that prioritizes exact workout resume, workout review, today's scheduled routine, the next pending habit, hydration, and a calm caught-up state.
+- Added one-tap hydration increments with remembered preference and exact undo, plus water-only and sleep-only saves that preserve all unrelated daily fields.
+- Added bounded, backup-compatible daily-entry drafts, factual launch/return context, evidence-gated weekly reflection, and a dedicated continuity regression suite.
+- Added an explicit local demo-data generator for current-date browser testing without seeding production state or changing phone data.
 - Added a deterministic performance regression suite covering coalesced persistence, urgent durability, isolated scroll chrome, memoized rendering boundaries, bounded navigation glass, one-time chart reveals, and lazy feature chunks.
 - Added lazy loading for the focused Workout Mode and detailed body-map renderer so neither payload blocks Archive's initial JavaScript evaluation.
 - Added rich, source-attributed Health Connect workout ingestion on the stable Android API, preserving session identity, type/title, device provenance, durations, attributable distance/calorie/heart-rate/speed/elevation/cadence metrics, laps, segments, repetitions, and route availability when supplied.
@@ -15,6 +21,9 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 
 ### Changed
 
+- Changed contextual Home prompts to route directly to Workout Mode, the Habit Hold Deck, or hydration capture instead of the general action sheet.
+- Replaced fixed Home correlations and synthetic optional-module values with real-record calculations or explicit evidence requirements.
+- Changed Home completion language so expected-later sleep is never presented as an overdue task and returning users are not shown a historical failure backlog.
 - Changed ordinary local-state persistence to coalesce rapid updates and serialize during browser idle time, with lifecycle flushes on backgrounding or page exit and immediate writes for imports, completed-set transitions, workout pause/rest progression, start, finish, and discard.
 - Isolated scroll-reactive top and bottom chrome from root React state, throttled interactive glass lighting to animation frames, and temporarily replaces live backdrop sampling with the same layered translucent material while the dock or document is moving.
 - Memoized normalized health, goals, module, workout, and Coach inputs by their source slices; active-set edits no longer rebuild routine/history structures or recompute hidden Coach analytics.
@@ -26,6 +35,7 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 
 ### Known issues and unfinished work
 
+- Local reminder delivery, permission denial/recovery, reboot rescheduling, and cold-start taps still require validation on the physical Android phone before release.
 - The performance and motion candidate still needs extended physical-phone use across long personal history, Workout Mode, and navigation before v0.14.0 acceptance and release publication.
 - Archive's true-capsule navigation still changes real width to preserve circular end caps; the pass removes live blur during that bounded movement rather than distorting the vessel with non-uniform scaling.
 - Garmin Connect and Forerunner 170 must be tested on the physical phone to establish which exercise sessions, laps, strength segments, repetitions, and metrics Garmin actually publishes through Health Connect.

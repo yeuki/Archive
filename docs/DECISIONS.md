@@ -106,3 +106,17 @@ This is a compact record of accepted and rejected product/technical directions. 
 - **Decision:** Coalesce ordinary whole-state persistence into idle work, isolate scroll chrome from root React state, memoize derived domains by their real source slices, lazy-load coherent heavy features, and let one coordinated transition explain a page change.
 - **Rationale:** Added animation cannot hide main-thread serialization, broad rerenders, repeated normalization, or live blur repainting. Smoothness comes from completing less work inside each interaction frame while retaining intentional feedback.
 - **Consequence:** Backup imports and meaningful Workout Mode boundaries still flush immediately; in-progress wheel adjustments can wait for the next idle/lifecycle/durable boundary. Liquid glass keeps its accepted static identity, but live backdrop sampling is suspended while the true-width capsule or document is moving. Charts reveal once per data signature rather than replaying on ordinary revisits.
+
+## D-016 — Use truthful deterministic continuity before engagement mechanics
+
+- **Status:** Accepted
+- **Decision:** Home chooses one dominant continuation from real local state and routes it directly to the relevant task. Quick capture persists only the named field, interrupted drafts are recoverable, and analytical surfaces remain empty until their explicit evidence threshold is met.
+- **Rationale:** Archive earns return use by reducing effort and making automatic capture visible, not by inventing personal values, manufacturing a backlog, or escalating reminders.
+- **Consequence:** Continuity rules remain platform-neutral and testable. Notifications, widgets, AI prioritization, and additional Health Connect triggers are separate future decisions rather than adjacent retention work.
+
+## D-017 — Keep reminders local, optional, and destination-specific
+
+- **Status:** Accepted
+- **Decision:** Archive may schedule independent daily habit and water reminders only after explicit opt-in. Notification copy stays generic, taps wait for the existing launch sequence, and each tap opens its exact logging surface. Scheduling uses ordinary repeating notifications without exact-alarm privileges.
+- **Rationale:** A gentle prompt can reduce logging friction without exposing personal information, interrupting launch reconciliation, or turning Archive into an escalation system.
+- **Consequence:** Reminder preferences travel in local backups, browser preview remains non-notifying, and notification handling cannot introduce new Health Connect reads. Delivery and cold-start behavior require physical-device validation before release.

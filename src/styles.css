@@ -3072,6 +3072,144 @@ button:disabled {
   color: var(--muted);
   font-size: 0.62rem;
   text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+/* Local reminders use the same compact controls and glass-panel rhythm as Settings. */
+.reminder-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.reminder-time {
+  width: 96px;
+  min-height: 34px;
+  padding: 6px 8px;
+  border: 1px solid rgba(60, 60, 67, 0.12);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.58);
+  color: inherit;
+  font: inherit;
+}
+
+@media (max-width: 380px) {
+  .reminder-controls {
+    flex-direction: column;
+    align-items: flex-end;
+  }
+}
+
+.backup-toast button {
+  min-height: 36px;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: 999px;
+  padding: 0 14px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+  font: inherit;
+  font-weight: 750;
+}
+
+.quick-water-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border-color: color-mix(in srgb, var(--water) 42%, var(--line));
+}
+
+.quick-water-panel > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.quick-water-panel small,
+.evidence-empty small {
+  color: var(--muted);
+}
+
+.quick-water-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.quick-water-actions button,
+.field-save-btn {
+  min-height: 44px;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 14px;
+  background: var(--ink);
+  color: #ffffff;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 780;
+}
+
+.quick-water-actions button.quiet {
+  background: #f2f2f2;
+  color: var(--ink);
+}
+
+.field-save-btn {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.field-save-btn.water {
+  background: color-mix(in srgb, #A2BFFE 64%, #111111);
+}
+
+.field-save-btn.sleep {
+  background: color-mix(in srgb, #C9A0DC 62%, #111111);
+}
+
+.field-save-btn:disabled {
+  opacity: 0.42;
+}
+
+.weekly-reflection,
+.evidence-empty,
+.module-evidence-empty {
+  display: grid;
+  gap: 8px;
+}
+
+.weekly-reflection p,
+.evidence-empty p,
+.module-evidence-empty span {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.weekly-reflection .ghost-btn {
+  justify-self: start;
+}
+
+.module-evidence-empty {
+  min-height: 132px;
+  place-content: center;
+  text-align: center;
+  padding: 18px;
+}
+
+@media (max-width: 390px) {
+  .quick-water-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .quick-water-actions {
+    justify-content: flex-start;
+  }
 }
 
 .history-day {
