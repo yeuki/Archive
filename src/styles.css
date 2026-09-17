@@ -10910,6 +10910,11 @@ html[data-archive-transition="page"] .area-chart.chart-reveal :is(.area, .line, 
 }
 /* Optical dock — transparent center, bounded edge sampling, no scroll switch. */
 
+:root {
+  /* Near-clear transmission, shared by the live body and page snapshot. */
+  --nav-body-filter: blur(0.5px) saturate(1.04);
+}
+
 /* Named page snapshots live above ordinary fixed elements. Fence the dock
    above them only while capturing a transition; a permanent name would
    isolate its real backdrop sampling even after the animation finished. */
@@ -10925,8 +10930,8 @@ html[data-archive-transition="page"]::view-transition-group(archive-navigation) 
   animation-fill-mode: both;
   /* Sample sibling page snapshots outside the isolated image-pair. */
   clip-path: inset(var(--archive-nav-snapshot-end-inset, 0) round 999px);
-  -webkit-backdrop-filter: blur(3px) saturate(1.12);
-  backdrop-filter: blur(3px) saturate(1.12);
+  -webkit-backdrop-filter: var(--nav-body-filter);
+  backdrop-filter: var(--nav-body-filter);
 }
 
 @keyframes archive-nav-snapshot-shape {
@@ -10978,10 +10983,10 @@ html[data-archive-transition="page"]::view-transition-new(archive-navigation) {
   /* Continuous optical body, not just a bright rim. Low-alpha curvature
      leaves the middle transparent without a uniform white/milky fill. */
   background:
-    radial-gradient(ellipse at var(--glass-light-x) var(--glass-light-y), rgba(255, 255, 255, 0.16), transparent 68%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.035) 42%, rgba(37, 48, 64, 0.055) 76%, rgba(255, 255, 255, 0.1));
-  -webkit-backdrop-filter: blur(3px) saturate(1.12);
-  backdrop-filter: blur(3px) saturate(1.12);
+    radial-gradient(ellipse at var(--glass-light-x) var(--glass-light-y), rgba(255, 255, 255, 0.04), transparent 68%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.008) 42%, rgba(37, 48, 64, 0.018) 76%, rgba(255, 255, 255, 0.035));
+  -webkit-backdrop-filter: var(--nav-body-filter);
+  backdrop-filter: var(--nav-body-filter);
   pointer-events: none;
 }
 
@@ -11000,8 +11005,8 @@ html[data-archive-transition="page"]::view-transition-new(archive-navigation) {
   z-index: 1;
   inset: 0;
   background: linear-gradient(165deg, rgba(255, 255, 255, 0.08), rgba(45, 53, 66, 0.035));
-  -webkit-backdrop-filter: blur(3px) saturate(1.12) contrast(1.08);
-  backdrop-filter: blur(3px) saturate(1.12) contrast(1.08);
+  -webkit-backdrop-filter: blur(0.75px) saturate(1.04) contrast(1.03);
+  backdrop-filter: blur(0.75px) saturate(1.04) contrast(1.03);
 }
 
 .nav-optics-defs {
@@ -11013,8 +11018,8 @@ html[data-archive-transition="page"]::view-transition-new(archive-navigation) {
    the backdrop by at most 1.5 CSS pixels, inside the feathered 7px bevel. */
 @supports (backdrop-filter: url("#archive-nav-edge")) {
   .nav-refraction {
-    -webkit-backdrop-filter: url("#archive-nav-edge") blur(1px) saturate(1.12);
-    backdrop-filter: url("#archive-nav-edge") blur(1px) saturate(1.12);
+    -webkit-backdrop-filter: url("#archive-nav-edge") blur(0.35px) saturate(1.04);
+    backdrop-filter: url("#archive-nav-edge") blur(0.35px) saturate(1.04);
   }
 }
 

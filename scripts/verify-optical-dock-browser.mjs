@@ -155,7 +155,7 @@ try {
       try {
         assert.equal(layers.name, "archive-navigation");
         assert.ok(layers.dock > Math.max(layers.page, layers.hero, layers.topbar), "all page snapshots must remain underneath the dock during navigation");
-        assert.equal(layers.backdrop, "blur(3px) saturate(1.12)", "glass body must also sample the moving page during transition capture");
+        assert.equal(layers.backdrop, "blur(0.5px) saturate(1.04)", "transition capture must preserve the same near-clear transmission as the live body");
         assert.match(layers.clip, /inset\(.+round 999px\)/);
         assert.ok(layers.inset, "snapshot filtering must be capsule-bounded");
         await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
@@ -193,6 +193,10 @@ try {
     };
     let collapsed, productivity, health, before, during, after, reducedTransparency;
     if (!process.env.ARCHIVE_GLASS_OPTICS_ONLY) {
+      // A reused native WebView can begin compact after the previous scroll
+      // probe. Reset that test precondition before checking expanded geometry.
+      await page.evaluate(() => scrollTo({ top: 0, behavior: "instant" }));
+      await settle();
       await nav.getByRole("button", { name: "Home", exact: true }).click();
       await settle();
       collapsed = await checkGeometry();
@@ -291,16 +295,67 @@ try {
     await page.waitForTimeout(100);
     const bounds = await page.locator(".nav-shell").boundingBox();
     const clip = { x: Math.ceil(bounds.x + 1), y: Math.ceil(bounds.y + 1), width: Math.floor(bounds.width - 2), height: Math.floor(bounds.height - 2) };
-    const warped = await screenshot({ clip, path: resolve(output, `${label}-refraction-probe.png`) });
-    await page.locator("feDisplacementMap").evaluate((node) => node.setAttribute("scale", "0"));
-    await page.waitForTimeout(100);
-    const unwarped = await screenshot({ clip, path: resolve(output, `${label}-no-displacement-probe.png`) });
-    const { changedEdgePixels, changedCenterPixels, maximumDifference } = await comparePixels(warped, unwarped, clip);
-    console.log({ changedEdgePixels, changedCenterPixels, maximumDifference });
-    assert.ok(changedEdgePixels > 400 && maximumDifference >= 15, "SVG displacement must bend real backdrop pixels, not just change antialiasing");
-    assert.equal(changedCenterPixels, 0, "edge refraction must leave the calm center untouched");
-    await page.locator("feDisplacementMap").evaluate((node) => node.setAttribute("scale", "0.01"));
-    await page.evaluate(() => document.querySelector("#optical-test-backdrop").remove());
+    // Measure transmitted contrast, not merely a smaller computed blur.
+    // Temporarily hide only foreground controls in this isolated test view.
+    // Compare the current body with the previous frosted body on the same
+    // stripe backdrop, excluding the optical edge/caps from both samples.
+    const foreground = await page.addStyleTag({ content: '.bottom-nav button, .nav-selection-lens { opacity:0 !important; transition:none !important; }' });
+    let clarity, changedEdgePixels, changedCenterPixels, maximumDifference;
+    try {
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      // Isolate displacement before mutating the body for the frost probe:
+      // changing that sibling filter can invalidate Chromium's shared sample
+      // raster. Keep foreground SVG controls out of this pixel comparison.
+      const warped = await screenshot({ clip, path: resolve(output, `${label}-refraction-probe.png`) });
+      await page.locator("feDisplacementMap").evaluate((node) => node.setAttribute("scale", "0"));
+      await page.waitForTimeout(100);
+      const unwarped = await screenshot({ clip, path: resolve(output, `${label}-no-displacement-probe.png`) });
+      ({ changedEdgePixels, changedCenterPixels, maximumDifference } = await comparePixels(warped, unwarped, clip));
+      console.log({ changedEdgePixels, changedCenterPixels, maximumDifference });
+      assert.ok(changedEdgePixels > 400 && maximumDifference >= 15, "SVG displacement must bend real backdrop pixels, not just change antialiasing");
+      assert.equal(changedCenterPixels, 0, "edge refraction must leave the calm center untouched");
+      await page.locator("feDisplacementMap").evaluate((node) => node.setAttribute("scale", "0.01"));
+      await settle();
+      const clear = await screenshot({ clip, path: resolve(output, `${label}-clear-body-probe.png`) });
+      const frost = await page.addStyleTag({ content: `.nav-shell::before {
+        backdrop-filter:blur(3px) saturate(1.12); -webkit-backdrop-filter:blur(3px) saturate(1.12);
+        background:radial-gradient(ellipse at var(--glass-light-x) var(--glass-light-y),rgba(255,255,255,.16),transparent 68%),linear-gradient(180deg,rgba(255,255,255,.18),rgba(255,255,255,.035) 42%,rgba(37,48,64,.055) 76%,rgba(255,255,255,.1));
+      }` });
+      try {
+        await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        const frosted = await screenshot({ clip, path: resolve(output, `${label}-previous-frost-probe.png`) });
+        clarity = await page.evaluate(async ([clear, frosted, clip, fullFrame]) => {
+          const contrast = async (data) => {
+            const image = new Image();
+            image.src = `data:image/png;base64,${data}`;
+            await image.decode();
+            const scale = image.width / innerWidth;
+            const canvas = document.createElement("canvas");
+            canvas.width = fullFrame ? Math.round(clip.width * scale) : image.width;
+            canvas.height = fullFrame ? Math.round(clip.height * scale) : image.height;
+            const ctx = canvas.getContext("2d");
+            if (fullFrame) ctx.drawImage(image, Math.round(clip.x * scale), Math.round(clip.y * scale), canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
+            else ctx.drawImage(image, 0, 0);
+            const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+            const sx = canvas.width / clip.width, sy = canvas.height / clip.height;
+            const cap = document.querySelector(".nav-shell").getBoundingClientRect().height / 2 + 4;
+            const samples = [];
+            for (let y = Math.ceil(13 * sy); y < canvas.height - 13 * sy; y++) {
+              for (let x = Math.ceil(cap * sx); x < canvas.width - cap * sx; x++) {
+                const i = (y * canvas.width + x) * 4;
+                samples.push(.2126 * pixels[i] + .7152 * pixels[i + 1] + .0722 * pixels[i + 2]);
+              }
+            }
+            samples.sort((a, b) => a - b);
+            return samples[Math.floor(samples.length * .95)] - samples[Math.floor(samples.length * .05)];
+          };
+          return { clearContrast: await contrast(clear), previousContrast: await contrast(frosted) };
+        }, [clear.toString("base64"), frosted.toString("base64"), clip, Boolean(adb)]);
+        assert.ok(clarity.clearContrast > 80 && clarity.clearContrast > clarity.previousContrast * 1.4, "clear body must transmit materially sharper background contrast than the previous frost");
+        console.log({ clarity });
+      } finally { await frost.evaluate((node) => node.remove()); }
+      await page.evaluate(() => document.querySelector("#optical-test-backdrop").remove());
+    } finally { await foreground.evaluate((node) => node.remove()); }
     const frames = await page.evaluate(async () => {
       const deltas = [];
       let last = 0;
@@ -316,7 +371,7 @@ try {
     });
     console.log({ label, frames });
     assert.equal(frames.idleNavAnimations, 0, "the idle dock must not keep animations running");
-    evidence.push({ label, edgeTreatment, collapsed, productivity, health, before, during, after, reducedTransparency, changedEdgePixels, changedCenterPixels, maximumDifference, frames });
+    evidence.push({ label, edgeTreatment, clarity, collapsed, productivity, health, before, during, after, reducedTransparency, changedEdgePixels, changedCenterPixels, maximumDifference, frames });
     if (!remote) await context.close();
   }
   assert.deepEqual(errors, [], "no runtime errors");

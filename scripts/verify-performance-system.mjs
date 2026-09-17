@@ -106,7 +106,8 @@ assert.match(css, /clip-path: inset\(var\(--archive-nav-snapshot-inset, 0\) roun
 assert.match(app, /feDisplacementMap in="SourceGraphic" in2="bevel" scale="0\.01"/, "refraction must use bounded edge displacement");
 const opticalCss = css.split("/* Optical dock")[1];
 assert.ok(opticalCss, "the consolidated optical material must exist");
-assert.match(opticalCss, /backdrop-filter: blur\(3px\) saturate\(1\.12\)/);
+assert.match(opticalCss, /--nav-body-filter: blur\(0\.5px\) saturate\(1\.04\)/, "glass center must retain near-clear transmission");
+assert.equal([...opticalCss.matchAll(/(?<!-webkit-)backdrop-filter: var\(--nav-body-filter\)/g)].length, 2, "live and snapshot body must share the same clear material");
 assert.match(opticalCss, /Continuous optical body/);
 assert.match(opticalCss, /inset 0 7px 10px -5px/, "soft thickness must blend into the whole body rather than a hard inner outline");
 assert.match(opticalCss, /mask: var\(--nav-optical-mask\)/, "optical highlights must use the feathered capsule mask");
