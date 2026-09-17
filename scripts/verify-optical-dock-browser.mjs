@@ -60,6 +60,16 @@ try {
     const nav = page.getByRole("navigation", { name: "Primary" });
     await nav.waitFor();
     const dimensions = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+    const edgeTreatment = await page.evaluate(() => {
+      const rim = getComputedStyle(document.querySelector(".nav-refraction"));
+      const highlight = getComputedStyle(document.querySelector(".nav-specular"));
+      const body = getComputedStyle(document.querySelector(".nav-shell"));
+      return { mask: rim.maskImage, composite: rim.maskComposite, highlightPadding: highlight.paddingTop, bodyBorder: body.borderTopWidth };
+    });
+    assert.equal(edgeTreatment.bodyBorder, "0px", "capsule must not have a literal border");
+    assert.equal(edgeTreatment.highlightPadding, "0px", "highlight must not be a padded outline");
+    assert.equal((edgeTreatment.mask.match(/radial-gradient/g) ?? []).length, 2, "feather mask must join two true semicircular caps");
+    assert.ok(edgeTreatment.composite.split(",").every((value) => value.trim() === "add"), "feather mask must not punch out a hard ring");
     const label = `${remote ? "webview" : "browser"}-${dimensions.width}x${dimensions.height}`;
     console.log(`Checking ${label}`);
     const settle = () => page.waitForTimeout(650);
@@ -306,7 +316,7 @@ try {
     });
     console.log({ label, frames });
     assert.equal(frames.idleNavAnimations, 0, "the idle dock must not keep animations running");
-    evidence.push({ label, collapsed, productivity, health, before, during, after, reducedTransparency, changedEdgePixels, changedCenterPixels, maximumDifference, frames });
+    evidence.push({ label, edgeTreatment, collapsed, productivity, health, before, during, after, reducedTransparency, changedEdgePixels, changedCenterPixels, maximumDifference, frames });
     if (!remote) await context.close();
   }
   assert.deepEqual(errors, [], "no runtime errors");

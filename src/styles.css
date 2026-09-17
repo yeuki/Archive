@@ -10947,9 +10947,20 @@ html[data-archive-transition="page"]::view-transition-new(archive-navigation) {
 }
 
 .navigation-chrome .nav-shell {
+  --nav-bevel-radius: calc(var(--dock-height) / 2);
+  /* Three joined, feathered regions: straight sides and true semicircular
+     caps. Alpha rises inside the edge then fades into the body, never a
+     punched-out ring with a hard inner/outer boundary. */
+  --nav-optical-mask:
+    linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.65) 1.5px, rgba(0, 0, 0, 0.3) 4px, transparent 7px, transparent calc(100% - 7px), rgba(0, 0, 0, 0.3) calc(100% - 4px), rgba(0, 0, 0, 0.65) calc(100% - 1.5px), transparent)
+      center / calc(100% - var(--dock-height)) 100% no-repeat,
+    radial-gradient(circle at right center, transparent calc(var(--nav-bevel-radius) - 7px), rgba(0, 0, 0, 0.3) calc(var(--nav-bevel-radius) - 4px), rgba(0, 0, 0, 0.65) calc(var(--nav-bevel-radius) - 1.5px), transparent var(--nav-bevel-radius))
+      left center / var(--nav-bevel-radius) 100% no-repeat,
+    radial-gradient(circle at left center, transparent calc(var(--nav-bevel-radius) - 7px), rgba(0, 0, 0, 0.3) calc(var(--nav-bevel-radius) - 4px), rgba(0, 0, 0, 0.65) calc(var(--nav-bevel-radius) - 1.5px), transparent var(--nav-bevel-radius))
+      right center / var(--nav-bevel-radius) 100% no-repeat;
   border: 0;
   background: transparent;
-  box-shadow: 0 1px 2px rgba(24, 28, 36, 0.08), 0 8px 18px rgba(24, 28, 36, 0.12);
+  box-shadow: 0 7px 18px rgba(24, 28, 36, 0.09);
   transition:
     width var(--motion-page) var(--ease-out),
     transform var(--motion-page) var(--ease-out),
@@ -10980,18 +10991,15 @@ html[data-archive-transition="page"]::view-transition-new(archive-navigation) {
   display: block;
   pointer-events: none;
   border-radius: inherit;
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
+  -webkit-mask: var(--nav-optical-mask);
+  mask: var(--nav-optical-mask);
 }
 
 /* Narrow backdrop rim. The CSS-only path remains usable without SVG filters. */
 .nav-refraction {
   z-index: 1;
-  inset: 2px;
-  padding: 5px;
-  background: linear-gradient(165deg, rgba(255, 255, 255, 0.12), rgba(45, 53, 66, 0.07));
+  inset: 0;
+  background: linear-gradient(165deg, rgba(255, 255, 255, 0.08), rgba(45, 53, 66, 0.035));
   -webkit-backdrop-filter: blur(3px) saturate(1.12) contrast(1.08);
   backdrop-filter: blur(3px) saturate(1.12) contrast(1.08);
 }
@@ -11002,7 +11010,7 @@ html[data-archive-transition="page"]::view-transition-new(archive-navigation) {
 }
 
 /* Progressive Chromium/WebView path: cached normal-like channel map bends
-   the backdrop by at most 1.5 CSS pixels, only inside the masked 5px bevel. */
+   the backdrop by at most 1.5 CSS pixels, inside the feathered 7px bevel. */
 @supports (backdrop-filter: url("#archive-nav-edge")) {
   .nav-refraction {
     -webkit-backdrop-filter: url("#archive-nav-edge") blur(1px) saturate(1.12);
@@ -11010,15 +11018,14 @@ html[data-archive-transition="page"]::view-transition-new(archive-navigation) {
   }
 }
 
-/* Grazing highlights occupy the perimeter, not a white wash over the center. */
+/* Interrupted directional light, not a continuous high-contrast white stroke. */
 .nav-specular {
   z-index: 2;
   inset: 0;
-  padding: 1px;
   background:
-    radial-gradient(100px 65px at var(--glass-light-x) var(--glass-light-y), rgba(255, 255, 255, 0.98), rgba(255, 255, 255, 0.06) 85%),
-    linear-gradient(150deg, rgba(255, 255, 255, 0.72) 3%, rgba(255, 255, 255, 0.08) 39%, rgba(32, 42, 56, 0.25) 66%, rgba(255, 255, 255, 0.56) 97%);
-  opacity: 0.78;
+    radial-gradient(85px 60px at var(--glass-light-x) var(--glass-light-y), rgba(255, 255, 255, 0.6), transparent 82%),
+    linear-gradient(150deg, rgba(255, 255, 255, 0.14) 3%, transparent 36%, rgba(32, 42, 56, 0.07) 66%, rgba(255, 255, 255, 0.12) 97%);
+  opacity: 0.46;
   transition: opacity var(--motion-control) var(--ease-out);
 }
 
@@ -11029,7 +11036,7 @@ html[data-archive-transition="page"]::view-transition-new(archive-navigation) {
   inset: 0;
   border-radius: inherit;
   /* Soft thickness merges into the body instead of outlining an inner ring. */
-  box-shadow: inset 0 7px 10px -5px rgba(255, 255, 255, 0.3), inset 0 -7px 10px -5px rgba(30, 38, 50, 0.14);
+  box-shadow: inset 0 7px 10px -5px rgba(255, 255, 255, 0.18), inset 0 -7px 10px -5px rgba(30, 38, 50, 0.065);
   pointer-events: none;
 }
 
@@ -11037,7 +11044,7 @@ html[data-archive-transition="page"]::view-transition-new(archive-navigation) {
   position: absolute;
   display: block;
   z-index: 4;
-  border: 1px solid rgba(255, 255, 255, 0.56);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 50%;
   background: color-mix(in srgb, var(--accent-pale) 18%, transparent);
   box-shadow: 0 1px 3px rgba(24, 28, 36, 0.1), inset 0 1px 1px rgba(255, 255, 255, 0.65), inset 0 -1px 1px rgba(32, 42, 56, 0.12);
@@ -11047,7 +11054,7 @@ html[data-archive-transition="page"]::view-transition-new(archive-navigation) {
 }
 
 .bottom-nav.is-touching .nav-specular {
-  opacity: 0.96;
+  opacity: 0.65;
 }
 
 /* Promotion hints only; movement never substitutes a different material. */
@@ -11061,7 +11068,7 @@ html[data-archive-transition="page"]::view-transition-new(archive-navigation) {
   .nav-selection-lens { background: color-mix(in srgb, var(--accent-pale) 58%, #fff); }
 }
 
-@supports not ((mask-composite: exclude) or (-webkit-mask-composite: xor)) {
+@supports not ((mask: linear-gradient(#000, #000)) or (-webkit-mask: linear-gradient(#000, #000))) {
   .nav-refraction, .nav-specular { display: none; }
   .nav-shell::before { background: rgba(248, 248, 250, 0.92); backdrop-filter: none; -webkit-backdrop-filter: none; }
 }
