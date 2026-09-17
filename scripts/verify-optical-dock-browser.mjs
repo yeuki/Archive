@@ -5,10 +5,16 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 
 const modulePath = process.env.ARCHIVE_PLAYWRIGHT_MODULE;
 const { chromium } = await import(modulePath ? pathToFileURL(modulePath).href : "playwright");
 const remote = process.env.ARCHIVE_WEBVIEW_CDP;
+const adb = remote && process.env.ARCHIVE_WEBVIEW_ADB;
+const serial = process.env.ARCHIVE_WEBVIEW_SERIAL;
+assert.ok(!adb || serial, "native compositor capture requires an explicit adb device serial");
+const execFileAsync = promisify(execFile);
 let server;
 let url = process.env.ARCHIVE_GLASS_URL;
 if (!remote && !url) {
@@ -58,7 +64,45 @@ try {
     console.log(`Checking ${label}`);
     const settle = () => page.waitForTimeout(650);
     // Native DPR avoids WebView's scaled-capture re-rasterization of SVG icons.
-    const screenshot = (options = {}) => page.screenshot({ scale: remote ? "device" : "css", ...options });
+    const screenshot = async (options = {}) => {
+      if (!adb) return page.screenshot({ scale: remote ? "device" : "css", ...options });
+      // WebView DevTools capture can omit the transition tree and re-rasterize
+      // SVGs. Capture the actual Android compositor instead; compare a ROI in
+      // canvas below without changing the packaged app or adding dependencies.
+      const { stdout } = await execFileAsync(adb, ["-s", serial, "exec-out", "screencap", "-p"], { encoding: "buffer", maxBuffer: 16 * 1024 * 1024, windowsHide: true, timeout: 30000 });
+      if (options.path) await writeFile(options.path, stdout);
+      return stdout;
+    };
+    const comparePixels = (first, second, clip) => page.evaluate(async ([first, second, clip, fullFrame]) => {
+      const decode = async (data) => {
+        const image = new Image();
+        image.src = `data:image/png;base64,${data}`;
+        await image.decode();
+        const scale = image.width / innerWidth;
+        const canvas = document.createElement("canvas");
+        canvas.width = fullFrame ? Math.round(clip.width * scale) : image.width;
+        canvas.height = fullFrame ? Math.round(clip.height * scale) : image.height;
+        const ctx = canvas.getContext("2d");
+        if (fullFrame) ctx.drawImage(image, Math.round(clip.x * scale), Math.round(clip.y * scale), canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
+        else ctx.drawImage(image, 0, 0);
+        return ctx.getImageData(0, 0, canvas.width, canvas.height);
+      };
+      const a = await decode(first), b = await decode(second);
+      let changedEdgePixels = 0, changedCenterPixels = 0, maximumDifference = 0;
+      const vessel = document.querySelector(".nav-shell").getBoundingClientRect();
+      const sx = a.width / vessel.width, sy = a.height / vessel.height;
+      const centerMargin = vessel.height / 2 + 4;
+      for (let y = 0; y < a.height; y++) for (let x = 0; x < a.width; x++) {
+        const i = (y * a.width + x) * 4;
+        const difference = Math.max(Math.abs(a.data[i] - b.data[i]), Math.abs(a.data[i + 1] - b.data[i + 1]), Math.abs(a.data[i + 2] - b.data[i + 2]));
+        if (difference) {
+          maximumDifference = Math.max(maximumDifference, difference);
+          if (x > centerMargin * sx && x < a.width - centerMargin * sx && y > 13 * sy && y < a.height - 13 * sy) changedCenterPixels++;
+          else changedEdgePixels++;
+        }
+      }
+      return { changedEdgePixels, changedCenterPixels, maximumDifference };
+    }, [first.toString("base64"), second.toString("base64"), clip, Boolean(adb)]);
     const material = () => page.evaluate(() => {
       const nav = document.querySelector(".bottom-nav");
       const shell = nav.querySelector(".nav-shell");
@@ -81,6 +125,62 @@ try {
       geometry.buttons.forEach((button) => assert.ok(button.left >= geometry.left - 1 && button.right <= geometry.right + 1, `${button.name} must fit inside the vessel`));
       return geometry;
     };
+    const checkTransitionLayer = async (button, destination) => {
+      assert.equal(await nav.evaluate((node) => getComputedStyle(node).viewTransitionName), "none", "idle dock must sample the real page, not an isolated transition backdrop");
+      await button.evaluate((node) => node.click());
+      await page.waitForFunction(() => document.documentElement.dataset.archiveTransition === "page"
+        && document.getAnimations().some((animation) => animation.effect?.pseudoElement === "::view-transition-group(archive-navigation)"));
+      const layers = await page.evaluate(() => {
+        // Hold the actual snapshot tree for inspection, rather than inspecting
+        // styles after the animation has already hidden the stacking bug.
+        document.getAnimations().filter((animation) => animation.effect?.pseudoElement).forEach((animation) => {
+          animation.pause();
+          animation.currentTime = 130;
+        });
+        const root = document.documentElement;
+        const groupZ = (name) => Number.parseInt(getComputedStyle(root, `::view-transition-group(${name})`).zIndex, 10) || 0;
+        const snapshot = getComputedStyle(root, "::view-transition-group(archive-navigation)");
+        return { name: getComputedStyle(document.querySelector(".bottom-nav")).viewTransitionName, dock: groupZ("archive-navigation"), page: groupZ("archive-page"), hero: groupZ("archive-hero"), topbar: groupZ("archive-topbar"), backdrop: snapshot.backdropFilter, clip: snapshot.clipPath, inset: root.style.getPropertyValue("--archive-nav-snapshot-inset"), endInset: root.style.getPropertyValue("--archive-nav-snapshot-end-inset") };
+      });
+      try {
+        assert.equal(layers.name, "archive-navigation");
+        assert.ok(layers.dock > Math.max(layers.page, layers.hero, layers.topbar), "all page snapshots must remain underneath the dock during navigation");
+        assert.equal(layers.backdrop, "blur(3px) saturate(1.12)", "glass body must also sample the moving page during transition capture");
+        assert.match(layers.clip, /inset\(.+round 999px\)/);
+        assert.ok(layers.inset, "snapshot filtering must be capsule-bounded");
+        await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        await screenshot({ path: resolve(output, `${label}-${destination}-transition.png`) });
+        if (destination === "history") {
+          await page.evaluate(async () => {
+            const stage = document.querySelector(".page-stage"), nav = document.querySelector(".bottom-nav");
+            const probe = document.createElement("div");
+            probe.id = "optical-transition-backdrop";
+            probe.style.cssText = `position:absolute;z-index:10000;left:0;right:0;top:${nav.getBoundingClientRect().top - stage.getBoundingClientRect().top}px;height:64px;background:repeating-linear-gradient(90deg,#243b53 0 4px,#e7edf5 4px 8px);pointer-events:none`;
+            stage.append(probe);
+            await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+          });
+          const bounds = await page.locator(".nav-shell").boundingBox();
+          const clip = { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height };
+          const sampled = await screenshot({ clip, path: resolve(output, `${label}-transition-body.png`) });
+          const override = await page.addStyleTag({ content: 'html[data-archive-transition="page"]::view-transition-group(archive-navigation) { backdrop-filter:none; -webkit-backdrop-filter:none; }' });
+          try {
+            await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+            const unsampled = await screenshot({ clip, path: resolve(output, `${label}-transition-no-body.png`) });
+            layers.bodyPixels = await comparePixels(sampled, unsampled, clip);
+            assert.ok(layers.bodyPixels.changedCenterPixels > 400 && layers.bodyPixels.maximumDifference > 15, "the whole glass body must really sample content during transitions, not only accept a CSS property");
+          } finally {
+            await override.evaluate((node) => node.remove());
+            await page.evaluate(() => document.querySelector("#optical-transition-backdrop")?.remove());
+          }
+        }
+      } finally {
+        await page.evaluate(() => document.getAnimations().filter((animation) => animation.effect?.pseudoElement).forEach((animation) => animation.play()));
+      }
+      await settle();
+      assert.equal(await nav.evaluate((node) => getComputedStyle(node).viewTransitionName), "none", "transition completion must release backdrop isolation");
+      assert.deepEqual(await page.evaluate(() => ["inset", "end-inset", "duration"].map((key) => document.documentElement.style.getPropertyValue(`--archive-nav-snapshot-${key}`))), ["", "", ""]);
+      return layers;
+    };
     let collapsed, productivity, health, before, during, after, reducedTransparency;
     if (!process.env.ARCHIVE_GLASS_OPTICS_ONLY) {
       await nav.getByRole("button", { name: "Home", exact: true }).click();
@@ -91,16 +191,15 @@ try {
       await settle();
       assert.deepEqual(await nav.locator('.nav-group.productivity .nav-page[aria-hidden="false"]').evaluateAll((buttons) => buttons.map((button) => button.getAttribute("aria-label"))), ["Workout", "Workout history", "Habit", "Coach"]);
       productivity = await checkGeometry();
-      await nav.getByRole("button", { name: "Workout history", exact: true }).click();
-      await settle();
+      const historyLayers = await checkTransitionLayer(nav.getByRole("button", { name: "Workout history", exact: true }), "history");
       await screenshot({ path: resolve(output, `${label}-history.png`) });
       await nav.getByRole("button", { name: "Health pages" }).click();
       await settle();
       assert.deepEqual(await nav.locator('.nav-group.health .nav-page[aria-hidden="false"]').evaluateAll((buttons) => buttons.map((button) => button.getAttribute("aria-label"))), ["Water", "Sleep", "Stats", "Settings"]);
       health = await checkGeometry();
       assert.equal(health.width, productivity.width, "both expansions must remain equal");
-      await nav.getByRole("button", { name: "Settings", exact: true }).click();
-      await settle();
+      const settingsLayers = await checkTransitionLayer(nav.getByRole("button", { name: "Settings", exact: true }), "settings");
+      evidence.push({ label, transitionLayers: { history: historyLayers, settings: settingsLayers } });
       before = await material();
       during = await page.evaluate(async () => {
         scrollTo({ top: 300, behavior: "instant" });
@@ -118,6 +217,22 @@ try {
       await page.evaluate(() => scrollTo({ top: 0, behavior: "instant" }));
       await settle();
       await screenshot({ path: resolve(output, `${label}-health.png`) });
+
+      await page.evaluate(async () => {
+        document.querySelector('.nav-page[aria-label="Water"]').click();
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        document.querySelector('.nav-page[aria-label="Sleep"]').click();
+      });
+      await settle();
+      assert.equal(await nav.evaluate((node) => getComputedStyle(node).viewTransitionName), "none", "interrupted transitions must not leave dock backdrop isolation behind");
+      assert.equal(await page.evaluate(() => document.documentElement.dataset.archiveTransition), undefined);
+      await checkTransitionLayer(nav.getByRole("button", { name: "Settings", exact: true }), "settings-return");
+      const homeLayers = await checkTransitionLayer(nav.getByRole("button", { name: "Home", exact: true }), "home-collapse");
+      const homeGeometry = await checkGeometry();
+      assert.deepEqual(homeLayers.endInset.split(" ").map(Number.parseFloat), [0, (dimensions.width - homeGeometry.width) / 2, 0, (dimensions.width - homeGeometry.width) / 2], "snapshot backdrop must shrink with Home, without leaving a stale expanded blur footprint");
+      await nav.getByRole("button", { name: "Health pages" }).click();
+      await settle();
+      await checkTransitionLayer(nav.getByRole("button", { name: "Settings", exact: true }), "settings-from-home");
 
       const home = nav.getByRole("button", { name: "Home", exact: true });
       await home.focus();
@@ -141,8 +256,13 @@ try {
       await home.dispatchEvent("pointerup", { pointerType: "touch" });
       assert.equal(await nav.evaluate((node) => node.style.getPropertyValue("--glass-light-x")), "50.00%");
       assert.equal(await page.locator(".nav-shell").evaluate((node) => getComputedStyle(node).transitionDuration), "0s");
+      await nav.getByRole("button", { name: "Sleep", exact: true }).evaluate((node) => node.click());
+      assert.equal(await nav.evaluate((node) => getComputedStyle(node).viewTransitionName), "none", "reduced motion must bypass snapshot capture");
+      assert.equal(await page.evaluate(() => document.documentElement.dataset.archiveTransition), undefined);
+      await nav.getByRole("button", { name: "Settings", exact: true }).evaluate((node) => node.click());
       await cdp.send("Emulation.setEmulatedMedia", { features: [] });
       await cdp.detach();
+      await settle();
     }
     // Controlled backdrop proves that the SVG filter actually bends pixels,
     // not merely that the CSS parser accepts url(). Never writes tracker data.
@@ -165,37 +285,7 @@ try {
     await page.locator("feDisplacementMap").evaluate((node) => node.setAttribute("scale", "0"));
     await page.waitForTimeout(100);
     const unwarped = await screenshot({ clip, path: resolve(output, `${label}-no-displacement-probe.png`) });
-    const { changedEdgePixels, changedCenterPixels, maximumDifference } = await page.evaluate(async ([first, second]) => {
-      const decode = async (data) => {
-        const image = new Image();
-        image.src = `data:image/png;base64,${data}`;
-        await image.decode();
-        const canvas = document.createElement("canvas");
-        canvas.width = image.width; canvas.height = image.height;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(image, 0, 0);
-        return ctx.getImageData(0, 0, image.width, image.height);
-      };
-      const a = await decode(first), b = await decode(second);
-      let changedEdgePixels = 0, changedCenterPixels = 0, maximumDifference = 0;
-      // Capture pixel bounds scale with devicePixelRatio in Android WebView.
-      const vessel = document.querySelector(".nav-shell").getBoundingClientRect();
-      const sx = a.width / vessel.width;
-      const sy = a.height / vessel.height;
-      // Exclude circular end caps from the flat-center probe, using actual
-      // capsule geometry rather than a fixed margin that misses DPR-scaled caps.
-      const centerMargin = vessel.height / 2 + 4;
-      for (let y = 0; y < a.height; y++) for (let x = 0; x < a.width; x++) {
-        const i = (y * a.width + x) * 4;
-        const difference = Math.max(Math.abs(a.data[i] - b.data[i]), Math.abs(a.data[i + 1] - b.data[i + 1]), Math.abs(a.data[i + 2] - b.data[i + 2]));
-        if (difference) {
-          maximumDifference = Math.max(maximumDifference, difference);
-          if (x > centerMargin * sx && x < a.width - centerMargin * sx && y > 13 * sy && y < a.height - 13 * sy) changedCenterPixels++;
-          else changedEdgePixels++;
-        }
-      }
-      return { changedEdgePixels, changedCenterPixels, maximumDifference };
-    }, [warped.toString("base64"), unwarped.toString("base64")]);
+    const { changedEdgePixels, changedCenterPixels, maximumDifference } = await comparePixels(warped, unwarped, clip);
     console.log({ changedEdgePixels, changedCenterPixels, maximumDifference });
     assert.ok(changedEdgePixels > 400 && maximumDifference >= 15, "SVG displacement must bend real backdrop pixels, not just change antialiasing");
     assert.equal(changedCenterPixels, 0, "edge refraction must leave the calm center untouched");
@@ -225,6 +315,7 @@ try {
 } finally {
   if (inspectedPage && !inspectedPage.isClosed()) await inspectedPage.evaluate(() => {
     document.querySelectorAll("#optical-test-backdrop").forEach((node) => node.remove());
+    document.querySelector("#optical-transition-backdrop")?.remove();
     document.querySelector("feDisplacementMap")?.setAttribute("scale", "0.01");
   }).catch(() => {});
   await browser.close();

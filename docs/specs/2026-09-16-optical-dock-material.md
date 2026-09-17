@@ -11,7 +11,7 @@
 
 ## Approved direction
 
-Replace, rather than stack onto, the old white-blurred material. Use a clear center, narrow optical bevel, restrained directional highlights and backdrop-responsive edge sampling. The Charles Grassi article is a conceptual technical reference, not a literal shader port. Prefer bounded CSS over dependencies or continuous GPU animation. Remove decorative caustics and scroll/movement-dependent whitening.
+Replace, rather than stack onto, the old white-blurred material. Use a continuous transparent optical body, clear center, narrow optical bevel, restrained directional highlights and backdrop-responsive edge sampling. The Charles Grassi article is a conceptual technical reference, not a literal shader port. Prefer bounded CSS over dependencies or continuous GPU animation. Remove decorative caustics and scroll/movement-dependent whitening. Keep page panels below the dock throughout navigation, not just after transitions settle.
 
 ## Preserve / non-goals
 
@@ -48,6 +48,20 @@ No persisted fields, migration, backup, Health Connect, security or signing chan
 2026-09-16: Controlled rendering probes demonstrated that both retained opacity animation and a named View Transition on the vessel suppress its backdrop sampling in Chromium. Removed those obsolete vessel effects, while keeping page transitions and nav control/selection motion. SVG displacement is limited to the narrow rim, approximately 1.5px horizontally on the expanded vessel; vertical displacement is smaller. No shaders, dispersion, absorption or caustics.
 
 ## Verification evidence and reproduction
+
+### 2026-09-17 follow-up: snapshot ordering and continuous body
+
+User reported page panels overlapping the dock during navigation and material that read as a border only. Named page/hero snapshots paint above the ordinary root snapshot regardless of the fixed dock's DOM z-index. The correction temporarily names/fences the dock only during page transitions, then removes that backdrop root on completion or interruption. `src/motion.js` captures bounds once per transition, with token-guarded cleanup; the dock snapshot group samples the moving snapshots underneath with 3px softening clipped to those capsule bounds, outside the isolated image-pair. A CSS clip animation mirrors any remaining expansion/collapse using existing geometry tokens and the remaining live transition duration, with no frame-by-frame layout reads. Other overlay/workout layering is unchanged. Optical edge displacement remains a live/idle approximation; transition capture uses bounded backdrop softening rather than reconstructing the SVG edge field in snapshot space.
+
+The body now has low-alpha curvature across its full surface, 3px fixed softening and soft inset thickness; the hard inset inner line is gone. The rim's fill/highlight width is reduced, not supplemented with another blur layer. No brightness, scroll-state substitution, idle work, dependency or data changes.
+
+Production browser checks at both sizes passed with populated demo data, including mid-transition snapshot-tree inspection, dock z-index 20 versus page/hero/topbar 0, actual central-body backdrop changes in a controlled stripe test, capsule-bounded transition backdrop, Home-collapse footprint, cleanup after completion and rapid interruption, stable scroll material, reduced-motion page switching, accessibility and geometry. Controlled live displacement changed 2,238/2,454 rim/cap pixels (max channel difference 17), with zero changed flat-center pixels. Evidence: `test-results/optical-dock-body-group-browser-final`. Full automated verification and Android unit tests/lint/debug assembly passed. Physical-phone acceptance remains pending.
+
+For packaged checks, WebView DevTools screenshots can omit the transition tree or re-rasterize SVGs, producing blank transition captures and false central-pixel differences. The optional script supports actual Android compositor captures via `ARCHIVE_WEBVIEW_ADB` (adb executable path) and `ARCHIVE_WEBVIEW_SERIAL` (explicit authorized test-device serial), alongside `ARCHIVE_WEBVIEW_CDP`. The screenshot ROI is compared in canvas; no app dependency or phone data changes are introduced. Do not interpret a blank DevTools capture as a blank app without checking the real compositor.
+
+Packaged Android/WebView checks passed at 360 x 800 and 412 x 915 using actual compositor captures: snapshot ordering/body sampling, Home collapse, rapid interruption, geometry, scroll consistency, keyboard/touch and reduced-motion/transparency. Live edge displacement changed 22,015/24,724 rim/cap pixels, maximum differences 28/31, with zero changed flat-center pixels. Transition body sampling changed 67,077 central pixels at 360, demonstrating a real full-surface effect. No idle dock animation. Evidence: `test-results/optical-dock-body-group-native-360` and `test-results/optical-dock-body-group-native-412`. Software-GPU emulator scrolling p95 was approximately 67/100ms; these remain environment smoke checks, not proof of physical-phone smoothness. No physical phone was connected or updated; no release was published.
+
+### 2026-09-16 original candidate evidence
 
 `npm run verify` (including build, motion and performance) passed. Capacitor sync and `testDebugUnitTest lintDebug assembleDebug` passed with existing non-blocking native warnings. No personal phone is connected; only the existing Android emulator is used. Debug APK stays in this candidate worktree's generated build folder, not a published release.
 

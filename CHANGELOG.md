@@ -22,7 +22,8 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 ### Changed
 
 - Replaced the bottom dock's milky glass stack with a clear center, narrow sampled/displaced bevel, directional grazing highlights, restrained depth and a translucent selection lens. Removed decorative caustics and all scrolling/movement-dependent material substitutions.
-- Removed the dock's retained opacity entrance and named View Transition snapshot, both of which isolated its backdrop in Chromium. Existing page motion, true-width capsule, centered Home, destination order, compact behavior and expansion interactions remain intact.
+- Removed the dock's retained opacity entrance and permanent View Transition name, both of which isolated its backdrop in Chromium. Page switches use a temporary topmost, capsule-clipped dock snapshot so page panels cannot cover it; idle sampling is restored after completion or interruption. Existing page motion, true-width capsule, centered Home, destination order, compact behavior and expansion interactions remain intact.
+- Extended the optical treatment across the capsule with gentle full-body curvature, small fixed backdrop softening and blended thickness instead of a hard inner outline. Kept the transparent center, narrow real-displacement rim and invariant scrolling material.
 - Added bounded touch-light tracking and smooth release through CSS variables/animation frames, plus optional browser/WebView rendering checks that verify actual edge displacement, an unchanged center, geometry, scrolling styles and accessibility fallbacks.
 - Changed contextual Home prompts to route directly to Workout Mode, the Habit Hold Deck, or hydration capture instead of the general action sheet.
 - Replaced fixed Home correlations and synthetic optional-module values with real-record calculations or explicit evidence requirements.

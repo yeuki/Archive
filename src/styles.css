@@ -10910,6 +10910,42 @@ html[data-archive-transition="page"] .area-chart.chart-reveal :is(.area, .line, 
 }
 /* Optical dock — transparent center, bounded edge sampling, no scroll switch. */
 
+/* Named page snapshots live above ordinary fixed elements. Fence the dock
+   above them only while capturing a transition; a permanent name would
+   isolate its real backdrop sampling even after the animation finished. */
+html[data-archive-transition="page"] .bottom-nav {
+  view-transition-name: archive-navigation;
+}
+
+html[data-archive-transition="page"]::view-transition-group(archive-navigation) {
+  z-index: 20;
+  animation-name: archive-nav-snapshot-shape;
+  animation-duration: var(--archive-nav-snapshot-duration, 0ms);
+  animation-timing-function: var(--ease-out);
+  animation-fill-mode: both;
+  /* Sample sibling page snapshots outside the isolated image-pair. */
+  clip-path: inset(var(--archive-nav-snapshot-end-inset, 0) round 999px);
+  -webkit-backdrop-filter: blur(3px) saturate(1.12);
+  backdrop-filter: blur(3px) saturate(1.12);
+}
+
+@keyframes archive-nav-snapshot-shape {
+  from { clip-path: inset(var(--archive-nav-snapshot-inset, 0) round 999px); }
+  to { clip-path: inset(var(--archive-nav-snapshot-end-inset, 0) round 999px); }
+}
+
+html[data-archive-transition="page"]::view-transition-old(archive-navigation) {
+  animation: none;
+  opacity: 0;
+  mix-blend-mode: normal;
+}
+
+html[data-archive-transition="page"]::view-transition-new(archive-navigation) {
+  animation: none;
+  opacity: 1;
+  mix-blend-mode: normal;
+}
+
 .navigation-chrome .nav-shell {
   border: 0;
   background: transparent;
@@ -10928,9 +10964,13 @@ html[data-archive-transition="page"] .area-chart.chart-reveal :is(.area, .line, 
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: rgba(255, 255, 255, 0.08);
-  -webkit-backdrop-filter: blur(1.5px) saturate(1.05);
-  backdrop-filter: blur(1.5px) saturate(1.05);
+  /* Continuous optical body, not just a bright rim. Low-alpha curvature
+     leaves the middle transparent without a uniform white/milky fill. */
+  background:
+    radial-gradient(ellipse at var(--glass-light-x) var(--glass-light-y), rgba(255, 255, 255, 0.16), transparent 68%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.035) 42%, rgba(37, 48, 64, 0.055) 76%, rgba(255, 255, 255, 0.1));
+  -webkit-backdrop-filter: blur(3px) saturate(1.12);
+  backdrop-filter: blur(3px) saturate(1.12);
   pointer-events: none;
 }
 
@@ -10951,7 +10991,7 @@ html[data-archive-transition="page"] .area-chart.chart-reveal :is(.area, .line, 
   z-index: 1;
   inset: 2px;
   padding: 5px;
-  background: linear-gradient(165deg, rgba(255, 255, 255, 0.22), rgba(45, 53, 66, 0.12));
+  background: linear-gradient(165deg, rgba(255, 255, 255, 0.12), rgba(45, 53, 66, 0.07));
   -webkit-backdrop-filter: blur(3px) saturate(1.12) contrast(1.08);
   backdrop-filter: blur(3px) saturate(1.12) contrast(1.08);
 }
@@ -10974,7 +11014,7 @@ html[data-archive-transition="page"] .area-chart.chart-reveal :is(.area, .line, 
 .nav-specular {
   z-index: 2;
   inset: 0;
-  padding: 1.5px;
+  padding: 1px;
   background:
     radial-gradient(100px 65px at var(--glass-light-x) var(--glass-light-y), rgba(255, 255, 255, 0.98), rgba(255, 255, 255, 0.06) 85%),
     linear-gradient(150deg, rgba(255, 255, 255, 0.72) 3%, rgba(255, 255, 255, 0.08) 39%, rgba(32, 42, 56, 0.25) 66%, rgba(255, 255, 255, 0.56) 97%);
@@ -10986,9 +11026,10 @@ html[data-archive-transition="page"] .area-chart.chart-reveal :is(.area, .line, 
   content: "";
   position: absolute;
   z-index: 3;
-  inset: 3px;
+  inset: 0;
   border-radius: inherit;
-  box-shadow: inset 0 1px 1px rgba(30, 38, 50, 0.12), inset 0 -1px 1px rgba(255, 255, 255, 0.46);
+  /* Soft thickness merges into the body instead of outlining an inner ring. */
+  box-shadow: inset 0 7px 10px -5px rgba(255, 255, 255, 0.3), inset 0 -7px 10px -5px rgba(30, 38, 50, 0.14);
   pointer-events: none;
 }
 
@@ -11029,6 +11070,7 @@ html[data-archive-transition="page"] .area-chart.chart-reveal :is(.area, .line, 
   .navigation-chrome .nav-shell { background: #f8f8fa; }
   .nav-shell::before, .nav-refraction, .nav-specular { display: none; }
   .nav-selection-lens { background: color-mix(in srgb, var(--accent-pale) 58%, #fff); }
+  html[data-archive-transition="page"]::view-transition-group(archive-navigation) { -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
