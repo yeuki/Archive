@@ -2197,7 +2197,9 @@ button:disabled {
   display: block;
   pointer-events: none;
   isolation: isolate;
-  animation: navIn 380ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  /* A retained opacity animation creates a backdrop root even at opacity 1.
+     Keep the vessel unanimated here so optical layers can sample the page. */
+  animation: none;
 }
 
 .nav-shell {
@@ -2207,54 +2209,11 @@ button:disabled {
   z-index: 0;
   width: 142px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.68);
   border-radius: 999px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.62), rgba(246, 246, 246, 0.34)),
-    radial-gradient(circle at 50% -28%, rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0.12) 52%, transparent 72%),
-    rgba(250, 250, 250, 0.34);
-  -webkit-backdrop-filter: blur(34px) saturate(1.75) brightness(1.08);
-  backdrop-filter: blur(34px) saturate(1.75) brightness(1.08);
-  box-shadow:
-    0 0 0 0.5px rgba(0, 0, 0, 0.045),
-    0 3px 7px rgba(0, 0, 0, 0.055),
-    0 18px 44px rgba(0, 0, 0, 0.11),
-    inset 0 1px 0 rgba(255, 255, 255, 0.92),
-    inset 0 0 0 0.5px rgba(255, 255, 255, 0.52),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.055);
   transform: translateX(-50%);
-  transition:
-    width 360ms cubic-bezier(0.16, 1, 0.3, 1),
-    transform 360ms cubic-bezier(0.16, 1, 0.3, 1),
-    background 260ms ease,
-    box-shadow 260ms ease;
-  will-change: width, transform;
 }
 
-.nav-shell::before {
-  content: "";
-  position: absolute;
-  inset: 1px 12px auto;
-  height: 48%;
-  border-radius: 999px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.74), rgba(255, 255, 255, 0.18) 58%, transparent);
-  opacity: 0.94;
-  pointer-events: none;
-}
 
-.nav-shell::after {
-  content: "";
-  position: absolute;
-  inset: auto 16px 3px;
-  height: 24%;
-  border-radius: 999px;
-  background:
-    radial-gradient(ellipse at center, rgba(255, 255, 255, 0.46), transparent 72%),
-    linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.18), transparent);
-  opacity: 0.82;
-  pointer-events: none;
-}
 
 .bottom-nav.expanded.productivity .nav-shell {
   width: 280px;
@@ -2266,15 +2225,6 @@ button:disabled {
   transform: translateX(calc(-50% + 58px));
 }
 
-.bottom-nav.expanded .nav-shell {
-  box-shadow:
-    0 0 0 0.5px rgba(0, 0, 0, 0.04),
-    0 4px 9px rgba(0, 0, 0, 0.06),
-    0 22px 52px rgba(0, 0, 0, 0.13),
-    inset 0 1px 0 rgba(255, 255, 255, 0.94),
-    inset 0 0 0 0.5px rgba(255, 255, 255, 0.58),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.055);
-}
 
 .bottom-nav button {
   min-width: 0;
@@ -2415,19 +2365,14 @@ button:disabled {
   transform: translateX(-50%) scale(0.96);
 }
 
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .nav-shell {
-    background: rgba(250, 250, 250, 0.92);
-  }
-}
 
 @media (max-width: 400px) {
-  .bottom-nav.expanded.productivity .nav-shell {
+.bottom-nav.expanded.productivity .nav-shell {
     width: 274px;
     transform: translateX(calc(-50% - 50px));
   }
 
-  .bottom-nav.expanded.health .nav-shell {
+.bottom-nav.expanded.health .nav-shell {
     width: 274px;
     transform: translateX(calc(-50% + 50px));
   }
@@ -2439,12 +2384,12 @@ button:disabled {
 }
 
 @media (max-width: 360px) {
-  .bottom-nav.expanded.productivity .nav-shell {
+.bottom-nav.expanded.productivity .nav-shell {
     width: 250px;
     transform: translateX(calc(-50% - 50px));
   }
 
-  .bottom-nav.expanded.health .nav-shell {
+.bottom-nav.expanded.health .nav-shell {
     width: 250px;
     transform: translateX(calc(-50% + 50px));
   }
@@ -4421,18 +4366,6 @@ button:disabled {
   from {
     opacity: 0;
     transform: translateY(-8px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes navIn {
-  from {
-    opacity: 0;
-    transform: translateY(18px);
   }
 
   to {
@@ -6420,19 +6353,6 @@ body {
   letter-spacing: -0.02em;
 }
 
-.nav-shell {
-  border-color: rgba(255, 255, 255, 0.82);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(242, 242, 244, 0.46)),
-    rgba(250, 250, 252, 0.38);
-  -webkit-backdrop-filter: blur(30px) saturate(1.65) brightness(1.06);
-  backdrop-filter: blur(30px) saturate(1.65) brightness(1.06);
-  box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.045),
-    0 16px 40px rgba(0, 0, 0, 0.12),
-    inset 0 1px 0 rgba(255, 255, 255, 0.96),
-    inset 0 -1px 0 rgba(60, 60, 67, 0.06);
-}
 
 .bottom-nav .nav-icon.active,
 .bottom-nav .home-logo.active {
@@ -6444,11 +6364,11 @@ body {
 }
 
 @media (max-width: 370px) {
-  .bottom-nav.expanded.productivity .nav-shell {
+.bottom-nav.expanded.productivity .nav-shell {
     transform: translateX(calc(-50% - 46px));
   }
 
-  .bottom-nav.expanded.health .nav-shell {
+.bottom-nav.expanded.health .nav-shell {
     transform: translateX(calc(-50% + 46px));
   }
 
@@ -6472,7 +6392,7 @@ body {
   }
 }
 
-/* Archive 0.3.1 — layered liquid-glass navigation */
+/* Navigation controls and layout; optical material is defined once below. */
 
 .bottom-nav {
   --glass-light-x: 50%;
@@ -6482,116 +6402,25 @@ body {
   --selection-size: 38px;
   bottom: calc(12px + env(safe-area-inset-bottom));
   height: 54px;
-  perspective: 600px;
 }
 
 .nav-shell {
   inset-block: 0;
   width: 150px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.76);
-  background:
-    radial-gradient(90% 150% at var(--glass-light-x) calc(var(--glass-light-y) - 26%), rgba(255, 255, 255, 0.92) 0%, rgba(255, 255, 255, 0.31) 42%, transparent 72%),
-    linear-gradient(112deg, rgba(255, 255, 255, 0.42) 0%, rgba(250, 250, 252, 0.18) 44%, rgba(255, 255, 255, 0.36) 100%),
-    color-mix(in srgb, var(--accent-pale) 12%, rgba(238, 238, 242, 0.28));
-  -webkit-backdrop-filter: blur(28px) saturate(1.82) contrast(1.035) brightness(1.06);
-  backdrop-filter: blur(28px) saturate(1.82) contrast(1.035) brightness(1.06);
-  box-shadow:
-    0 0 0 0.5px rgba(60, 60, 67, 0.075),
-    0 2px 4px rgba(0, 0, 0, 0.055),
-    0 14px 34px rgba(0, 0, 0, 0.125),
-    0 28px 58px rgba(0, 0, 0, 0.075),
-    inset 0 1px 0 rgba(255, 255, 255, 0.98),
-    inset 0 -1px 0 rgba(60, 60, 67, 0.075),
-    inset 1px 0 0 rgba(255, 255, 255, 0.46),
-    inset -1px 0 0 rgba(255, 255, 255, 0.34);
-  transition:
-    width 460ms cubic-bezier(0.16, 1, 0.3, 1),
-    transform 460ms cubic-bezier(0.16, 1, 0.3, 1),
-    background 180ms ease,
-    box-shadow 240ms ease;
   transform-origin: center bottom;
 }
 
-.nav-shell::before {
-  inset: 0;
-  z-index: 4;
-  height: auto;
-  padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.48);
-  border-radius: inherit;
-  background:
-    radial-gradient(52% 120% at var(--glass-light-x) -12%, rgba(255, 255, 255, 0.38), transparent 72%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.78),
-    inset 0 -1px 0 rgba(60, 60, 67, 0.045),
-    inset 1px 0 0 color-mix(in srgb, var(--accent-mid) 10%, rgba(255, 255, 255, 0.32));
-  opacity: 0.92;
-}
 
-.nav-shell::after {
-  inset: 1px 8px auto;
-  z-index: 3;
-  height: 48%;
-  border-radius: 999px 999px 52% 52%;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.64), rgba(255, 255, 255, 0.12) 58%, transparent 100%);
-  opacity: 0.82;
-}
 
-.nav-refraction,
-.nav-specular,
-.nav-caustic,
 .nav-selection-lens {
   position: absolute;
   display: block;
   pointer-events: none;
 }
 
-.nav-refraction {
-  inset: 1px;
-  z-index: 2;
-  border: 1px solid rgba(255, 255, 255, 0.36);
-  border-radius: inherit;
-  background:
-    linear-gradient(90deg, rgba(255, 255, 255, 0.18), transparent 9%, transparent 91%, rgba(255, 255, 255, 0.16));
-  box-shadow:
-    inset 0 2px 3px rgba(255, 255, 255, 0.26),
-    inset 0 -2px 3px rgba(60, 60, 67, 0.035);
-}
 
-.nav-specular {
-  z-index: 3;
-  top: var(--glass-light-y);
-  left: var(--glass-light-x);
-  width: 104px;
-  height: 82px;
-  border-radius: 50%;
-  background:
-    radial-gradient(ellipse at center, rgba(255, 255, 255, 0.72) 0%, rgba(255, 255, 255, 0.24) 34%, transparent 72%);
-  opacity: 0.62;
-  transform: translate(-50%, -56%) rotate(-10deg);
-  transition:
-    top 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    left 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    opacity 180ms ease;
-}
 
-.nav-caustic {
-  z-index: 2;
-  bottom: -11px;
-  left: var(--glass-light-x);
-  width: 124px;
-  height: 30px;
-  border-radius: 50%;
-  background:
-    radial-gradient(ellipse at center, color-mix(in srgb, var(--accent-mid) 20%, rgba(255, 255, 255, 0.58)) 0%, rgba(255, 255, 255, 0.2) 34%, transparent 72%);
-  opacity: 0.7;
-  transform: translateX(-50%);
-  transition:
-    left 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    opacity 180ms ease;
-}
 
 .bottom-nav.expanded.productivity .nav-shell {
   width: 286px;
@@ -6603,17 +6432,6 @@ body {
   transform: translateX(calc(-50% + 60px));
 }
 
-.bottom-nav.expanded .nav-shell {
-  box-shadow:
-    0 0 0 0.5px rgba(60, 60, 67, 0.07),
-    0 3px 6px rgba(0, 0, 0, 0.06),
-    0 17px 38px rgba(0, 0, 0, 0.135),
-    0 30px 62px rgba(0, 0, 0, 0.085),
-    inset 0 1px 0 rgba(255, 255, 255, 0.99),
-    inset 0 -1px 0 rgba(60, 60, 67, 0.08),
-    inset 1px 0 0 rgba(255, 255, 255, 0.5),
-    inset -1px 0 0 rgba(255, 255, 255, 0.38);
-}
 
 .nav-selection-lens {
   z-index: 4;
@@ -6621,26 +6439,8 @@ body {
   left: var(--selection-x);
   width: var(--selection-size);
   height: var(--selection-size);
-  border: 1px solid rgba(255, 255, 255, 0.78);
   border-radius: 50%;
-  background:
-    radial-gradient(circle at 42% 16%, rgba(255, 255, 255, 0.98), rgba(255, 255, 255, 0.46) 36%, transparent 68%),
-    color-mix(in srgb, var(--accent-pale) 66%, rgba(255, 255, 255, 0.5));
-  box-shadow:
-    0 0 0 0.5px rgba(60, 60, 67, 0.055),
-    0 3px 7px rgba(0, 0, 0, 0.06),
-    0 9px 22px var(--accent-glow),
-    inset 0 1px 0 rgba(255, 255, 255, 1),
-    inset 0 -1px 0 rgba(60, 60, 67, 0.07);
   transform: translate(-50%, -50%) scale(1);
-  transition:
-    top 420ms cubic-bezier(0.16, 1, 0.3, 1),
-    left 420ms cubic-bezier(0.16, 1, 0.3, 1),
-    width 360ms cubic-bezier(0.16, 1, 0.3, 1),
-    height 360ms cubic-bezier(0.16, 1, 0.3, 1),
-    transform 160ms ease,
-    background 240ms ease,
-    box-shadow 240ms ease;
 }
 
 .nav-group {
@@ -6723,9 +6523,6 @@ body {
   transform: translate(-50%, -50%) scale(0.93);
 }
 
-.bottom-nav.is-touching .nav-specular {
-  opacity: 0.84;
-}
 
 .nav-group.productivity.open .nav-page:nth-child(1),
 .nav-group.health.open .nav-page:nth-child(2) {
@@ -6747,60 +6544,16 @@ body {
   animation-delay: 96ms;
 }
 
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .nav-shell {
-    background: rgba(248, 248, 250, 0.97);
-  }
 
-  .nav-refraction,
-  .nav-specular,
-  .nav-caustic {
-    display: none;
-  }
 
-  .nav-selection-lens {
-    background: color-mix(in srgb, var(--accent-pale) 64%, #ffffff);
-  }
-}
-
-@media (prefers-reduced-transparency: reduce) {
-  .nav-shell {
-    background: rgba(248, 248, 250, 0.96);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-
-  .nav-refraction,
-  .nav-specular,
-  .nav-caustic {
-    display: none;
-  }
-
-  .nav-selection-lens {
-    background: color-mix(in srgb, var(--accent-pale) 58%, #ffffff);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .nav-specular,
-  .nav-caustic {
-    display: none;
-  }
-
-  .nav-selection-lens {
-    transition: none;
-  }
-}
 
 @media (max-width: 400px) {
-  .bottom-nav.expanded.productivity .nav-shell {
+.bottom-nav.expanded.productivity .nav-shell {
     width: 276px;
     transform: translateX(calc(-50% - 51px));
   }
 
-  .bottom-nav.expanded.health .nav-shell {
+.bottom-nav.expanded.health .nav-shell {
     width: 276px;
     transform: translateX(calc(-50% + 51px));
   }
@@ -6826,12 +6579,12 @@ body {
 }
 
 @media (max-width: 360px) {
-  .bottom-nav.expanded.productivity .nav-shell {
+.bottom-nav.expanded.productivity .nav-shell {
     width: 250px;
     transform: translateX(calc(-50% - 50px));
   }
 
-  .bottom-nav.expanded.health .nav-shell {
+.bottom-nav.expanded.health .nav-shell {
     width: 250px;
     transform: translateX(calc(-50% + 50px));
   }
@@ -7765,7 +7518,9 @@ body {
 }
 
 .bottom-nav {
-  view-transition-name: archive-navigation;
+  /* A named snapshot is also a backdrop root while idle in Chromium.
+     The vessel must remain able to sample the actual document. */
+  view-transition-name: none;
 }
 
 .nav-group {
@@ -7776,15 +7531,6 @@ body {
 
 .nav-selection-lens {
   opacity: 1;
-  transition:
-    top 420ms cubic-bezier(0.16, 1, 0.3, 1),
-    left 420ms cubic-bezier(0.16, 1, 0.3, 1),
-    width 360ms cubic-bezier(0.16, 1, 0.3, 1),
-    height 360ms cubic-bezier(0.16, 1, 0.3, 1),
-    transform 160ms ease,
-    background 240ms ease,
-    box-shadow 240ms ease,
-    opacity 180ms ease;
 }
 
 .chrome-compact .topbar {
@@ -7797,11 +7543,6 @@ body {
 .chrome-compact .bottom-nav .nav-shell {
   width: 68px !important;
   transform: translateX(-50%) scale(0.94) !important;
-  box-shadow:
-    0 2px 4px rgba(0, 0, 0, 0.05),
-    0 12px 30px rgba(0, 0, 0, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.96),
-    inset 0 -1px 0 rgba(60, 60, 67, 0.07);
 }
 
 .chrome-compact .bottom-nav .nav-group {
@@ -7819,8 +7560,7 @@ body {
 }
 
 ::view-transition-group(archive-hero),
-::view-transition-group(archive-topbar),
-::view-transition-group(archive-navigation) {
+::view-transition-group(archive-topbar) {
   animation-duration: 430ms;
   animation-timing-function: cubic-bezier(0.2, 1, 0.26, 1);
 }
@@ -7828,9 +7568,7 @@ body {
 ::view-transition-old(archive-hero),
 ::view-transition-new(archive-hero),
 ::view-transition-old(archive-topbar),
-::view-transition-new(archive-topbar),
-::view-transition-old(archive-navigation),
-::view-transition-new(archive-navigation) {
+::view-transition-new(archive-topbar) {
   mix-blend-mode: normal;
 }
 
@@ -7876,7 +7614,7 @@ body {
     animation: none;
   }
 
-  .canvas-screen > .topbar,
+.canvas-screen > .topbar,
   .nav-group,
   .nav-selection-lens,
   .nav-shell {
@@ -7885,7 +7623,6 @@ body {
 
   ::view-transition-group(archive-hero),
   ::view-transition-group(archive-topbar),
-  ::view-transition-group(archive-navigation),
   ::view-transition-old(archive-hero),
   ::view-transition-new(archive-hero) {
     animation-duration: 1ms;
@@ -7943,11 +7680,11 @@ body {
 }
 
 @media (max-width: 360px) {
-  .bottom-nav.expanded.productivity .nav-shell {
+.bottom-nav.expanded.productivity .nav-shell {
     transform: translateX(calc(-50% - 47px));
   }
 
-  .bottom-nav.expanded.health .nav-shell {
+.bottom-nav.expanded.health .nav-shell {
     transform: translateX(calc(-50% + 47px));
   }
 
@@ -7979,65 +7716,12 @@ body {
 
 .nav-shell {
   width: var(--dock-collapsed-width);
-  background:
-    radial-gradient(100% 170% at var(--glass-light-x) calc(var(--glass-light-y) - 30%), rgba(255, 255, 255, 0.96) 0%, rgba(255, 255, 255, 0.34) 41%, transparent 72%),
-    linear-gradient(112deg, rgba(255, 255, 255, 0.42) 0%, rgba(244, 244, 248, 0.16) 44%, rgba(255, 255, 255, 0.38) 100%),
-    color-mix(in srgb, var(--accent-pale) 14%, rgba(234, 234, 240, 0.3));
-  -webkit-backdrop-filter: blur(31px) saturate(1.9) contrast(1.045) brightness(1.07);
-  backdrop-filter: blur(31px) saturate(1.9) contrast(1.045) brightness(1.07);
-  box-shadow:
-    0 0 0 0.5px rgba(60, 60, 67, 0.075),
-    0 2px 5px rgba(0, 0, 0, 0.055),
-    0 16px 38px rgba(0, 0, 0, 0.13),
-    0 32px 66px rgba(0, 0, 0, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.99),
-    inset 0 -1px 0 rgba(60, 60, 67, 0.075),
-    inset 2px 0 0 rgba(255, 255, 255, 0.42),
-    inset -2px 0 0 rgba(255, 255, 255, 0.32);
 }
 
-.nav-shell::before {
-  background:
-    radial-gradient(58% 140% at var(--glass-light-x) -18%, rgba(255, 255, 255, 0.48), transparent 71%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.86),
-    inset 0 -1px 0 rgba(60, 60, 67, 0.05),
-    inset 2px 0 0 color-mix(in srgb, var(--accent-mid) 10%, rgba(255, 255, 255, 0.3));
-}
 
-.nav-shell::after {
-  inset: 1px 10px auto;
-  height: 53%;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.13) 58%, transparent 100%);
-  opacity: 0.86;
-}
 
-.nav-refraction {
-  background:
-    linear-gradient(90deg, rgba(255, 255, 255, 0.22), transparent 10%, transparent 90%, rgba(255, 255, 255, 0.2)),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.14), transparent 44%, rgba(60, 60, 67, 0.025));
-  box-shadow:
-    inset 0 3px 4px rgba(255, 255, 255, 0.3),
-    inset 0 -3px 4px rgba(60, 60, 67, 0.04);
-}
 
-.nav-specular {
-  width: 132px;
-  height: 98px;
-  background:
-    radial-gradient(ellipse at center, rgba(255, 255, 255, 0.78) 0%, rgba(255, 255, 255, 0.27) 35%, transparent 73%);
-  opacity: 0.68;
-}
 
-.nav-caustic {
-  bottom: -10px;
-  width: 154px;
-  height: 38px;
-  background:
-    radial-gradient(ellipse at center, color-mix(in srgb, var(--accent-mid) 24%, rgba(255, 255, 255, 0.62)) 0%, rgba(255, 255, 255, 0.22) 36%, transparent 73%);
-  opacity: 0.76;
-}
 
 .bottom-nav.expanded.productivity .nav-shell {
   width: var(--dock-expanded-width);
@@ -8049,30 +7733,7 @@ body {
   transform: translateX(calc(-50% + var(--dock-expanded-shift)));
 }
 
-.bottom-nav.expanded .nav-shell {
-  box-shadow:
-    0 0 0 0.5px rgba(60, 60, 67, 0.07),
-    0 3px 7px rgba(0, 0, 0, 0.06),
-    0 20px 44px rgba(0, 0, 0, 0.14),
-    0 36px 72px rgba(0, 0, 0, 0.09),
-    inset 0 1px 0 rgba(255, 255, 255, 1),
-    inset 0 -1px 0 rgba(60, 60, 67, 0.08),
-    inset 2px 0 0 rgba(255, 255, 255, 0.48),
-    inset -2px 0 0 rgba(255, 255, 255, 0.36);
-}
 
-.nav-selection-lens {
-  border-color: rgba(255, 255, 255, 0.82);
-  background:
-    radial-gradient(circle at 40% 13%, rgba(255, 255, 255, 1), rgba(255, 255, 255, 0.48) 38%, transparent 70%),
-    color-mix(in srgb, var(--accent-pale) 68%, rgba(255, 255, 255, 0.48));
-  box-shadow:
-    0 0 0 0.5px rgba(60, 60, 67, 0.06),
-    0 4px 9px rgba(0, 0, 0, 0.065),
-    0 12px 28px var(--accent-glow),
-    inset 0 1px 0 rgba(255, 255, 255, 1),
-    inset 0 -1px 0 rgba(60, 60, 67, 0.075);
-}
 
 .nav-group {
   --nav-button-size: var(--dock-button-size);
@@ -8145,10 +7806,6 @@ body {
     --dock-group-offset: 23px;
   }
 
-  .bottom-nav.expanded .nav-shell {
-    -webkit-backdrop-filter: blur(23px) saturate(1.62) brightness(1.045);
-    backdrop-filter: blur(23px) saturate(1.62) brightness(1.045);
-  }
 }
 
 @media (max-width: 360px) {
@@ -10729,13 +10386,7 @@ select {
   width: var(--dock-collapsed-width);
   border-radius: 999px;
   transform: translate3d(-50%, 0, 0);
-  transition:
-    width var(--motion-page) var(--ease-out),
-    transform var(--motion-page) var(--ease-out),
-    box-shadow var(--motion-control) ease,
-    opacity var(--motion-fast) ease;
   transform-origin: center center;
-  will-change: transform;
   contain: paint;
 }
 
@@ -10796,12 +10447,6 @@ select {
     translate3d(calc(var(--selection-x) - 50%), calc(var(--selection-y) - 50%), 0)
     scale(var(--selection-scale))
     scale(var(--selection-press-scale));
-  transition:
-    transform var(--motion-layout) var(--ease-out),
-    opacity var(--motion-fast) ease,
-    background var(--motion-control) ease,
-    box-shadow var(--motion-control) ease;
-  will-change: transform, opacity;
 }
 
 .bottom-nav.is-touching {
@@ -11014,8 +10659,7 @@ html[data-archive-transition="page"]::view-transition-new(root) {
 
 html[data-archive-transition="page"]::view-transition-group(archive-page),
 html[data-archive-transition="page"]::view-transition-group(archive-hero),
-html[data-archive-transition="page"]::view-transition-group(archive-topbar),
-html[data-archive-transition="page"]::view-transition-group(archive-navigation) {
+html[data-archive-transition="page"]::view-transition-group(archive-topbar) {
   animation-duration: var(--motion-page);
   animation-timing-function: var(--ease-out);
 }
@@ -11100,7 +10744,7 @@ html[data-archive-transition="workout-mode"][data-archive-direction="open"]::vie
     scroll-behavior: auto;
   }
 
-  .settings-section-reveal,
+.settings-section-reveal,
   .settings-section-reveal .settings-group,
   .daily-sheet,
   .nav-shell,
@@ -11194,43 +10838,10 @@ html[data-archive-transition="page"] .area-chart.chart-reveal :is(.area, .line, 
   animation-play-state: paused;
 }
 
-.navigation-chrome .nav-shell {
-  -webkit-backdrop-filter: blur(22px) saturate(1.55) brightness(1.045);
-  backdrop-filter: blur(22px) saturate(1.55) brightness(1.045);
-  box-shadow:
-    0 0 0 0.5px rgba(60, 60, 67, 0.075),
-    0 14px 34px rgba(0, 0, 0, 0.12),
-    inset 0 1px 0 rgba(255, 255, 255, 0.96),
-    inset 0 -1px 0 rgba(60, 60, 67, 0.07);
-  transition:
-    width var(--motion-page) var(--ease-out),
-    transform var(--motion-page) var(--ease-out),
-    opacity var(--motion-fast) ease;
-  will-change: auto;
-}
 
-.navigation-chrome.nav-moving .nav-shell {
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-  background-color: rgba(247, 247, 250, 0.88);
-  will-change: width, transform;
-}
 
-.navigation-chrome.is-scrolling .nav-shell {
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-  background-color: rgba(247, 247, 250, 0.9);
-}
 
-.navigation-chrome :is(.nav-refraction, .nav-specular, .nav-caustic) {
-  transition:
-    opacity var(--motion-fast) ease,
-    transform var(--motion-control) var(--ease-out);
-}
 
-.navigation-chrome:is(.nav-moving, .is-scrolling) :is(.nav-specular, .nav-caustic) {
-  opacity: 0.42;
-}
 
 .bottom-nav .nav-icon,
 .bottom-nav .home-logo,
@@ -11287,13 +10898,6 @@ html[data-archive-transition="page"] .area-chart.chart-reveal :is(.area, .line, 
   animation: archiveRefreshSpin 760ms linear infinite;
 }
 
-@media (prefers-reduced-transparency: reduce) {
-  .navigation-chrome .nav-shell {
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-    background-color: #f8f8fa;
-  }
-}
 
 @media (prefers-reduced-motion: reduce) {
   .page-stage.native-page-motion,
@@ -11303,8 +10907,130 @@ html[data-archive-transition="page"] .area-chart.chart-reveal :is(.area, .line, 
     animation: none !important;
   }
 
-  .navigation-chrome .nav-shell,
-  .navigation-chrome :is(.nav-refraction, .nav-specular, .nav-caustic) {
-    transition: none !important;
+}
+/* Optical dock — transparent center, bounded edge sampling, no scroll switch. */
+
+.navigation-chrome .nav-shell {
+  border: 0;
+  background: transparent;
+  box-shadow: 0 1px 2px rgba(24, 28, 36, 0.08), 0 8px 18px rgba(24, 28, 36, 0.12);
+  transition:
+    width var(--motion-page) var(--ease-out),
+    transform var(--motion-page) var(--ease-out),
+    opacity var(--motion-fast) ease;
+  will-change: auto;
+}
+
+/* Separate sibling samplers: a filtered parent would block edge sampling
+   of the actual page in Chromium's backdrop-root model. */
+.nav-shell::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: rgba(255, 255, 255, 0.08);
+  -webkit-backdrop-filter: blur(1.5px) saturate(1.05);
+  backdrop-filter: blur(1.5px) saturate(1.05);
+  pointer-events: none;
+}
+
+.nav-refraction,
+.nav-specular {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+  border-radius: inherit;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+
+/* Narrow backdrop rim. The CSS-only path remains usable without SVG filters. */
+.nav-refraction {
+  z-index: 1;
+  inset: 2px;
+  padding: 5px;
+  background: linear-gradient(165deg, rgba(255, 255, 255, 0.22), rgba(45, 53, 66, 0.12));
+  -webkit-backdrop-filter: blur(3px) saturate(1.12) contrast(1.08);
+  backdrop-filter: blur(3px) saturate(1.12) contrast(1.08);
+}
+
+.nav-optics-defs {
+  position: absolute;
+  pointer-events: none;
+}
+
+/* Progressive Chromium/WebView path: cached normal-like channel map bends
+   the backdrop by at most 1.5 CSS pixels, only inside the masked 5px bevel. */
+@supports (backdrop-filter: url("#archive-nav-edge")) {
+  .nav-refraction {
+    -webkit-backdrop-filter: url("#archive-nav-edge") blur(1px) saturate(1.12);
+    backdrop-filter: url("#archive-nav-edge") blur(1px) saturate(1.12);
   }
+}
+
+/* Grazing highlights occupy the perimeter, not a white wash over the center. */
+.nav-specular {
+  z-index: 2;
+  inset: 0;
+  padding: 1.5px;
+  background:
+    radial-gradient(100px 65px at var(--glass-light-x) var(--glass-light-y), rgba(255, 255, 255, 0.98), rgba(255, 255, 255, 0.06) 85%),
+    linear-gradient(150deg, rgba(255, 255, 255, 0.72) 3%, rgba(255, 255, 255, 0.08) 39%, rgba(32, 42, 56, 0.25) 66%, rgba(255, 255, 255, 0.56) 97%);
+  opacity: 0.78;
+  transition: opacity var(--motion-control) var(--ease-out);
+}
+
+.nav-shell::after {
+  content: "";
+  position: absolute;
+  z-index: 3;
+  inset: 3px;
+  border-radius: inherit;
+  box-shadow: inset 0 1px 1px rgba(30, 38, 50, 0.12), inset 0 -1px 1px rgba(255, 255, 255, 0.46);
+  pointer-events: none;
+}
+
+.nav-selection-lens {
+  position: absolute;
+  display: block;
+  z-index: 4;
+  border: 1px solid rgba(255, 255, 255, 0.56);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent-pale) 18%, transparent);
+  box-shadow: 0 1px 3px rgba(24, 28, 36, 0.1), inset 0 1px 1px rgba(255, 255, 255, 0.65), inset 0 -1px 1px rgba(32, 42, 56, 0.12);
+  pointer-events: none;
+  transition: transform var(--motion-page) var(--ease-out), opacity var(--motion-fast) ease;
+  will-change: auto;
+}
+
+.bottom-nav.is-touching .nav-specular {
+  opacity: 0.96;
+}
+
+/* Promotion hints only; movement never substitutes a different material. */
+.navigation-chrome.nav-moving .nav-shell {
+  will-change: width, transform;
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .navigation-chrome .nav-shell { background: #f8f8fa; }
+  .nav-shell::before, .nav-refraction, .nav-specular { display: none; }
+  .nav-selection-lens { background: color-mix(in srgb, var(--accent-pale) 58%, #fff); }
+}
+
+@supports not ((mask-composite: exclude) or (-webkit-mask-composite: xor)) {
+  .nav-refraction, .nav-specular { display: none; }
+  .nav-shell::before { background: rgba(248, 248, 250, 0.92); backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .navigation-chrome .nav-shell { background: #f8f8fa; }
+  .nav-shell::before, .nav-refraction, .nav-specular { display: none; }
+  .nav-selection-lens { background: color-mix(in srgb, var(--accent-pale) 58%, #fff); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .navigation-chrome .nav-shell, .nav-specular, .nav-selection-lens { transition: none !important; }
 }

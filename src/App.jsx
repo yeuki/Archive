@@ -1,8 +1,10 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import pencilIcon from "./assets/pencil-icon.png";
+import navBevelMap from "./assets/nav-bevel-map.svg";
 import HabitHoldDeck from "./HabitHoldDeck.jsx";
 import { runArchiveTransition, useFlipLayout } from "./motion.js";
+import { createNavGlassLight } from "./navGlass.js";
 import {
   chartRevealKey,
   createStatePersistence,
@@ -4908,8 +4910,7 @@ function BottomNav({ activePage, onPageChange }) {
   const chromeRef = useRef(null);
   const navRef = useRef(null);
   const navMotionTimerRef = useRef(0);
-  const glassFrameRef = useRef(0);
-  const glassPointRef = useRef({ x: 0, y: 0 });
+  const glassLightRef = useRef(null);
   const groups = {
     productivity: [
       { page: "workout", label: "Workout", icon: "workout" },
@@ -4931,14 +4932,12 @@ function BottomNav({ activePage, onPageChange }) {
     if (!chrome) return undefined;
     const shell = chrome.closest(".app-shell");
     let frameId = 0;
-    let scrollSettleTimer = 0;
     let lastPosition = Math.max(0, window.scrollY || document.documentElement.scrollTop || 0);
 
     const updateChrome = () => {
       frameId = 0;
       const currentPosition = Math.max(0, window.scrollY || document.documentElement.scrollTop || 0);
       const movement = currentPosition - lastPosition;
-      chrome.classList.add("is-scrolling");
       if (currentPosition < 44 || movement < -8) {
         chrome.classList.remove("chrome-compact");
         shell?.classList.remove("chrome-compact");
@@ -4948,29 +4947,30 @@ function BottomNav({ activePage, onPageChange }) {
         shell?.classList.add("chrome-compact");
       }
       lastPosition = currentPosition;
-
-      window.clearTimeout(scrollSettleTimer);
-      scrollSettleTimer = window.setTimeout(() => chrome.classList.remove("is-scrolling"), 150);
     };
 
     const handleScroll = () => {
       if (!frameId) frameId = window.requestAnimationFrame(updateChrome);
     };
 
-    chrome.classList.remove("chrome-compact", "is-scrolling");
+    chrome.classList.remove("chrome-compact");
     shell?.classList.remove("chrome-compact");
     window.addEventListener("scroll", handleScroll, { passive: true });
     return () => {
       window.removeEventListener("scroll", handleScroll);
       if (frameId) window.cancelAnimationFrame(frameId);
-      window.clearTimeout(scrollSettleTimer);
       shell?.classList.remove("chrome-compact");
     };
   }, [activePage]);
 
-  useEffect(() => () => {
-    window.clearTimeout(navMotionTimerRef.current);
-    if (glassFrameRef.current) window.cancelAnimationFrame(glassFrameRef.current);
+  useEffect(() => {
+    const light = createNavGlassLight(navRef.current);
+    glassLightRef.current = light;
+    return () => {
+      light.dispose();
+      glassLightRef.current = null;
+      window.clearTimeout(navMotionTimerRef.current);
+    };
   }, []);
 
   const markNavMoving = () => {
@@ -5016,33 +5016,9 @@ function BottomNav({ activePage, onPageChange }) {
     };
   }, [activePage, expandedGroup]);
 
-  const updateGlassLight = (event) => {
-    glassPointRef.current = { x: event.clientX, y: event.clientY };
-    if (glassFrameRef.current) return;
-    glassFrameRef.current = window.requestAnimationFrame(() => {
-      glassFrameRef.current = 0;
-      const nav = navRef.current;
-      if (!nav) return;
-      const bounds = nav.querySelector(".nav-shell")?.getBoundingClientRect() || nav.getBoundingClientRect();
-      const x = Math.max(0, Math.min(100, ((glassPointRef.current.x - bounds.left) / bounds.width) * 100));
-      const y = Math.max(0, Math.min(100, ((glassPointRef.current.y - bounds.top) / bounds.height) * 100));
-      nav.style.setProperty("--glass-light-x", `${x}%`);
-      nav.style.setProperty("--glass-light-y", `${y}%`);
-    });
-  };
-  const settleGlassLight = () => {
-    const nav = navRef.current;
-    if (!nav) return;
-    if (glassFrameRef.current) window.cancelAnimationFrame(glassFrameRef.current);
-    glassFrameRef.current = 0;
-    nav.classList.remove("is-touching");
-    nav.style.removeProperty("--glass-light-x");
-    nav.style.removeProperty("--glass-light-y");
-  };
-  const pressGlass = (event) => {
-    updateGlassLight(event);
-    navRef.current?.classList.add("is-touching");
-  };
+  const updateGlassLight = (event) => glassLightRef.current?.move(event);
+  const settleGlassLight = () => glassLightRef.current?.settle();
+  const pressGlass = (event) => glassLightRef.current?.press(event);
   const selectPage = (page) => {
     markNavMoving();
     setExpandedGroup(pageGroup(page));
@@ -5083,10 +5059,17 @@ function BottomNav({ activePage, onPageChange }) {
         onPointerCancel={settleGlassLight}
         onPointerLeave={settleGlassLight}
       >
+        <svg className="nav-optics-defs" aria-hidden="true" focusable="false" width="0" height="0">
+          <defs>
+            <filter id="archive-nav-edge" x="0" y="0" width="100%" height="100%" primitiveUnits="objectBoundingBox" colorInterpolationFilters="sRGB">
+              <feImage href={navBevelMap} x="0" y="0" width="1" height="1" preserveAspectRatio="none" result="bevel" />
+              <feDisplacementMap in="SourceGraphic" in2="bevel" scale="0.01" xChannelSelector="R" yChannelSelector="G" />
+            </filter>
+          </defs>
+        </svg>
         <span className="nav-shell" aria-hidden="true">
           <span className="nav-refraction" />
           <span className="nav-specular" />
-          <span className="nav-caustic" />
         </span>
         <span className="nav-selection-lens" aria-hidden="true" />
         <div className={`nav-group productivity ${expandedGroup === "productivity" ? "open" : ""}`}>

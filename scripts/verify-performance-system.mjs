@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { createStatePersistence } from "../src/runtimePerformance.js";
+import { createNavGlassLight } from "../src/navGlass.js";
 
 const writes = [];
 const hostListeners = new Map();
@@ -93,10 +94,75 @@ assert.match(app, /const BodyMapVisual = lazy\(loadBodyMapVisual\)/);
 assert.match(app, /const MemoHomePage = memo\(HomePage\)/);
 
 assert.match(css, /Archive 0\.14\.0 candidate — bounded rendering and coordinated motion/);
-assert.match(css, /\.navigation-chrome\.is-scrolling \.nav-shell[\s\S]*?backdrop-filter: none/);
+assert.doesNotMatch(css, /\.navigation-chrome\.is-scrolling/, "scrolling must never substitute an opaque dock");
+assert.doesNotMatch(app, /classList\.add\("is-scrolling"\)/);
+assert.doesNotMatch(css, /nav-caustic/, "decorative caustics must not survive the material replacement");
+assert.doesNotMatch(css, /view-transition-name: archive-navigation|animation: navIn/, "the vessel must not isolate the page backdrop");
+assert.match(app, /feDisplacementMap in="SourceGraphic" in2="bevel" scale="0\.01"/, "refraction must use bounded edge displacement");
+const opticalCss = css.split("/* Optical dock")[1];
+assert.ok(opticalCss, "the consolidated optical material must exist");
+assert.match(opticalCss, /backdrop-filter: blur\(1\.5px\) saturate\(1\.05\)/);
+assert.match(opticalCss, /mask-composite: exclude/);
+assert.doesNotMatch(opticalCss, /brightness\(|blur\((?:[1-9]\d|[4-9])px\)/, "dock sampling must stay small and brightness-neutral");
 assert.match(css, /\.page-stage\.native-page-motion[\s\S]*?animation: none/);
 assert.match(css, /\.area-chart\.chart-static \.line[\s\S]*?stroke-dashoffset: 0/);
 assert.match(css, /content-visibility: auto/);
 assert.match(css, /\.workout-value-wheel > button[\s\S]*?will-change: auto/);
 
-console.log("Performance checks passed: queued persistence, urgent durability, isolated scroll chrome, stable rendering boundaries, bounded glass, one-time charts, and lazy feature chunks.");
+// Exercise actual light-controller behavior with deterministic frames.
+const pendingFrames = new Map();
+const lightValues = new Map();
+const classes = new Set();
+let clock = 0;
+let frameHandle = 0;
+let reduceMotion = false;
+const lightHost = {
+  matchMedia: () => ({ matches: reduceMotion }),
+  requestAnimationFrame(callback) { pendingFrames.set(++frameHandle, callback); return frameHandle; },
+  cancelAnimationFrame(handle) { pendingFrames.delete(handle); },
+};
+const lightNav = {
+  style: { setProperty: (name, value) => lightValues.set(name, value), removeProperty: (name) => lightValues.delete(name) },
+  classList: { add: (name) => classes.add(name), remove: (name) => classes.delete(name), contains: (name) => classes.has(name) },
+  querySelector: () => ({ getBoundingClientRect: () => ({ left: 10, top: 20, width: 200, height: 64 }) }),
+};
+const runLightFrames = () => {
+  let count = 0;
+  while (pendingFrames.size) {
+    assert.ok(++count < 40, "lighting must stop when settled, never loop while idle");
+    const batch = [...pendingFrames.values()];
+    pendingFrames.clear();
+    clock += 16;
+    batch.forEach((callback) => callback(clock));
+  }
+  return count;
+};
+const light = createNavGlassLight(lightNav, lightHost);
+light.move({ clientX: 210, clientY: 84, pointerType: "touch" });
+assert.equal(pendingFrames.size, 0, "unpressed touch/scroll must not animate light");
+light.press({ clientX: 210, clientY: 84, pointerType: "touch" });
+light.move({ clientX: 400, clientY: 100 });
+assert.equal(pendingFrames.size, 1, "pointer bursts must coalesce into one frame");
+runLightFrames();
+assert.equal(lightValues.get("--glass-light-x"), "100.00%", "pointer values must clamp to the vessel");
+assert.equal(lightValues.get("--glass-light-y"), "100.00%");
+light.settle();
+assert.equal(classes.has("is-touching"), false);
+assert.ok(runLightFrames() > 1, "release should settle smoothly, not snap");
+assert.equal(lightValues.get("--glass-light-x"), "50.00%");
+assert.equal(lightValues.get("--glass-light-y"), "12.00%");
+light.settle();
+assert.equal(pendingFrames.size, 0, "an already neutral light needs no frames");
+reduceMotion = true;
+light.press({ clientX: 210, clientY: 84 });
+light.settle();
+assert.equal(pendingFrames.size, 0, "reduced motion must not animate tracking or release");
+reduceMotion = false;
+light.press({ clientX: 100, clientY: 20 });
+light.dispose();
+assert.equal(pendingFrames.size, 0, "unmount must cancel outstanding animation");
+assert.equal(lightValues.size, 0);
+light.press({ clientX: 100, clientY: 20 });
+assert.equal(pendingFrames.size, 0, "disposed controllers must stay inert");
+
+console.log("Performance checks passed: queued persistence, urgent durability, isolated scroll chrome, stable rendering boundaries, consistent optical glass, bounded touch lighting, one-time charts, and lazy feature chunks.");

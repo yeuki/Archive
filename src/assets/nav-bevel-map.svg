@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="64" viewBox="0 0 300 64">
+  <!-- R encodes outward horizontal offset; G encodes vertical offset.
+       Neutral 128 means no displacement. Only the masked perimeter uses this. -->
+  <defs>
+    <linearGradient id="x">
+      <stop stop-color="#000080"/>
+      <stop offset=".12" stop-color="#800080"/>
+      <stop offset=".88" stop-color="#800080"/>
+      <stop offset="1" stop-color="#ff0080"/>
+    </linearGradient>
+    <linearGradient id="y" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#000000"/>
+      <stop offset=".5" stop-color="#008000"/>
+      <stop offset="1" stop-color="#00ff00"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#x)" d="M0 0h300v64H0z"/>
+  <path fill="url(#y)" style="mix-blend-mode:screen" d="M0 0h300v64H0z"/>
+</svg>

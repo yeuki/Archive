@@ -21,11 +21,14 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 
 ### Changed
 
+- Replaced the bottom dock's milky glass stack with a clear center, narrow sampled/displaced bevel, directional grazing highlights, restrained depth and a translucent selection lens. Removed decorative caustics and all scrolling/movement-dependent material substitutions.
+- Removed the dock's retained opacity entrance and named View Transition snapshot, both of which isolated its backdrop in Chromium. Existing page motion, true-width capsule, centered Home, destination order, compact behavior and expansion interactions remain intact.
+- Added bounded touch-light tracking and smooth release through CSS variables/animation frames, plus optional browser/WebView rendering checks that verify actual edge displacement, an unchanged center, geometry, scrolling styles and accessibility fallbacks.
 - Changed contextual Home prompts to route directly to Workout Mode, the Habit Hold Deck, or hydration capture instead of the general action sheet.
 - Replaced fixed Home correlations and synthetic optional-module values with real-record calculations or explicit evidence requirements.
 - Changed Home completion language so expected-later sleep is never presented as an overdue task and returning users are not shown a historical failure backlog.
 - Changed ordinary local-state persistence to coalesce rapid updates and serialize during browser idle time, with lifecycle flushes on backgrounding or page exit and immediate writes for imports, completed-set transitions, workout pause/rest progression, start, finish, and discard.
-- Isolated scroll-reactive top and bottom chrome from root React state, throttled interactive glass lighting to animation frames, and temporarily replaces live backdrop sampling with the same layered translucent material while the dock or document is moving.
+- Isolated scroll-reactive top and bottom chrome from root React state and throttled interactive glass lighting to animation frames. The subsequent optical dock pass keeps bounded live sampling active during movement instead of substituting a pale fill.
 - Memoized normalized health, goals, module, workout, and Coach inputs by their source slices; active-set edits no longer rebuild routine/history structures or recompute hidden Coach analytics.
 - Coordinated page motion around one native View Transition, prevented page-card entrances from stacking beneath it, and limited chart drawing/bar growth to the first presentation of a data signature.
 - Reduced persistent compositor hints, removed the blurred Workout Mode ambient raster, enabled offscreen rendering containment for long Settings/history content, and restored natural touch scrolling outside explicitly requested programmatic movement.
@@ -37,7 +40,7 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 
 - Local reminder delivery, permission denial/recovery, reboot rescheduling, and cold-start taps still require validation on the physical Android phone before release.
 - The performance and motion candidate still needs extended physical-phone use across long personal history, Workout Mode, and navigation before v0.14.0 acceptance and release publication.
-- Archive's true-capsule navigation still changes real width to preserve circular end caps; the pass removes live blur during that bounded movement rather than distorting the vessel with non-uniform scaling.
+- Archive's true-capsule navigation still changes real width to preserve circular end caps; optical sampling remains bounded to the dock while that width changes. Physical-phone smoothness and readability still need user acceptance.
 - Garmin Connect and Forerunner 170 must be tested on the physical phone to establish which exercise sessions, laps, strength segments, repetitions, and metrics Garmin actually publishes through Health Connect.
 - Stable Health Connect does not expose reliable per-set weight, set index, or RPE fields; Archive leaves them absent rather than inferring values. Direct Garmin integration and experimental Android APIs remain out of scope for this candidate.
 

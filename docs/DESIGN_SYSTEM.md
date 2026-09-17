@@ -82,6 +82,8 @@ Do not repeat the same metric as a large hero, card headline, and navigation bad
 - Preserve the centered Home control and expanding Productivity/Health sides.
 - Preserve a true capsule outer vessel with fully circular end caps in collapsed and expanded states; do not non-uniformly scale the shell in a way that turns the end caps elliptical or introduces a cradle/scallop silhouette.
 - The bottom bar floats above content, respects safe areas, and uses a readable liquid-glass treatment.
+- The dock uses a calm transparent center and a narrow optical perimeter for refraction, grazing highlights and thickness. Never make scrolling or expansion substitute a whiter/opaque material. Selection uses the same translucent material with a restrained semantic tint.
+- Keep the vessel out of named View Transition capture and retained opacity animations: these create backdrop isolation in Chromium even while idle. Preserve page transitions and transform-based selection motion independently.
 - Expansion, selection, and collapse share a smooth spring-like motion without shifting the underlying page layout.
 - Navigation actions remain reachable with one hand and cannot be hidden by the device gesture area.
 
