@@ -4,7 +4,7 @@ This document records the current technical boundaries and data contracts. It is
 
 ## System overview
 
-Archive is a local-first React application packaged for Android with Capacitor.
+Archive is a local-first React application that runs as an installable web app and is packaged with Capacitor for Android and iOS. React remains the canonical interface and domain implementation.
 
 ```text
 React UI and domain state
@@ -17,6 +17,8 @@ React UI and domain state
                 +-- Android Health Connect plugin
                 +-- Capacitor local-notifications plugin
                 +-- Android app lifecycle and system settings
+                +-- iOS SwiftUI/HealthKit authorization boundary
+                +-- future iOS HealthKit record importer
 ```
 
 There is no application backend or account service. GitHub stores source and release history; Google Drive stores immutable release artifacts, not editable source.
@@ -27,6 +29,8 @@ There is no application backend or account service. GitHub stores source and rel
 - Vite 7
 - Capacitor 7
 - Native Android/Kotlin and Gradle
+- Native iOS/SwiftUI/HealthKit project (built and signed with Xcode on macOS)
+- Progressive Web App manifest and service worker
 - Browser `localStorage`
 - Gemini API integration
 
@@ -35,7 +39,9 @@ There is no application backend or account service. GitHub stores source and rel
 | Path | Responsibility |
 | --- | --- |
 | `src/main.jsx` | React entry point |
+| `src/pwa.js` | Production-only service-worker registration for hosted installs |
 | `src/App.jsx` | Application shell, page routing, state normalization/persistence, records, modules, health orchestration, and coach integration |
+| `src/IOSHealthPanel.jsx` | Lazy iOS Settings adapter for the narrow SwiftUI/HealthKit native boundary |
 | `src/HabitHoldDeck.jsx` | Focused, hold-to-complete habit interaction, chooser, completion feedback, and undo |
 | `src/dailyRecords.js` | Daily field-presence normalization and exact partial-record habit updates |
 | `src/reminders.js` | Reminder defaults, normalization, stable notification IDs, payloads, and destination validation |
@@ -46,6 +52,8 @@ There is no application backend or account service. GitHub stores source and rel
 | `src/styles.css` | Archive Canvas tokens, layout, component styling, and animation rules |
 | `src/assets/bodymap.js` | Muscle-region body-map data |
 | `android/app/src/main/java/com/kyle/archive/` | Capacitor activity and Health Connect native bridge |
+| `ios/App/App/` | Capacitor iOS host, narrow Archive bridge, SwiftUI Health access surface, and entitlements |
+| `public/manifest.webmanifest` / `public/sw.js` | Standalone install metadata and conservative application-shell caching |
 | `scripts/verify-*.mjs` | Deterministic regression safeguards |
 | `scripts/build-release.ps1` | Signed, immutable release assembly and publication |
 
@@ -92,6 +100,20 @@ The health archive stores source/provider and import provenance. Reconciliation 
 Health Connect exercise sessions are stored as source-attributed, read-only external workouts. Stable Health Connect record identity is preferred so provider corrections replace the earlier local representation instead of creating a duplicate. Session metadata, attributable metrics, laps, segments, repetitions, device provenance, and route availability are retained when the stable Android API supplies them; absent values remain unknown. Raw route coordinates are not stored.
 
 Permissions are progressive. If Archive has at least one supported read grant, it reconciles the available layers and marks optional denied layers as partial rather than blocking the entire import. Per-record availability allows a missing permission to be distinguished from a provider that simply did not publish a value.
+
+## iOS native boundary
+
+The Capacitor iOS target hosts the same compiled React application. `ArchiveBridgeViewController` registers one app-local `ArchiveNative` plugin. Its first responsibility is deliberately narrow: report native capabilities and present a SwiftUI explanation before HealthKit's read-only authorization UI.
+
+The authorization result means the system access review completed; HealthKit does not reveal every denied read category to applications. It must never be described as proof that all data types were granted. This iteration does not query or reconcile HealthKit records, and the React Settings surface labels that state as a foundation rather than an active import. iOS launch and pull-to-refresh explicitly bypass Android Health Connect calls until the native importer exists.
+
+A future importer must implement the same durable principles as Android: source attribution, stable record identity, bounded samples, watch-first sleep, previous-day wake attribution, corrections/deletions, and only launch plus completed pull-to-refresh user-facing reads. Native Swift must return normalized transfer objects through the bridge; it must not create a parallel record store.
+
+The iOS target begins at iOS 15 so its native SwiftUI material is available without parallel legacy UI. The project can be generated and structurally checked on Windows, but compilation, entitlement/provisioning validation, simulator testing, and physical iPhone installation require Xcode on macOS.
+
+## Web-install boundary
+
+The manifest and Apple standalone metadata let the hosted responsive build run from an iPhone Home Screen. The service worker is registered only in production and skips localhost, including Capacitor's local development host. It caches the shell and successful same-origin reads for resilience, but it does not replace JSON backup, cloud synchronization, or a backend. Local records remain in browser/Capacitor storage.
 
 ### Sleep policy
 

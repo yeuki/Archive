@@ -104,7 +104,9 @@ assert.equal(namedDockRules[0][1].trim().split("\n").at(-1), 'html[data-archive-
 assert.match(css, /html\[data-archive-transition="page"\]::view-transition-group\(archive-navigation\)\s*\{\s*z-index: 20;/, "dock snapshot must render above named page panels");
 assert.match(css, /clip-path: inset\(var\(--archive-nav-snapshot-inset, 0\) round 999px\)/, "transition backdrop must be bounded to the capsule, never across the screen");
 assert.match(app, /feDisplacementMap in="SourceGraphic" in2="bevel" scale="0\.01"/, "refraction must use bounded edge displacement");
-const opticalCss = css.split("/* Optical dock")[1];
+const opticalCss = css
+  .split("/* Optical dock")[1]
+  ?.split("/* Archive Living Canvas")[0];
 assert.ok(opticalCss, "the consolidated optical material must exist");
 assert.match(opticalCss, /--nav-body-filter: blur\(0\.5px\) saturate\(1\.04\)/, "glass center must retain near-clear transmission");
 assert.equal([...opticalCss.matchAll(/(?<!-webkit-)backdrop-filter: var\(--nav-body-filter\)/g)].length, 2, "live and snapshot body must share the same clear material");

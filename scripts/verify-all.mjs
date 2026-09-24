@@ -11,6 +11,7 @@ const scripts = [
   "test:habit",
   "test:continuity",
   "test:reminders",
+  "test:product-shell",
   "build",
 ];
 

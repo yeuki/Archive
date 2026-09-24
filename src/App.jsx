@@ -42,8 +42,10 @@ import {
 
 const loadWorkoutMode = () => import("./WorkoutMode.jsx");
 const loadBodyMapVisual = () => import("./BodyMapVisual.jsx");
+const loadIOSHealthPanel = () => import("./IOSHealthPanel.jsx");
 const WorkoutMode = lazy(loadWorkoutMode);
 const BodyMapVisual = lazy(loadBodyMapVisual);
+const IOSHealthPanel = lazy(loadIOSHealthPanel);
 
 const DAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"];
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -5105,22 +5107,72 @@ function BottomNav({ activePage, onPageChange }) {
   );
 }
 
-function TopBar({ title, actionLabel, onAdd, historyLabel = "Open record history", onHistory, backupLabel = "Import or export data", onBackup }) {
+function TopBar({
+  title,
+  contextLabel,
+  actionLabel,
+  onAdd,
+  historyLabel = "Open record history",
+  onHistory,
+  backupLabel = "Import or export data",
+  onBackup,
+}) {
   const isHome = title === "Archive" || title === "Archive Home";
+  const [utilityOpen, setUtilityOpen] = useState(false);
+  const utilityRef = useRef(null);
+  const hasUtilities = Boolean(onHistory || onBackup);
+
+  useEffect(() => {
+    if (!utilityOpen) return undefined;
+    const closeUtilities = (event) => {
+      if (event.type === "keydown" && event.key !== "Escape") return;
+      if (event.type === "pointerdown" && utilityRef.current?.contains(event.target)) return;
+      setUtilityOpen(false);
+    };
+    document.addEventListener("pointerdown", closeUtilities);
+    document.addEventListener("keydown", closeUtilities);
+    return () => {
+      document.removeEventListener("pointerdown", closeUtilities);
+      document.removeEventListener("keydown", closeUtilities);
+    };
+  }, [utilityOpen]);
+
+  const runUtility = (action) => {
+    setUtilityOpen(false);
+    action?.();
+  };
+
   return (
-    <div className="topbar">
+    <header className="topbar">
       <div className="topbar-title">
-        <span>{isHome ? "Today" : "Archive"}</span>
+        <span>{contextLabel ?? (isHome ? "Today" : "Archive")}</span>
         <h1>{isHome ? "Archive" : title}</h1>
       </div>
       <div className="topbar-actions">
-        <button className="icon-btn history-btn" aria-label={historyLabel} onClick={onHistory} />
-        <button className="icon-btn backup-btn" aria-label={backupLabel} onClick={onBackup} />
-        <button className="icon-btn" aria-label={actionLabel} onClick={onAdd}>
-          +
-        </button>
+        {hasUtilities && (
+          <div ref={utilityRef} className={`topbar-utility ${utilityOpen ? "open" : ""}`}>
+            <button
+              type="button"
+              className="topbar-more-button"
+              aria-label="More page actions"
+              aria-expanded={utilityOpen}
+              onClick={() => setUtilityOpen((current) => !current)}
+            >
+              <i /><i /><i />
+            </button>
+            <div className={`topbar-utility-menu motion-popover ${utilityOpen ? "motion-open" : "motion-closed"}`} aria-hidden={!utilityOpen} inert={!utilityOpen ? true : undefined}>
+              {onHistory && <button type="button" onClick={() => runUtility(onHistory)}><span className="utility-symbol history" aria-hidden="true" />{historyLabel.replace(/^Open /, "").replace(/^./, (character) => character.toUpperCase())}</button>}
+              {onBackup && <button type="button" onClick={() => runUtility(onBackup)}><span className="utility-symbol backup" aria-hidden="true" />{backupLabel}</button>}
+            </div>
+          </div>
+        )}
+        {onAdd && (
+          <button type="button" className="topbar-primary-action" aria-label={actionLabel} onClick={onAdd}>
+            <span aria-hidden="true">+</span>
+          </button>
+        )}
       </div>
-    </div>
+    </header>
   );
 }
 
@@ -5188,21 +5240,6 @@ function HomePage({ weekDays, habitNames, goals, workout, continuity, onAdd, onC
     <div className="screen canvas-screen home-canvas-screen">
       <TopBar title="Archive" actionLabel="Add action" onAdd={onAdd} onBackup={onBackup} onHistory={onHistory} />
 
-      <CanvasHero
-        label="Daily value"
-        meta={dateLabel}
-        value={hasTodayScore ? heroScore : "--"}
-        progress={heroScore}
-        progressLabel={hasTodayScore ? "today" : "unlogged"}
-        footLabel={recordedScores.length ? `Weekly average ${averageValue}` : "Your baseline begins with one record"}
-        footValue={recordedScores.length ? `Best ${bestDay}` : "No data yet"}
-        actionLabel={attention.actionLabel || "Review today"}
-        onAction={() => attention.actionLabel ? onContinuation(attention.kind) : onHistory()}
-        className="home-canvas-hero"
-      >
-        <BarChart values={scores} labels={DAY_LABELS} metricType="home" />
-      </CanvasHero>
-
       <PageSection eyebrow="Today" title="For you" meta={todayIsComplete ? "Up to date" : "1 item"} className="for-you-section">
         <GuidedHighlight
           eyebrow={attention.eyebrow}
@@ -5240,6 +5277,21 @@ function HomePage({ weekDays, habitNames, goals, workout, continuity, onAdd, onC
           </div>
         )}
       </PageSection>
+
+      <CanvasHero
+        label="Daily value"
+        meta={dateLabel}
+        value={hasTodayScore ? heroScore : "--"}
+        progress={heroScore}
+        progressLabel={hasTodayScore ? "today" : "unlogged"}
+        footLabel={recordedScores.length ? `Weekly average ${averageValue}` : "Your baseline begins with one record"}
+        footValue={recordedScores.length ? `Best ${bestDay}` : "No data yet"}
+        actionLabel={attention.actionLabel || "Review today"}
+        onAction={() => attention.actionLabel ? onContinuation(attention.kind) : onHistory()}
+        className="home-canvas-hero"
+      >
+        <BarChart values={scores} labels={DAY_LABELS} metricType="home" />
+      </CanvasHero>
 
       <PageSection eyebrow="Overview" title="This week" meta="Last 7 days" className="summary-section">
         <div className="stat-grid">
@@ -5558,7 +5610,35 @@ function HabitPage({ weekDays, habitNames, trackedHabits, goals, onAdd, onCustom
   );
 }
 
-function WaterPage({ weekDays, goals, onAdd, onCustomize, onBackup, onHistory, modules, moduleContext, onRemoveModule, onEditModule, onReorderModule }) {
+function WaterCapture({ weekDays, goals, onQuickWater, onCustomWater }) {
+  const today = dateKey(new Date());
+  const todayEntry = weekDays.find((day) => day.date === today)?.entry ?? null;
+  const recorded = isDailyFieldRecorded(todayEntry, "water");
+  const amount = recorded ? Number(todayEntry.water) || 0 : 0;
+  const target = Math.max(1, Number(goals.waterTarget) || 2000);
+  const progress = clamp((amount / target) * 100, 0, 100);
+  const remaining = Math.max(0, target - amount);
+
+  return (
+    <section className="metric-capture water-capture" aria-label="Log water">
+      <div className="metric-capture-copy">
+        <span>Today</span>
+        <strong>{recorded ? formatWaterVolume(amount, goals) : "Start with a glass"}</strong>
+        <small>{recorded ? `${formatWaterVolume(remaining, goals)} remaining` : `Target ${formatWaterVolume(target, goals)}`}</small>
+      </div>
+      <div className="water-capture-progress" aria-label={`${Math.round(progress)} percent of today's water target`}>
+        <i style={{ "--water-progress": `${progress}%` }} />
+      </div>
+      <div className="metric-capture-actions" aria-label="Quick water amounts">
+        <button type="button" onClick={() => onQuickWater?.(250)}>+{formatWaterVolume(250, goals)}</button>
+        <button type="button" onClick={() => onQuickWater?.(500)}>+{formatWaterVolume(500, goals)}</button>
+        <button type="button" className="quiet" onClick={onCustomWater}>Other</button>
+      </div>
+    </section>
+  );
+}
+
+function WaterPage({ weekDays, goals, onAdd, onCustomize, onBackup, onHistory, onQuickWater, onCustomWater, modules, moduleContext, onRemoveModule, onEditModule, onReorderModule }) {
   const entries = weekDays
     .map((day) => day.entry)
     .filter((entry) => isDailyFieldRecorded(entry, "water"));
@@ -5583,6 +5663,14 @@ function WaterPage({ weekDays, goals, onAdd, onCustomize, onBackup, onHistory, m
       heroProgress={targetProgress}
       heroFootLabel={`Target ${formatWaterVolume(goals.waterTarget, goals)}`}
       heroFootValue={entries.length ? `${Math.round(targetProgress)}%` : "No data"}
+      primaryPanel={(
+        <WaterCapture
+          weekDays={weekDays}
+          goals={goals}
+          onQuickWater={onQuickWater}
+          onCustomWater={onCustomWater}
+        />
+      )}
       insightTitle={targetDays ? `${targetDays} target ${targetDays === 1 ? "day" : "days"}` : "Build a hydration baseline"}
       insightCopy={entries.length
         ? `${targetDays} of ${entries.length} recorded days reached your target. Smaller, repeatable gaps are easier to close than one large evening catch-up.`
@@ -5608,6 +5696,30 @@ function WaterPage({ weekDays, goals, onAdd, onCustomize, onBackup, onHistory, m
   );
 }
 
+function SleepNightSummary({ weekDays, goals, onReview }) {
+  const latest = [...weekDays]
+    .reverse()
+    .find((day) => isDailyFieldRecorded(day.entry, "sleep"));
+  const entry = latest?.entry ?? null;
+  const hours = Number(entry?.sleep) || 0;
+  const source = entry?.sleepSource === "sync"
+    ? (entry.sleepOrigin || "Watch sync")
+    : entry ? "Manual" : "No sleep recorded";
+  const targetDelta = entry ? hours - Number(goals.sleepTarget || 0) : 0;
+
+  return (
+    <section className="metric-capture sleep-night-summary" aria-label="Latest sleep">
+      <div className="sleep-night-mark" aria-hidden="true"><i /></div>
+      <div className="metric-capture-copy">
+        <span>{latest ? formatShortDate(latest.date) : "Latest night"}</span>
+        <strong>{entry ? formatSleepHours(hours) : "Waiting for a night"}</strong>
+        <small>{entry ? `${source} · ${targetDelta >= 0 ? "Target reached" : `${trimNumber(Math.abs(targetDelta), 1)}h below target`}` : "Watch sync is primary; manual entry remains available."}</small>
+      </div>
+      <button type="button" className="metric-capture-review" onClick={onReview}>Review</button>
+    </section>
+  );
+}
+
 function SleepPage({ weekDays, goals, onAdd, onCustomize, onBackup, onHistory, modules, moduleContext, onRemoveModule, onEditModule, onReorderModule }) {
   const entries = weekDays
     .map((day) => day.entry)
@@ -5628,6 +5740,8 @@ function SleepPage({ weekDays, goals, onAdd, onCustomize, onBackup, onHistory, m
   return (
     <div className="screen canvas-screen sleep-screen metric-story-screen">
       <TopBar title="Sleep" actionLabel="Add sleep action" onAdd={onAdd} onBackup={onBackup} onHistory={onHistory} />
+
+      <SleepNightSummary weekDays={weekDays} goals={goals} onReview={onHistory} />
 
       <CanvasHero
         label="7-day average"
@@ -6918,9 +7032,7 @@ function WorkoutHistoryPage({ workout, watchData, onWorkoutChange }) {
 
   return (
     <div className="screen canvas-screen workout-history-screen workout-history-canvas-screen">
-      <div className="topbar">
-        <h1>Workout history</h1>
-      </div>
+      <TopBar title="Workout history" contextLabel="Training archive" />
 
       <CanvasHero
         label="Training archive"
@@ -7532,13 +7644,7 @@ function WorkoutPage({ workout, onWorkoutChange, homeRequest, onAdd, onBackup, m
 
   return (
     <div className="screen canvas-screen workout-canvas-screen">
-      <div className="topbar">
-        <h1>Workout</h1>
-        <div className="topbar-actions">
-          <button className="icon-btn backup-btn" aria-label="Import or export data" onClick={onBackup} />
-          <button className="icon-btn" aria-label="Add workout module" onClick={onAdd}>+</button>
-        </div>
-      </div>
+      <TopBar title="Workout" contextLabel="Training" actionLabel="Add workout module" onAdd={onAdd} onBackup={onBackup} />
 
       <CanvasHero
         label="Training"
@@ -7727,33 +7833,24 @@ function SettingsPage({
   const normalizedHealth = useMemo(() => normalizeConnectedHealth(connectedHealth), [connectedHealth]);
   const normalizedAI = useMemo(() => normalizeAISettings(aiSettings), [aiSettings]);
   const healthStatus = connectedHealthStatusLabel(normalizedHealth);
+  const usesIOSHealthBridge = Capacitor.getPlatform?.() === "ios";
 
   return (
     <div className="screen canvas-screen settings-canvas-screen">
-      <div className="topbar">
-        <div className="topbar-title">
-          <span>Archive</span>
-          <h1>Settings</h1>
-        </div>
-      </div>
+      <TopBar title="Settings" contextLabel="Archive" />
 
-      <CanvasHero
-        label="Archive"
-        meta="Private by design"
-        value="Local"
-        unit="first"
-        progress={100}
-        progressLabel="private"
-        footLabel="Your records stay on this device"
-        footValue="Export by choice"
-        className="settings-canvas-hero"
-      >
+      <section className="settings-trust-summary" aria-label="Archive privacy summary">
+        <div>
+          <span>Private by design</span>
+          <strong>Your archive stays yours.</strong>
+          <p>Records remain local, connected health is optional, and every AI change is reviewable.</p>
+        </div>
         <div className="settings-overview-chips" aria-label="Archive settings highlights">
           <i>Local first</i>
           <i>{normalizedHealth.enabled ? "Health connected" : "Health optional"}</i>
-          <i>Reviewable AI</i>
+          <i>Export by choice</i>
         </div>
-      </CanvasHero>
+      </section>
 
       <PageSection
         eyebrow="Personal"
@@ -7780,17 +7877,23 @@ function SettingsPage({
       <PageSection
         eyebrow="Connections"
         title="Health data"
-        meta={healthStatus}
+        meta={usesIOSHealthBridge ? "HealthKit" : healthStatus}
         className="settings-health-section"
       >
-        <ConnectedHealthPanel
-          connectedHealth={connectedHealth}
-          watchData={watchData}
-          onUpdateConnectedHealth={onUpdateConnectedHealth}
-          onCheckStatus={onCheckConnectedHealth}
-          onOpenSettings={onOpenConnectedHealthSettings}
-          onRequestPermissions={onRequestConnectedHealthPermissions}
-        />
+        {usesIOSHealthBridge ? (
+          <Suspense fallback={<div className="ai-disclosure">Preparing the native Apple Health connection...</div>}>
+            <IOSHealthPanel SettingsSection={SettingsSection} SettingsRow={SettingsRow} />
+          </Suspense>
+        ) : (
+          <ConnectedHealthPanel
+            connectedHealth={connectedHealth}
+            watchData={watchData}
+            onUpdateConnectedHealth={onUpdateConnectedHealth}
+            onCheckStatus={onCheckConnectedHealth}
+            onOpenSettings={onOpenConnectedHealthSettings}
+            onRequestPermissions={onRequestConnectedHealthPermissions}
+          />
+        )}
       </PageSection>
 
       <PageSection
@@ -8436,27 +8539,7 @@ function CoachPage({ analytics, workout, aiSettings, geminiApiKey, coachMessages
 
   return (
     <div className="screen canvas-screen coach-screen coach-canvas-screen">
-      <div className="topbar">
-        <h1>Coach</h1>
-      </div>
-
-      <CanvasHero
-        label="Coach signal"
-        meta="Live archive data"
-        value={coachScore || "--"}
-        unit="7-day score"
-        progress={coachScore}
-        progressLabel="balance"
-        footLabel={coachSignal}
-        footValue={geminiReady ? "Gemini" : "On device"}
-        className="coach-canvas-hero"
-      >
-        <div className="coach-hero-signals">
-          <span><small>Sleep</small><strong>{Number.isFinite(dailySnapshot.sleepAverage7) ? `${trimNumber(dailySnapshot.sleepAverage7, 1)}h` : "--"}</strong></span>
-          <span><small>Water</small><strong>{Number.isFinite(dailySnapshot.waterPercentAverage7) ? `${Math.round(dailySnapshot.waterPercentAverage7)}%` : "--"}</strong></span>
-          <span><small>Build</small><strong>{buildSnapshot.readiness || "--"}</strong></span>
-        </div>
-      </CanvasHero>
+      <TopBar title="Coach" contextLabel="Guidance" />
 
       <PageSection
         eyebrow="Conversation"
@@ -8497,6 +8580,24 @@ function CoachPage({ analytics, workout, aiSettings, geminiApiKey, coachMessages
           </form>
         </div>
       </PageSection>
+
+      <CanvasHero
+        label="Coach context"
+        meta="Live archive data"
+        value={coachScore || "--"}
+        unit="7-day score"
+        progress={coachScore}
+        progressLabel="balance"
+        footLabel={coachSignal}
+        footValue={geminiReady ? "Gemini" : "On device"}
+        className="coach-canvas-hero"
+      >
+        <div className="coach-hero-signals">
+          <span><small>Sleep</small><strong>{Number.isFinite(dailySnapshot.sleepAverage7) ? `${trimNumber(dailySnapshot.sleepAverage7, 1)}h` : "--"}</strong></span>
+          <span><small>Water</small><strong>{Number.isFinite(dailySnapshot.waterPercentAverage7) ? `${Math.round(dailySnapshot.waterPercentAverage7)}%` : "--"}</strong></span>
+          <span><small>Build</small><strong>{buildSnapshot.readiness || "--"}</strong></span>
+        </div>
+      </CanvasHero>
       {reviewProposal && (
         <CoachProposalReview
           proposal={reviewProposal}
@@ -10467,9 +10568,11 @@ export default function App() {
 
   const checkConnectedHealth = async () => {
     const checkedAt = new Date().toISOString();
-    const isNative = typeof Capacitor.isNativePlatform === "function" && Capacitor.isNativePlatform();
+    const isAndroidNative = typeof Capacitor.isNativePlatform === "function"
+      && Capacitor.isNativePlatform()
+      && Capacitor.getPlatform?.() === "android";
 
-    if (!isNative) {
+    if (!isAndroidNative) {
       updateConnectedHealth({
         status: "webPreview",
         statusMessage: "Connected health sync is configured on the Android app, not the browser preview.",
@@ -10529,9 +10632,11 @@ export default function App() {
 
   const requestConnectedHealthPermissions = async () => {
     const requestedAt = new Date().toISOString();
-    const isNative = typeof Capacitor.isNativePlatform === "function" && Capacitor.isNativePlatform();
+    const isAndroidNative = typeof Capacitor.isNativePlatform === "function"
+      && Capacitor.isNativePlatform()
+      && Capacitor.getPlatform?.() === "android";
 
-    if (!isNative) {
+    if (!isAndroidNative) {
       updateConnectedHealth({
         status: "webPreview",
         statusMessage: "Request Health Connect permissions from the Android app, not the browser preview.",
@@ -10651,14 +10756,25 @@ export default function App() {
     const syncTask = (async () => {
       const checkedAt = new Date().toISOString();
       const syncDays = clamp(Math.round(Number(days) || HEALTH_SYNC_WINDOW_DAYS), 1, HEALTH_SYNC_WINDOW_DAYS);
-      const isNative = typeof Capacitor.isNativePlatform === "function" && Capacitor.isNativePlatform();
+      const platform = Capacitor.getPlatform?.() ?? "web";
+      const isAndroidNative = typeof Capacitor.isNativePlatform === "function"
+        && Capacitor.isNativePlatform()
+        && platform === "android";
       const currentSettings = normalizeConnectedHealth(latestStateRef.current.connectedHealth);
+
+      if (platform === "ios") {
+        return {
+          ok: false,
+          status: "iosFoundation",
+          message: "Apple Health import is not connected yet.",
+        };
+      }
 
       if (!currentSettings.enabled) {
         return { ok: false, status: "disabled", message: "Health Connect import is off." };
       }
 
-      if (!isNative) {
+      if (!isAndroidNative) {
         const message = "Watch-data import runs inside the Android app.";
         updateConnectedHealth({
           status: "webPreview",
@@ -10733,9 +10849,11 @@ export default function App() {
 
   const openConnectedHealthSettings = async () => {
     const openedAt = new Date().toISOString();
-    const isNative = typeof Capacitor.isNativePlatform === "function" && Capacitor.isNativePlatform();
+    const isAndroidNative = typeof Capacitor.isNativePlatform === "function"
+      && Capacitor.isNativePlatform()
+      && Capacitor.getPlatform?.() === "android";
 
-    if (!isNative) {
+    if (!isAndroidNative) {
       updateConnectedHealth({
         status: "webPreview",
         statusMessage: "Open this from the Android app to configure Health Connect.",
@@ -10797,9 +10915,13 @@ export default function App() {
   };
 
   const runLaunchHealthSync = async () => {
-    const isNative = typeof Capacitor.isNativePlatform === "function" && Capacitor.isNativePlatform();
+    const platform = Capacitor.getPlatform?.() ?? "web";
+    const isAndroidNative = typeof Capacitor.isNativePlatform === "function"
+      && Capacitor.isNativePlatform()
+      && platform === "android";
     const currentSettings = normalizeConnectedHealth(latestStateRef.current.connectedHealth);
-    if (!isNative) return { ok: false, status: "webPreview" };
+    if (platform === "ios") return { ok: false, status: "iosFoundation" };
+    if (!isAndroidNative) return { ok: false, status: "webPreview" };
 
     try {
       // This call is configuration-only. The native layer cancels periodic jobs
@@ -10897,8 +11019,10 @@ export default function App() {
 
   useEffect(() => {
     const snapshotId = connectedHealth.lastAppliedAutomaticSnapshotId;
-    const isNative = typeof Capacitor.isNativePlatform === "function" && Capacitor.isNativePlatform();
-    if (!isNative || !snapshotId) return undefined;
+    const isAndroidNative = typeof Capacitor.isNativePlatform === "function"
+      && Capacitor.isNativePlatform()
+      && Capacitor.getPlatform?.() === "android";
+    if (!isAndroidNative || !snapshotId) return undefined;
     let cancelled = false;
 
     ConnectedHealthNative.acknowledgeAutomaticSync({ snapshotId })
@@ -10958,7 +11082,7 @@ export default function App() {
       const result = await pullRefreshActionRef.current?.();
       const nextState = result?.ok
         ? "complete"
-        : ["disabled", "permissionsNeeded", "webPreview"].includes(result?.status)
+        : ["disabled", "permissionsNeeded", "webPreview", "iosFoundation"].includes(result?.status)
           ? result.status
           : "error";
       visualState = nextState;
@@ -11209,7 +11333,7 @@ export default function App() {
     transitionOverlay(() => {
       setChoiceOpen(false);
       setRecordDate(dateKey(new Date()));
-      setDailySheetFocus("");
+      setDailySheetFocus("water");
       setSheetOpen(true);
     });
   };
@@ -11361,7 +11485,7 @@ export default function App() {
     workoutHistory: <MemoWorkoutHistoryPage workout={state.workout} watchData={watchData} onWorkoutChange={workoutChangeAction} />,
     home: <MemoHomePage weekDays={weekDays} habitNames={trackedHabitNames} goals={goals} workout={state.workout} continuity={continuity} onAdd={addChoiceAction} onCustomize={modulePickerAction} onBackup={backupAction} onHistory={historyAction} onContinuation={homeContinuationAction} onQuickWater={quickWaterAction} onCustomWater={customWaterAction} onDismissReflection={dismissReflectionAction} modules={pageModules.home} moduleContext={moduleContext} onRemoveModule={removePageModuleAction} onEditModule={editPageModuleAction} onReorderModule={reorderPageModuleAction} />,
     habit: <MemoHabitPage weekDays={weekDays} habitNames={state.habitNames} trackedHabits={trackedHabitNames} goals={goals} onAdd={addChoiceAction} onCustomize={modulePickerAction} onBackup={backupAction} onHistory={historyAction} modules={pageModules.habit} moduleContext={moduleContext} onSetHabitCompletion={habitCompletionAction} onToggleHabitTracking={toggleHabitAction} onRenameHabit={renameHabitAction} onReorderHabit={reorderHabitAction} onRemoveModule={removePageModuleAction} onEditModule={editPageModuleAction} onReorderModule={reorderPageModuleAction} />,
-    water: <MemoWaterPage weekDays={weekDays} goals={goals} onAdd={addChoiceAction} onCustomize={modulePickerAction} onBackup={backupAction} onHistory={historyAction} modules={pageModules.water} moduleContext={moduleContext} onRemoveModule={removePageModuleAction} onEditModule={editPageModuleAction} onReorderModule={reorderPageModuleAction} />,
+    water: <MemoWaterPage weekDays={weekDays} goals={goals} onAdd={addChoiceAction} onCustomize={modulePickerAction} onBackup={backupAction} onHistory={historyAction} onQuickWater={quickWaterAction} onCustomWater={customWaterAction} modules={pageModules.water} moduleContext={moduleContext} onRemoveModule={removePageModuleAction} onEditModule={editPageModuleAction} onReorderModule={reorderPageModuleAction} />,
     sleep: <MemoSleepPage weekDays={weekDays} goals={goals} onAdd={addChoiceAction} onCustomize={modulePickerAction} onBackup={backupAction} onHistory={historyAction} modules={pageModules.sleep} moduleContext={moduleContext} onRemoveModule={removePageModuleAction} onEditModule={editPageModuleAction} onReorderModule={reorderPageModuleAction} />,
     stats: <MemoStatsPage entries={state.entries} habitNames={trackedHabitNames} goals={goals} onAdd={addChoiceAction} onCustomize={modulePickerAction} onBackup={backupAction} onHistory={historyAction} onEditDate={recordDateAction} modules={pageModules.stats} moduleContext={moduleContext} onRemoveModule={removePageModuleAction} onEditModule={editPageModuleAction} onReorderModule={reorderPageModuleAction} />,
     coach: <MemoCoachPage analytics={coachAnalytics} workout={state.workout} aiSettings={aiSettings} geminiApiKey={geminiApiKey} coachMessages={state.coachMessages} onSaveMessages={coachMessagesAction} onApplyProposal={coachProposalAction} />,

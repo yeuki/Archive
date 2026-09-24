@@ -6,6 +6,9 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 
 ### Added
 
+- Added an installable standalone web-app shell with iPhone home-screen metadata, Archive iconography, and conservative same-origin offline shell caching.
+- Added the Capacitor iOS platform, branded Archive icon/launch assets, a narrow native bridge, and a SwiftUI Apple Health access primer. The primer requests read-only HealthKit categories only after an explicit user action; HealthKit record import remains a documented follow-up.
+- Added deterministic product-shell coverage for the Living Canvas hierarchy, PWA contract, and iOS bridge/entitlement wiring.
 - Added opt-in daily habit and water reminders with independent times, privacy-safe notification copy, Android permission-on-enable, and tap-through routing after the existing launch transition.
 - Added deterministic reminder payload, normalization, and cold-start routing coverage plus browser-preview configuration that never creates browser notifications.
 - Added deterministic Home continuity that prioritizes exact workout resume, workout review, today's scheduled routine, the next pending habit, hydration, and a calm caught-up state.
@@ -21,6 +24,9 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 
 ### Changed
 
+- Reworked Archive's shared screen grammar into a task-first Living Canvas: editorial page titles, one dominant action, quieter utility menus, fewer nested card boundaries, continuous data sections, and personalized modules that visually join the page until edited.
+- Moved Home's next useful action ahead of supporting weekly analysis, added direct hydration capture and a latest-night sleep surface, and aligned Workout, Workout History, Coach, and Settings to the same page hierarchy without merging destinations or changing navigation behavior.
+- Kept React as the canonical interface and data layer on web, Android, and iOS. SwiftUI is limited to system-native boundaries rather than duplicating navigation, screens, or persisted records.
 - Replaced the bottom dock's milky glass stack with a clear center, narrow sampled/displaced bevel, directional grazing highlights, restrained depth and a translucent selection lens. Removed decorative caustics and all scrolling/movement-dependent material substitutions.
 - Removed the dock's retained opacity entrance and permanent View Transition name, both of which isolated its backdrop in Chromium. Page switches use a temporary topmost, capsule-clipped dock snapshot so page panels cannot cover it; idle sampling is restored after completion or interruption. Existing page motion, true-width capsule, centered Home, destination order, compact behavior and expansion interactions remain intact.
 - Extended the optical treatment across the capsule with gentle full-body curvature, small fixed backdrop softening and blended thickness instead of a hard inner outline. Kept the transparent center, narrow real-displacement rim and invariant scrolling material.
@@ -41,6 +47,9 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 
 ### Known issues and unfinished work
 
+- The generated iOS project, HealthKit entitlement, and SwiftUI bridge require compilation, signing-team selection, permission review, and physical-device validation in Xcode on macOS. Windows can only verify their structure.
+- HealthKit authorization is prepared, but iOS health-record querying, normalization, reconciliation, and launch/pull-to-refresh ingestion are intentionally not represented as complete yet.
+- PWA offline caching is intentionally limited to the local application shell and previously fetched same-origin assets; local records still rely on the browser's on-device storage and user-managed JSON backup.
 - Local reminder delivery, permission denial/recovery, reboot rescheduling, and cold-start taps still require validation on the physical Android phone before release.
 - The performance and motion candidate still needs extended physical-phone use across long personal history, Workout Mode, and navigation before v0.14.0 acceptance and release publication.
 - Archive's true-capsule navigation still changes real width to preserve circular end caps; optical sampling remains bounded to the dock while that width changes. Physical-phone smoothness and readability still need user acceptance.

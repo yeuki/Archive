@@ -61,15 +61,20 @@ function New-ArchiveGradientBrush {
 function Draw-ArchiveMark {
   param(
     [System.Drawing.Graphics]$Graphics,
-    [single]$Scale
+    [single]$Scale,
+    [string]$MonochromeColor = ""
   )
 
-  $gradient = New-ArchiveGradientBrush -Scale $Scale
-  $outerPen = [System.Drawing.Pen]::new($gradient, 7.2 * $Scale)
+  $strokeBrush = if ($MonochromeColor) {
+    [System.Drawing.SolidBrush]::new([System.Drawing.ColorTranslator]::FromHtml($MonochromeColor))
+  } else {
+    New-ArchiveGradientBrush -Scale $Scale
+  }
+  $outerPen = [System.Drawing.Pen]::new($strokeBrush, 7.2 * $Scale)
   $outerPen.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
   $outerPen.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
   $outerPen.LineJoin = [System.Drawing.Drawing2D.LineJoin]::Round
-  $wavePen = [System.Drawing.Pen]::new($gradient, 5.6 * $Scale)
+  $wavePen = [System.Drawing.Pen]::new($strokeBrush, 5.6 * $Scale)
   $wavePen.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
   $wavePen.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
   $wavePen.LineJoin = [System.Drawing.Drawing2D.LineJoin]::Round
@@ -127,21 +132,22 @@ function Draw-ArchiveMark {
   $Graphics.DrawPath($outerPen, $outer)
   $Graphics.DrawPath($wavePen, $wave)
 
-  $green = [System.Drawing.SolidBrush]::new([System.Drawing.ColorTranslator]::FromHtml("#E5F9E4"))
-  $Graphics.FillEllipse($green, (85.2 - 4.4) * $Scale, (76.5 - 4.4) * $Scale, 8.8 * $Scale, 8.8 * $Scale)
+  $endpointColor = if ($MonochromeColor) { $MonochromeColor } else { "#E5F9E4" }
+  $endpoint = [System.Drawing.SolidBrush]::new([System.Drawing.ColorTranslator]::FromHtml($endpointColor))
+  $Graphics.FillEllipse($endpoint, (85.2 - 4.4) * $Scale, (76.5 - 4.4) * $Scale, 8.8 * $Scale, 8.8 * $Scale)
 
-  $green.Dispose()
+  $endpoint.Dispose()
   $wave.Dispose()
   $outer.Dispose()
   $wavePen.Dispose()
   $outerPen.Dispose()
-  $gradient.Dispose()
+  $strokeBrush.Dispose()
 }
 
 function New-ArchiveBitmap {
   param(
     [int]$Size,
-    [ValidateSet("foreground", "rounded", "round")]
+    [ValidateSet("foreground", "rounded", "round", "square")]
     [string]$Variant,
     [string]$TargetPath
   )
@@ -158,7 +164,10 @@ function New-ArchiveBitmap {
   if ($Variant -ne "foreground") {
     $charcoal = [System.Drawing.SolidBrush]::new([System.Drawing.ColorTranslator]::FromHtml("#1D1D1F"))
     $edgePen = [System.Drawing.Pen]::new([System.Drawing.ColorTranslator]::FromHtml("#454548"), 1.5 * ($renderSize / 108))
-    if ($Variant -eq "round") {
+    if ($Variant -eq "square") {
+      $graphics.FillRectangle($charcoal, 0, 0, $renderSize, $renderSize)
+      $graphics.DrawRectangle($edgePen, 1, 1, $renderSize - 3, $renderSize - 3)
+    } elseif ($Variant -eq "round") {
       $graphics.FillEllipse($charcoal, 0, 0, $renderSize - 1, $renderSize - 1)
       $graphics.DrawEllipse($edgePen, 1, 1, $renderSize - 3, $renderSize - 3)
     } else {
@@ -194,9 +203,14 @@ function New-ArchiveBitmap {
     $bitmap = $paddedBitmap
   }
 
-  $final = [System.Drawing.Bitmap]::new($Size, $Size, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+  $finalPixelFormat = if ($Variant -eq "square") {
+    [System.Drawing.Imaging.PixelFormat]::Format24bppRgb
+  } else {
+    [System.Drawing.Imaging.PixelFormat]::Format32bppArgb
+  }
+  $final = [System.Drawing.Bitmap]::new($Size, $Size, $finalPixelFormat)
   $finalGraphics = [System.Drawing.Graphics]::FromImage($final)
-  $finalGraphics.Clear([System.Drawing.Color]::Transparent)
+  $finalGraphics.Clear($(if ($Variant -eq "square") { [System.Drawing.ColorTranslator]::FromHtml("#1D1D1F") } else { [System.Drawing.Color]::Transparent }))
   $finalGraphics.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality
   $finalGraphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
   $finalGraphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
@@ -211,8 +225,43 @@ function New-ArchiveBitmap {
   $final.Dispose()
 }
 
+function New-ArchiveSplashBitmap {
+  param(
+    [int]$Size,
+    [string]$TargetPath
+  )
+
+  $bitmap = [System.Drawing.Bitmap]::new($Size, $Size, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+  $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+  $graphics.Clear([System.Drawing.ColorTranslator]::FromHtml("#FCFCFB"))
+  $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+  $graphics.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+  $graphics.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality
+
+  $markSize = 300
+  $markScale = $markSize / 108
+  $markOrigin = ($Size - $markSize) / 2
+  $graphics.TranslateTransform($markOrigin, $markOrigin)
+  Draw-ArchiveMark -Graphics $graphics -Scale $markScale -MonochromeColor "#B4B4BB"
+  $graphics.ResetTransform()
+  $graphics.Dispose()
+
+  $targetDirectory = Split-Path -Parent $TargetPath
+  New-Item -ItemType Directory -Path $targetDirectory -Force | Out-Null
+  $bitmap.Save($TargetPath, [System.Drawing.Imaging.ImageFormat]::Png)
+  $bitmap.Dispose()
+}
+
 New-ArchiveBitmap -Size 1024 -Variant "rounded" -TargetPath (Join-Path $BrandRoot "archive-icon-1024.png")
 New-ArchiveBitmap -Size 1024 -Variant "foreground" -TargetPath (Join-Path $BrandRoot "archive-icon-foreground-1024.png")
+
+$IOSAssetRoot = Join-Path $ProjectRoot "ios\App\App\Assets.xcassets"
+if (Test-Path $IOSAssetRoot) {
+  New-ArchiveBitmap -Size 1024 -Variant "square" -TargetPath (Join-Path $IOSAssetRoot "AppIcon.appiconset\AppIcon-512@2x.png")
+  foreach ($splashName in @("splash-2732x2732.png", "splash-2732x2732-1.png", "splash-2732x2732-2.png")) {
+    New-ArchiveSplashBitmap -Size 2732 -TargetPath (Join-Path $IOSAssetRoot "Splash.imageset\$splashName")
+  }
+}
 
 foreach ($density in $DensitySizes.Keys) {
   $directory = Join-Path $ResourceRoot "mipmap-$density"
@@ -223,4 +272,4 @@ foreach ($density in $DensitySizes.Keys) {
   New-ArchiveBitmap -Size $foregroundSize -Variant "foreground" -TargetPath (Join-Path $directory "ic_launcher_foreground.png")
 }
 
-Write-Host "Generated Archive launcher assets from the approved brand geometry."
+Write-Host "Generated Archive Android and available iOS identity assets from the approved brand geometry."

@@ -69,9 +69,16 @@ The center Home control is surrounded by two expandable navigation groups. These
 ### Connect watch data
 
 - Android Health Connect is the current bridge for supported Samsung Health data and future compatible providers.
+- iPhone uses the same React product and local data model. A native SwiftUI/HealthKit authorization boundary is established, while actual HealthKit querying and reconciliation remain a dedicated implementation stage rather than being presented as working sync.
 - User-facing synchronization has exactly two triggers: launch initialization and a completed pull-to-refresh gesture.
 - Launch synchronization is hidden behind the centered Archive A loading treatment; pull-to-refresh remains non-blocking.
 - Imported records retain provenance and are reconciled so corrections and deletions do not leave stale summaries.
+
+### Install and use across platforms
+
+- The responsive web build can be installed to an iPhone Home Screen as a standalone web app without creating a second UI implementation.
+- Capacitor packages that same React product for Android and provides the native iOS shell used when Apple frameworks are required.
+- Platform-native code stays behind small bridge contracts. It does not become an alternate source of truth for pages, navigation, or records.
 
 ### Work with the coach
 

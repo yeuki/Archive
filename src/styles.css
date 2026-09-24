@@ -11088,3 +11088,877 @@ html[data-archive-transition="page"]::view-transition-new(archive-navigation) {
 @media (prefers-reduced-motion: reduce) {
   .navigation-chrome .nav-shell, .nav-specular, .nav-selection-lens { transition: none !important; }
 }
+
+/* Archive Living Canvas — one continuous journal, not a stack of widgets. */
+
+:root {
+  --paper: #fcfcfb;
+  --panel: #ffffff;
+  --ink: #111113;
+  --muted: #74747a;
+  --line: rgba(28, 28, 30, 0.075);
+  --line-strong: rgba(28, 28, 30, 0.12);
+  --content-radius: 24px;
+  --control-radius: 999px;
+  --canvas-gutter: clamp(18px, 5.2vw, 24px);
+  --section-space: 36px;
+  --contained-shadow:
+    0 1px 2px rgba(18, 18, 20, 0.035),
+    0 12px 34px rgba(18, 18, 20, 0.065);
+  --module-shadow: var(--contained-shadow);
+  --module-border: var(--line);
+}
+
+body {
+  background: #f2f2f0;
+  overscroll-behavior-y: none;
+}
+
+.app-shell {
+  background:
+    radial-gradient(circle at 12% -6%, color-mix(in srgb, var(--accent-pale) 50%, transparent), transparent 25rem),
+    var(--paper);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.025);
+}
+
+.screen,
+.canvas-screen {
+  gap: 0;
+  padding:
+    calc(18px + env(safe-area-inset-top))
+    var(--canvas-gutter)
+    var(--bottom-nav-clearance);
+}
+
+.canvas-screen > * {
+  min-width: 0;
+}
+
+.topbar {
+  min-height: 96px;
+  align-items: flex-end;
+  padding: 4px 0 14px;
+  overflow: visible;
+  view-transition-name: archive-topbar;
+}
+
+.topbar-title {
+  min-width: 0;
+}
+
+.topbar-title > span {
+  display: block;
+  margin-bottom: 7px;
+  color: color-mix(in srgb, var(--accent-deep) 72%, var(--muted));
+  font-size: 0.68rem;
+  font-weight: 680;
+  letter-spacing: 0.12em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.topbar h1 {
+  display: block;
+  max-width: 13ch;
+  overflow: hidden;
+  font-size: clamp(2.45rem, 11.4vw, 3.2rem);
+  font-weight: 660;
+  letter-spacing: -0.052em;
+  line-height: 0.94;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.page-stage:not(.metric-home) .topbar h1::after {
+  display: none;
+}
+
+.topbar-actions {
+  position: relative;
+  flex: none;
+  gap: 8px;
+  padding-bottom: 1px;
+}
+
+.topbar-more-button,
+.topbar-primary-action {
+  width: 46px;
+  height: 46px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: var(--control-radius);
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 150ms ease, background 180ms ease, box-shadow 180ms ease;
+}
+
+.topbar-more-button {
+  grid-auto-flow: column;
+  gap: 3px;
+  background: rgba(255, 255, 255, 0.76);
+  box-shadow: 0 5px 18px rgba(18, 18, 20, 0.045);
+}
+
+.topbar-more-button i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.topbar-primary-action {
+  border-color: rgba(17, 17, 19, 0.92);
+  background: #111113;
+  color: #ffffff;
+  box-shadow: 0 8px 20px rgba(17, 17, 19, 0.14);
+}
+
+.topbar-primary-action span {
+  transform: translateY(-1px);
+  font-size: 1.55rem;
+  font-weight: 350;
+  line-height: 1;
+}
+
+.topbar-more-button:active,
+.topbar-primary-action:active {
+  transform: scale(0.94);
+}
+
+.topbar-utility {
+  position: relative;
+}
+
+.topbar-utility-menu {
+  position: absolute;
+  z-index: 60;
+  top: calc(100% + 9px);
+  right: 0;
+  width: min(260px, calc(100vw - 40px));
+  display: grid;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 18px 48px rgba(18, 18, 20, 0.14);
+  -webkit-backdrop-filter: blur(18px) saturate(1.08);
+  backdrop-filter: blur(18px) saturate(1.08);
+}
+
+.topbar-utility-menu button {
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  border-radius: 13px;
+  padding: 0 12px;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+}
+
+.topbar-utility-menu button + button {
+  border-top: 1px solid var(--line);
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+.topbar-utility-menu button:active {
+  background: rgba(118, 118, 128, 0.09);
+}
+
+.utility-symbol {
+  position: relative;
+  width: 22px;
+  height: 22px;
+}
+
+.utility-symbol.history::before {
+  content: "";
+  position: absolute;
+  inset: 3px 2px 2px;
+  border: 1.5px solid currentColor;
+  border-radius: 5px;
+}
+
+.utility-symbol.history::after {
+  content: "";
+  position: absolute;
+  left: 5px;
+  right: 5px;
+  top: 8px;
+  height: 1.5px;
+  background: currentColor;
+  box-shadow: 0 -4px 0 -0.25px currentColor;
+}
+
+.utility-symbol.backup::before {
+  content: "";
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  bottom: 2px;
+  height: 10px;
+  border: 1.5px solid currentColor;
+  border-top: 0;
+  border-radius: 0 0 5px 5px;
+}
+
+.utility-symbol.backup::after {
+  content: "↓";
+  position: absolute;
+  inset: -5px 0 0;
+  display: grid;
+  place-items: center;
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+.canvas-screen > .page-section,
+.canvas-screen > .canvas-hero,
+.canvas-screen > .metric-capture,
+.canvas-screen > .settings-trust-summary {
+  margin-top: var(--section-space);
+}
+
+.home-canvas-screen > .for-you-section,
+.metric-story-screen > .metric-capture,
+.metric-story-screen > .habit-focus-section,
+.workout-canvas-screen > .canvas-hero,
+.workout-history-canvas-screen > .canvas-hero,
+.coach-canvas-screen > .coach-conversation-section,
+.settings-canvas-screen > .settings-trust-summary {
+  margin-top: 14px;
+}
+
+.canvas-screen .page-section {
+  display: grid;
+  gap: 16px;
+  padding: 0;
+}
+
+.canvas-screen .page-section-heading {
+  align-items: end;
+  padding: 0 1px 11px;
+  border-bottom: 1px solid var(--line);
+}
+
+.canvas-screen .page-section-heading > div:first-child > span {
+  margin-bottom: 6px;
+  color: color-mix(in srgb, var(--accent-deep) 72%, var(--muted));
+  font-size: 0.65rem;
+  font-weight: 680;
+  letter-spacing: 0.12em;
+}
+
+.canvas-screen .page-section-heading h2 {
+  font-size: clamp(1.45rem, 6.3vw, 1.78rem);
+  font-weight: 640;
+  letter-spacing: -0.035em;
+  line-height: 1.04;
+}
+
+.canvas-screen .page-section-meta {
+  padding-bottom: 2px;
+}
+
+.canvas-screen .page-section-meta small,
+.canvas-screen .page-section-meta button {
+  font-size: 0.76rem;
+}
+
+.canvas-screen .page-section-meta button {
+  min-height: 36px;
+  border: 0;
+  border-radius: var(--control-radius);
+  padding: 0 12px;
+  background: rgba(118, 118, 128, 0.085);
+  color: var(--ink);
+}
+
+.canvas-screen .page-section-content {
+  gap: 14px;
+}
+
+.canvas-hero {
+  min-height: 0;
+  gap: 17px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--accent-mid) 20%, var(--line));
+  border-radius: 30px;
+  padding: 22px 21px 20px;
+  background:
+    radial-gradient(circle at 8% 110%, color-mix(in srgb, var(--accent-mid) 30%, transparent), transparent 43%),
+    radial-gradient(circle at 98% -14%, color-mix(in srgb, var(--accent-soft) 62%, transparent), transparent 46%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0.77));
+  box-shadow: var(--contained-shadow);
+  view-transition-name: archive-hero;
+}
+
+.canvas-hero::before,
+.canvas-hero::after,
+.canvas-hero-atmosphere {
+  opacity: 0.55;
+}
+
+.canvas-hero-head > span {
+  font-size: 0.68rem;
+  font-weight: 680;
+  letter-spacing: 0.11em;
+}
+
+.canvas-hero-head > small {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.canvas-hero-main {
+  min-height: 76px;
+  align-items: center;
+}
+
+.canvas-hero-value {
+  align-items: baseline;
+  gap: 8px;
+}
+
+.canvas-hero-value strong {
+  font-size: clamp(3.35rem, 15vw, 4.45rem);
+  font-weight: 630;
+  letter-spacing: -0.065em;
+  line-height: 0.88;
+}
+
+.canvas-hero-value span {
+  max-width: 8ch;
+  color: #515158;
+  font-size: 0.8rem;
+  font-weight: 560;
+  line-height: 1.15;
+}
+
+.canvas-hero-progress {
+  gap: 5px;
+}
+
+.canvas-hero-progress > i {
+  width: 64px;
+  height: 64px;
+  background: conic-gradient(var(--accent-deep) var(--progress), rgba(118, 118, 128, 0.11) 0);
+}
+
+.canvas-hero-progress > i::before {
+  inset: 7px;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.canvas-hero-progress b {
+  font-size: 0.82rem;
+}
+
+.canvas-hero-progress small {
+  font-size: 0.62rem;
+}
+
+.canvas-hero-chart {
+  min-height: 118px;
+  padding-top: 3px;
+}
+
+.canvas-hero-foot {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 12px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(28, 28, 30, 0.07);
+}
+
+.canvas-hero-foot > span {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.canvas-hero-foot > b {
+  font-size: 0.8rem;
+  font-weight: 620;
+}
+
+.canvas-hero-foot > button {
+  min-height: 42px;
+  grid-column: 1 / -1;
+  justify-self: stretch;
+  justify-content: space-between;
+  border: 0;
+  border-radius: 15px;
+  padding: 0 15px;
+  background: #111113;
+  color: #ffffff;
+}
+
+.panel,
+.stat-card,
+.module-panel {
+  animation: none;
+}
+
+.canvas-screen .stat-grid {
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.76);
+  box-shadow: 0 5px 18px rgba(18, 18, 20, 0.035);
+}
+
+.canvas-screen .stat-card {
+  min-height: 84px;
+  border: 0;
+  border-radius: 0;
+  padding: 14px 13px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.canvas-screen .stat-card + .stat-card {
+  border-left: 1px solid var(--line);
+}
+
+.canvas-screen .stat-card small {
+  font-size: 0.59rem;
+  line-height: 1.2;
+}
+
+.canvas-screen .stat-card strong {
+  font-size: 1.25rem;
+  font-weight: 620;
+  letter-spacing: -0.025em;
+}
+
+.guided-highlight {
+  min-height: 0;
+  gap: 15px;
+  border: 1px solid color-mix(in srgb, var(--accent-mid) 22%, var(--line));
+  border-radius: var(--content-radius);
+  padding: 20px;
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--accent-pale) 72%, #fff), rgba(255, 255, 255, 0.96));
+  box-shadow: none;
+}
+
+.guided-highlight-copy small {
+  color: color-mix(in srgb, var(--accent-deep) 72%, var(--muted));
+}
+
+.guided-highlight-copy strong {
+  font-size: 1.2rem;
+  font-weight: 640;
+  letter-spacing: -0.025em;
+}
+
+.guided-highlight-copy p {
+  color: #5d5d63;
+  line-height: 1.45;
+}
+
+.guided-highlight > button {
+  border-color: transparent;
+  background: #111113;
+  color: white;
+}
+
+.canvas-screen :is(.summary-list, .compare, .correlation-list, .chart-feature-panel, .year-panel, .habit-tracking-panel, .workout-score-panel, .workout-volume-panel, .workout-balance) {
+  border: 0;
+  border-radius: 0;
+  padding: 4px 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.canvas-screen :is(.summary-list, .compare, .correlation-list) .section-title {
+  padding-bottom: 11px;
+  border-bottom: 1px solid var(--line);
+}
+
+.canvas-screen .summary-row,
+.canvas-screen .compare-row,
+.canvas-screen .correlation-row {
+  min-height: 52px;
+  padding: 10px 1px;
+}
+
+.canvas-screen .summary-row + .summary-row,
+.canvas-screen .compare-row + .compare-row,
+.canvas-screen .correlation-row + .correlation-row {
+  border-top: 1px solid var(--line);
+}
+
+.canvas-screen .canvas-insight,
+.canvas-screen .weekly-reflection,
+.quick-water-panel {
+  border: 0;
+  border-radius: 18px;
+  background: rgba(118, 118, 128, 0.07);
+  box-shadow: none;
+}
+
+.metric-capture {
+  position: relative;
+  display: grid;
+  gap: 18px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--accent-mid) 25%, var(--line));
+  border-radius: 28px;
+  padding: 22px;
+  background:
+    radial-gradient(circle at 100% 0, color-mix(in srgb, var(--accent-mid) 33%, transparent), transparent 55%),
+    #ffffff;
+  box-shadow: var(--contained-shadow);
+}
+
+.metric-capture-copy {
+  display: grid;
+  gap: 5px;
+}
+
+.metric-capture-copy > span {
+  color: color-mix(in srgb, var(--accent-deep) 72%, var(--muted));
+  font-size: 0.67rem;
+  font-weight: 680;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.metric-capture-copy > strong {
+  font-size: clamp(1.85rem, 8.5vw, 2.4rem);
+  font-weight: 640;
+  letter-spacing: -0.045em;
+  line-height: 1;
+}
+
+.metric-capture-copy > small {
+  color: var(--muted);
+  font-size: 0.79rem;
+  line-height: 1.35;
+}
+
+.water-capture-progress {
+  height: 9px;
+  overflow: hidden;
+  border-radius: var(--control-radius);
+  background: rgba(118, 118, 128, 0.1);
+}
+
+.water-capture-progress i {
+  display: block;
+  width: var(--water-progress);
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #dbe6ff, var(--accent-mid), #7ca1f3);
+  transition: width 420ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.metric-capture-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.metric-capture-actions button,
+.metric-capture-review {
+  min-height: 46px;
+  border: 0;
+  border-radius: 15px;
+  background: #111113;
+  color: #ffffff;
+  font-weight: 610;
+  transition: transform 150ms ease, opacity 150ms ease;
+}
+
+.metric-capture-actions button.quiet {
+  background: rgba(118, 118, 128, 0.09);
+  color: var(--ink);
+}
+
+.metric-capture-actions button:active,
+.metric-capture-review:active {
+  transform: scale(0.96);
+}
+
+.sleep-night-summary {
+  grid-template-columns: 52px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 18px;
+}
+
+.sleep-night-mark {
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent-mid) 24%, #fff);
+}
+
+.sleep-night-mark i {
+  width: 24px;
+  height: 24px;
+  border: 2px solid color-mix(in srgb, var(--accent-deep) 72%, #6d5c74);
+  border-top-color: transparent;
+  border-right-color: transparent;
+  border-radius: 50%;
+  transform: rotate(-28deg);
+}
+
+.sleep-night-summary .metric-capture-copy > strong {
+  font-size: 1.62rem;
+}
+
+.sleep-night-summary .metric-capture-review {
+  min-width: 70px;
+  min-height: 42px;
+  padding: 0 13px;
+  background: rgba(118, 118, 128, 0.09);
+  color: var(--ink);
+}
+
+.settings-trust-summary {
+  display: grid;
+  gap: 18px;
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  padding: 22px;
+  background:
+    radial-gradient(circle at 95% 10%, rgba(229, 249, 228, 0.8), transparent 42%),
+    radial-gradient(circle at 0 100%, rgba(201, 160, 220, 0.18), transparent 45%),
+    #ffffff;
+  box-shadow: var(--contained-shadow);
+}
+
+.settings-trust-summary > div:first-child {
+  display: grid;
+  gap: 7px;
+}
+
+.settings-trust-summary span {
+  color: #557453;
+  font-size: 0.67rem;
+  font-weight: 680;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.settings-trust-summary strong {
+  font-size: 1.65rem;
+  font-weight: 640;
+  letter-spacing: -0.04em;
+}
+
+.settings-trust-summary p {
+  max-width: 34ch;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.settings-overview-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.settings-overview-chips i {
+  border: 1px solid var(--line);
+  border-radius: var(--control-radius);
+  padding: 7px 10px;
+  background: rgba(255, 255, 255, 0.7);
+  color: #56565d;
+  font-size: 0.68rem;
+  font-style: normal;
+  font-weight: 560;
+}
+
+.settings-canvas-screen .settings-section {
+  border-color: var(--line);
+  border-radius: 20px;
+  box-shadow: none;
+}
+
+.settings-canvas-screen .settings-group {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.settings-canvas-screen .settings-row {
+  min-height: 58px;
+}
+
+.coach-conversation-section .page-section-heading {
+  border-bottom: 0;
+  padding-bottom: 2px;
+}
+
+.coach-thread-panel {
+  border: 1px solid var(--line);
+  border-radius: 26px;
+  box-shadow: var(--contained-shadow);
+}
+
+.coach-canvas-hero {
+  margin-top: 30px;
+}
+
+.workout-month-calendar,
+.workout-day-history,
+.year-panel {
+  border: 1px solid var(--line) !important;
+  border-radius: 25px !important;
+  padding: 17px !important;
+  background: rgba(255, 255, 255, 0.88) !important;
+  box-shadow: 0 5px 22px rgba(18, 18, 20, 0.04) !important;
+}
+
+.pinned-panels-section .added-modules {
+  gap: 0;
+  border-top: 1px solid var(--line);
+}
+
+.canvas-screen .pinned-panels-section .module-panel {
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  padding: 20px 1px 24px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.canvas-screen .pinned-panels-section .module-panel.menu-open,
+.canvas-screen .pinned-panels-section .module-panel.dragging {
+  z-index: 3;
+  border: 1px solid var(--line-strong);
+  border-radius: 22px;
+  padding: 20px;
+  background: #ffffff;
+  box-shadow: 0 18px 42px rgba(18, 18, 20, 0.13);
+}
+
+.canvas-screen .pinned-panels-section .module-panel.drag-over {
+  background: color-mix(in srgb, var(--accent-pale) 66%, #fff);
+}
+
+.canvas-screen .customize-page-card {
+  min-height: 78px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 15px;
+  background: rgba(255, 255, 255, 0.64);
+  box-shadow: none;
+}
+
+.canvas-screen .customize-page-card > span {
+  background: rgba(118, 118, 128, 0.08);
+}
+
+.canvas-screen button:focus-visible,
+.canvas-screen input:focus-visible,
+.bottom-nav button:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent-mid) 58%, #367cff);
+  outline-offset: 3px;
+}
+
+@media (max-width: 380px) {
+  :root {
+    --canvas-gutter: 16px;
+    --section-space: 32px;
+  }
+
+  .topbar {
+    min-height: 88px;
+  }
+
+  .topbar h1 {
+    font-size: 2.35rem;
+  }
+
+  .topbar-more-button,
+  .topbar-primary-action {
+    width: 44px;
+    height: 44px;
+  }
+
+  .canvas-hero {
+    padding: 20px 18px 18px;
+  }
+
+  .canvas-hero-value strong {
+    font-size: 3.2rem;
+  }
+
+  .canvas-hero-progress > i {
+    width: 58px;
+    height: 58px;
+  }
+
+  .sleep-night-summary {
+    grid-template-columns: 46px minmax(0, 1fr);
+  }
+
+  .sleep-night-mark {
+    width: 46px;
+    height: 46px;
+  }
+
+  .sleep-night-summary .metric-capture-review {
+    grid-column: 1 / -1;
+  }
+
+  .metric-capture-actions {
+    gap: 6px;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .topbar-utility-menu,
+  .canvas-hero,
+  .metric-capture,
+  .settings-trust-summary,
+  .canvas-screen .stat-grid {
+    background: #ffffff;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .topbar-more-button,
+  .topbar-primary-action,
+  .metric-capture-actions button,
+  .metric-capture-review,
+  .water-capture-progress i {
+    transition: none !important;
+  }
+}
+
+/* Native iOS boundary status uses the same calm settings grammar. */
+.ios-health-panel .health-connection-summary.available .health-connection-orb {
+  background: color-mix(in srgb, var(--move) 68%, #ffffff);
+}
+
+.ios-health-panel .health-connection-summary.waiting .health-connection-orb {
+  background: rgba(118, 118, 128, 0.14);
+}
+
+.ios-health-panel .settings-option:disabled {
+  cursor: default;
+  opacity: 0.52;
+}
+
+.ios-health-panel .ios-health-status {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--move) 42%, #ffffff);
+}

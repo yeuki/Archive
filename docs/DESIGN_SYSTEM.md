@@ -52,6 +52,15 @@ Use black or charcoal for primary content, medium gray for secondary content, an
 
 ## Component language
 
+### Living Canvas
+
+- Treat each screen as one continuous personal journal page, not a stack of equally elevated widgets.
+- The current state or next useful action appears before supporting analysis.
+- Static summaries, compact comparisons, and ordinary modules normally separate through rhythm and fine rules rather than independent shadows.
+- Reserve contained cards for things that are genuinely self-contained: direct capture, an active task, a calendar, a form, a session, an alert, or a transient overlay.
+- Personal modules visually join the page during ordinary use and regain a bounded surface only while being edited or dragged.
+- A page exposes one dominant action. History, backup, and other infrequent utilities remain available through an accessible disclosure control.
+
 ### Page hierarchy
 
 A standard page should contain only the layers it needs:
@@ -86,6 +95,13 @@ Do not repeat the same metric as a large hero, card headline, and navigation bad
 - Keep the idle vessel out of named View Transition capture and retained opacity animations: these create backdrop isolation in Chromium. During page switches only, use a temporary topmost dock snapshot and capsule-clipped backdrop sampling so page/hero snapshots cannot cover it. Release the name and geometry on completion or interruption. Other overlay/workout transition layering is unchanged.
 - Expansion, selection, and collapse share a smooth spring-like motion without shifting the underlying page layout.
 - Navigation actions remain reachable with one hand and cannot be hidden by the device gesture area.
+- React owns navigation on every platform. Native navigation should be introduced only after a measured platform limitation justifies maintaining a second shell.
+
+### Native iOS surfaces
+
+- SwiftUI is reserved for Apple framework boundaries where the system interaction itself adds trust or capability, such as HealthKit authorization.
+- Native sheets use system typography, accessibility, and materials while retaining Archive's restrained semantic pastel accents.
+- A native surface must return a small result through the Capacitor bridge; it must not duplicate Archive's page hierarchy, navigation state, or local record store.
 
 ### Forms and selectors
 
