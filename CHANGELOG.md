@@ -7,6 +7,7 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 ### Added
 
 - Added an installable standalone web-app shell with iPhone home-screen metadata, Archive iconography, and conservative same-origin offline shell caching.
+- Added a GitHub Pages deployment workflow for the public repository. Accepted `main` builds are verified, rebuilt with the `/Archive/` web scope, and published over HTTPS for iPhone Home Screen installation.
 - Added the Capacitor iOS platform, branded Archive icon/launch assets, a narrow native bridge, and a SwiftUI Apple Health access primer. The primer requests read-only HealthKit categories only after an explicit user action; HealthKit record import remains a documented follow-up.
 - Added deterministic product-shell coverage for the Living Canvas hierarchy, PWA contract, and iOS bridge/entitlement wiring.
 - Added opt-in daily habit and water reminders with independent times, privacy-safe notification copy, Android permission-on-enable, and tap-through routing after the existing launch transition.

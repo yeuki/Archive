@@ -1,10 +1,21 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
+async function readOptionalText(path) {
+  try {
+    return await readFile(new URL(path, import.meta.url), "utf8");
+  } catch (error) {
+    if (error?.code === "ENOENT") return "";
+    throw error;
+  }
+}
+
 const [
   app,
   iosHealthPanel,
   styles,
+  viteConfig,
+  pagesWorkflow,
   index,
   manifest,
   serviceWorker,
@@ -22,6 +33,8 @@ const [
   readFile(new URL("../src/App.jsx", import.meta.url), "utf8"),
   readFile(new URL("../src/IOSHealthPanel.jsx", import.meta.url), "utf8"),
   readFile(new URL("../src/styles.css", import.meta.url), "utf8"),
+  readFile(new URL("../vite.config.js", import.meta.url), "utf8"),
+  readOptionalText("../.github/workflows/deploy-pages.yml"),
   readFile(new URL("../index.html", import.meta.url), "utf8"),
   readFile(new URL("../public/manifest.webmanifest", import.meta.url), "utf8"),
   readFile(new URL("../public/sw.js", import.meta.url), "utf8"),
@@ -60,6 +73,18 @@ assert.match(index, /manifest\.webmanifest/);
 assert.match(serviceWorker, /request\.mode === "navigate"/);
 assert.match(pwa, /import\.meta\.env\.PROD/);
 assert.match(pwa, /localhost/);
+assert.match(viteConfig, /process\.env\.ARCHIVE_WEB_BASE \|\| "\.\/"/);
+assert.match(pagesWorkflow, /branches:\s*\[main\]/);
+assert.match(pagesWorkflow, /workflow_dispatch:/);
+assert.match(pagesWorkflow, /if:\s*github\.ref == 'refs\/heads\/main'/);
+assert.match(pagesWorkflow, /pages:\s*write/);
+assert.match(pagesWorkflow, /id-token:\s*write/);
+assert.doesNotMatch(pagesWorkflow, /permissions:\s*\n\s+contents: read\s*\n\s+pages: write/);
+assert.match(pagesWorkflow, /deploy:[\s\S]*permissions:\s*\n\s+pages: write\s*\n\s+id-token: write/);
+assert.match(pagesWorkflow, /ARCHIVE_WEB_BASE:\s*\/Archive\//);
+assert.match(pagesWorkflow, /run:\s*npm run verify/);
+assert.match(pagesWorkflow, /path:\s*\.\/dist/);
+assert.match(pagesWorkflow, /uses:\s*actions\/deploy-pages@v4/);
 
 assert.match(nativePlugin, /CAPBridgedPlugin/);
 assert.match(nativePlugin, /presentHealthAccessPrimer/);

@@ -113,7 +113,9 @@ The iOS target begins at iOS 15 so its native SwiftUI material is available with
 
 ## Web-install boundary
 
-The manifest and Apple standalone metadata let the hosted responsive build run from an iPhone Home Screen. The service worker is registered only in production and skips localhost, including Capacitor's local development host. It caches the shell and successful same-origin reads for resilience, but it does not replace JSON backup, cloud synchronization, or a backend. Local records remain in browser/Capacitor storage.
+The manifest and Apple standalone metadata let the hosted responsive build run from an iPhone Home Screen. GitHub Pages publishes accepted `main` builds at the repository-scoped `/Archive/` path over HTTPS. The deployment build receives that base path explicitly, while local and Capacitor builds retain relative asset paths.
+
+The service worker is registered only in production and skips localhost, including Capacitor's local development host. It caches the shell and successful same-origin reads for resilience, but it does not replace JSON backup, cloud synchronization, or a backend. Local records remain in browser/Capacitor storage and do not move between installations without JSON export/import. Health Connect, HealthKit, and Capacitor notification bridges are unavailable in the hosted browser context.
 
 ### Sleep policy
 
@@ -160,6 +162,7 @@ Scroll-reactive chrome is maintained imperatively inside the navigation boundary
 
 - `npm run verify` is the cross-platform web/workspace gate.
 - `npm run cap:sync` copies the built web app into Android and updates Capacitor configuration.
+- `.github/workflows/deploy-pages.yml` verifies and publishes the repository-scoped iPhone web app when accepted changes reach `main`.
 - Android validation adds Gradle unit tests, lint, and debug/release assembly as appropriate.
 - `npm run release:build` verifies clean/pushed `main`, signing identity, checks, immutable version paths, checksum, Git tag, local archive, and Drive archive.
 - Package identity `com.kyle.archive` and the established signing certificate are compatibility contracts.
