@@ -15,7 +15,8 @@ Archive is a private-first personal productivity, health, and workout tracker. I
 - Gemini-powered coaching with reviewable changes
 - Local JSON backup and restore
 - Canonical Health Connect archive with launch and pull-to-refresh syncing, source provenance, reconciliation, and watch-first sleep precedence
-- Android packaging through Capacitor
+- Android and iOS packaging through Capacitor
+- Installable iPhone web app through GitHub Pages
 
 ## Privacy
 
@@ -53,6 +54,12 @@ npm run verify
 ```
 
 `npm run verify` checks the repository contract, health/sleep synchronization rules, Workout Mode, motion safeguards, and the production web build. Pull requests and pushes to `main` run the same gate plus Android tests, lint, and debug assembly through GitHub Actions.
+
+## Install on iPhone
+
+Accepted builds on `main` are published at [yeuki.github.io/Archive](https://yeuki.github.io/Archive/) through GitHub Pages. In Safari, open that address, tap **Share**, choose **Add to Home Screen**, enable **Open as Web App**, and tap **Add**.
+
+The installed web app keeps its records in that iPhone's local web storage. Use Archive's JSON export/import when moving records between Android, another browser, or another iPhone. Health Connect, HealthKit, and Capacitor notification features require a native build and are not available through the hosted web app.
 
 ## Build the Android APKs
 
@@ -103,4 +110,4 @@ Health Connect data is normalized into one local, versioned health archive. When
 
 ## Project status
 
-Archive is an actively developed personal application. The repository contains the web source and Android project, but excludes generated builds and private local data.
+Archive is an actively developed personal application. The repository contains the shared web source plus Android and iOS projects, but excludes generated builds and private local data.

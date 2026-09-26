@@ -12,8 +12,8 @@ The final green endpoint represents the latest point in the archive. The charcoa
 - `archive-icon.svg` is the full production source.
 - `archive-icon-foreground.svg` is the transparent adaptive-icon layer.
 - `archive-icon-1024.png` and `archive-icon-foreground-1024.png` are generated master rasters.
-- `scripts/generate-launcher-icons.ps1` regenerates Android legacy, round, and adaptive launcher assets at every required density.
+- `scripts/generate-launcher-icons.ps1` regenerates Android legacy, round, and adaptive launcher assets at every required density. When the iOS platform exists, it also creates an opaque square iOS app icon and the neutral Archive A launch images.
 
-The adaptive foreground uses a centered 72% safe-zone scale. Android launchers are free to animate and crop adaptive layers; this padding keeps the complete mark inside the universal safe region on Samsung One UI and other aggressive launcher masks. Legacy and round raster icons retain the full-size mark because their background and mask are already baked into the asset.
+The adaptive foreground uses a centered 72% safe-zone scale. Android launchers are free to animate and crop adaptive layers; this padding keeps the complete mark inside the universal safe region on Samsung One UI and other aggressive launcher masks. Legacy and round raster icons retain the full-size mark because their background and mask are already baked into the asset. The iOS source remains square and opaque because iOS applies its own icon mask.
 
 Do not edit generated PNGs individually. Change the shared geometry and generator together, then regenerate all densities.

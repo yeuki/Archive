@@ -52,6 +52,15 @@ Use black or charcoal for primary content, medium gray for secondary content, an
 
 ## Component language
 
+### Living Canvas
+
+- Treat each screen as one continuous personal journal page, not a stack of equally elevated widgets.
+- The current state or next useful action appears before supporting analysis.
+- Static summaries, compact comparisons, and ordinary modules normally separate through rhythm and fine rules rather than independent shadows.
+- Reserve contained cards for things that are genuinely self-contained: direct capture, an active task, a calendar, a form, a session, an alert, or a transient overlay.
+- Personal modules visually join the page during ordinary use and regain a bounded surface only while being edited or dragged.
+- A page exposes one dominant action. History, backup, and other infrequent utilities remain available through an accessible disclosure control.
+
 ### Page hierarchy
 
 A standard page should contain only the layers it needs:
@@ -82,8 +91,17 @@ Do not repeat the same metric as a large hero, card headline, and navigation bad
 - Preserve the centered Home control and expanding Productivity/Health sides.
 - Preserve a true capsule outer vessel with fully circular end caps in collapsed and expanded states; do not non-uniformly scale the shell in a way that turns the end caps elliptical or introduces a cradle/scallop silhouette.
 - The bottom bar floats above content, respects safe areas, and uses a readable liquid-glass treatment.
+- The dock uses a continuous low-alpha optical body with near-clear transmission (0.5px fixed softening), minimal surface tint, gentle curvature and a feathered refraction/highlight perimeter. Live material and page snapshots share the same transmission filter; do not restore full-surface frosting to compensate for contrast. Fade the optical edge into the body with true semicircular cap masks; do not use a hard punched-out ring, continuous bright stroke or tight dark outline. Do not make it an outlined empty capsule or a uniformly white frosted bar. Never make scrolling or expansion substitute a whiter/opaque material. Selection uses the same translucent material with a restrained semantic tint.
+- Keep the idle vessel out of named View Transition capture and retained opacity animations: these create backdrop isolation in Chromium. During page switches only, use a temporary topmost dock snapshot and capsule-clipped backdrop sampling so page/hero snapshots cannot cover it. Release the name and geometry on completion or interruption. Other overlay/workout transition layering is unchanged.
 - Expansion, selection, and collapse share a smooth spring-like motion without shifting the underlying page layout.
 - Navigation actions remain reachable with one hand and cannot be hidden by the device gesture area.
+- React owns navigation on every platform. Native navigation should be introduced only after a measured platform limitation justifies maintaining a second shell.
+
+### Native iOS surfaces
+
+- SwiftUI is reserved for Apple framework boundaries where the system interaction itself adds trust or capability, such as HealthKit authorization.
+- Native sheets use system typography, accessibility, and materials while retaining Archive's restrained semantic pastel accents.
+- A native surface must return a small result through the Capacitor bridge; it must not duplicate Archive's page hierarchy, navigation state, or local record store.
 
 ### Forms and selectors
 

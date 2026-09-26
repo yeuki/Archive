@@ -4,7 +4,7 @@ This document records the current technical boundaries and data contracts. It is
 
 ## System overview
 
-Archive is a local-first React application packaged for Android with Capacitor.
+Archive is a local-first React application that runs as an installable web app and is packaged with Capacitor for Android and iOS. React remains the canonical interface and domain implementation.
 
 ```text
 React UI and domain state
@@ -17,6 +17,8 @@ React UI and domain state
                 +-- Android Health Connect plugin
                 +-- Capacitor local-notifications plugin
                 +-- Android app lifecycle and system settings
+                +-- iOS SwiftUI/HealthKit authorization boundary
+                +-- future iOS HealthKit record importer
 ```
 
 There is no application backend or account service. GitHub stores source and release history; Google Drive stores immutable release artifacts, not editable source.
@@ -27,6 +29,8 @@ There is no application backend or account service. GitHub stores source and rel
 - Vite 7
 - Capacitor 7
 - Native Android/Kotlin and Gradle
+- Native iOS/SwiftUI/HealthKit project (built and signed with Xcode on macOS)
+- Progressive Web App manifest and service worker
 - Browser `localStorage`
 - Gemini API integration
 
@@ -35,7 +39,9 @@ There is no application backend or account service. GitHub stores source and rel
 | Path | Responsibility |
 | --- | --- |
 | `src/main.jsx` | React entry point |
+| `src/pwa.js` | Production-only service-worker registration for hosted installs |
 | `src/App.jsx` | Application shell, page routing, state normalization/persistence, records, modules, health orchestration, and coach integration |
+| `src/IOSHealthPanel.jsx` | Lazy iOS Settings adapter for the narrow SwiftUI/HealthKit native boundary |
 | `src/HabitHoldDeck.jsx` | Focused, hold-to-complete habit interaction, chooser, completion feedback, and undo |
 | `src/dailyRecords.js` | Daily field-presence normalization and exact partial-record habit updates |
 | `src/reminders.js` | Reminder defaults, normalization, stable notification IDs, payloads, and destination validation |
@@ -46,6 +52,8 @@ There is no application backend or account service. GitHub stores source and rel
 | `src/styles.css` | Archive Canvas tokens, layout, component styling, and animation rules |
 | `src/assets/bodymap.js` | Muscle-region body-map data |
 | `android/app/src/main/java/com/kyle/archive/` | Capacitor activity and Health Connect native bridge |
+| `ios/App/App/` | Capacitor iOS host, narrow Archive bridge, SwiftUI Health access surface, and entitlements |
+| `public/manifest.webmanifest` / `public/sw.js` | Standalone install metadata and conservative application-shell caching |
 | `scripts/verify-*.mjs` | Deterministic regression safeguards |
 | `scripts/build-release.ps1` | Signed, immutable release assembly and publication |
 
@@ -93,6 +101,22 @@ Health Connect exercise sessions are stored as source-attributed, read-only exte
 
 Permissions are progressive. If Archive has at least one supported read grant, it reconciles the available layers and marks optional denied layers as partial rather than blocking the entire import. Per-record availability allows a missing permission to be distinguished from a provider that simply did not publish a value.
 
+## iOS native boundary
+
+The Capacitor iOS target hosts the same compiled React application. `ArchiveBridgeViewController` registers one app-local `ArchiveNative` plugin. Its first responsibility is deliberately narrow: report native capabilities and present a SwiftUI explanation before HealthKit's read-only authorization UI.
+
+The authorization result means the system access review completed; HealthKit does not reveal every denied read category to applications. It must never be described as proof that all data types were granted. This iteration does not query or reconcile HealthKit records, and the React Settings surface labels that state as a foundation rather than an active import. iOS launch and pull-to-refresh explicitly bypass Android Health Connect calls until the native importer exists.
+
+A future importer must implement the same durable principles as Android: source attribution, stable record identity, bounded samples, watch-first sleep, previous-day wake attribution, corrections/deletions, and only launch plus completed pull-to-refresh user-facing reads. Native Swift must return normalized transfer objects through the bridge; it must not create a parallel record store.
+
+The iOS target begins at iOS 15 so its native SwiftUI material is available without parallel legacy UI. The project can be generated and structurally checked on Windows, but compilation, entitlement/provisioning validation, simulator testing, and physical iPhone installation require Xcode on macOS.
+
+## Web-install boundary
+
+The manifest and Apple standalone metadata let the hosted responsive build run from an iPhone Home Screen. GitHub Pages publishes accepted `main` builds at the repository-scoped `/Archive/` path over HTTPS. The deployment build receives that base path explicitly, while local and Capacitor builds retain relative asset paths.
+
+The service worker is registered only in production and skips localhost, including Capacitor's local development host. It caches the shell and successful same-origin reads for resilience, but it does not replace JSON backup, cloud synchronization, or a backend. Local records remain in browser/Capacitor storage and do not move between installations without JSON export/import. Health Connect, HealthKit, and Capacitor notification bridges are unavailable in the hosted browser context.
+
 ### Sleep policy
 
 - Watch-synced sleep is authoritative over a conflicting manual record.
@@ -132,12 +156,13 @@ The coach may propose; it must not silently mutate application state.
 
 Motion uses the shared CSS/runtime helpers and honors reduced motion. Scroll-bound UI should avoid expensive paint work, repeated layout reads/writes, and broad React rerenders. Prefer transforms/opacity, stable component keys, and one-time chart reveals.
 
-Scroll-reactive chrome is maintained imperatively inside the navigation boundary so a scroll threshold cannot rerender the active page. The true-capsule dock retains one bounded static blur at rest and uses its translucent gradient/rim layers without live backdrop sampling while scrolling or changing width. Native page transitions own page travel where supported; child surface entrances do not compete with the snapshot transition, and chart signatures reveal only once per in-memory presentation. Workout Mode and the detailed body-map renderer are lazy chunks loaded only near their coherent feature boundary.
+Scroll-reactive chrome is maintained imperatively inside the navigation boundary so a scroll threshold cannot rerender the active page. The true-capsule dock uses two bounded, sibling backdrop surfaces: a continuous minimal-tint optical body with 0.5px center softening and a feathered 7px bevel. A root `--nav-body-filter` token keeps live and snapshot transmission identical. The bevel/highlight share an additive gradient mask joining a straight central strip to two half-circle cap regions derived from `--dock-height`; no hard exclusion ring or additional filter surface is needed. Supporting Chromium engines use a static SVG channel map for tiny edge displacement with 0.35px softening; the fallback is CSS-only sampling with 0.75px softening. Filters render dock-sized buffers before masking, not just perimeter pixels. Keep the idle vessel free of retained opacity animation and named View Transition capture so it can sample actual page content, and never switch material on scroll. Page switches temporarily name the dock and place its snapshot above page/hero/topbar groups. `src/motion.js` captures capsule bounds after the synchronous update; a capsule-clipped group backdrop maintains the body outside the isolated snapshot image-pair. Its CSS clip animation mirrors any remaining true-width motion using the live dock geometry tokens, without per-frame bounds reads or a stale expanded blur footprint when returning Home. Token-guarded cleanup removes that geometry/name after completion or interruption. This is bounded dock-height work, not a full-screen filter; overlay/workout snapshot ordering is unchanged. `src/navGlass.js` drives finite touch-light tracking/release through CSS variables and rAF, with no idle loop or per-frame React updates. Native page transitions still own page travel; child entrances do not compete, and chart signatures reveal only once per in-memory presentation. Workout Mode and the detailed body-map renderer remain lazy chunks.
 
 ## Build and release
 
 - `npm run verify` is the cross-platform web/workspace gate.
 - `npm run cap:sync` copies the built web app into Android and updates Capacitor configuration.
+- `.github/workflows/deploy-pages.yml` verifies and publishes the repository-scoped iPhone web app when accepted changes reach `main`.
 - Android validation adds Gradle unit tests, lint, and debug/release assembly as appropriate.
 - `npm run release:build` verifies clean/pushed `main`, signing identity, checks, immutable version paths, checksum, Git tag, local archive, and Drive archive.
 - Package identity `com.kyle.archive` and the established signing certificate are compatibility contracts.

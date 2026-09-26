@@ -105,7 +105,7 @@ This is a compact record of accepted and rejected product/technical directions. 
 - **Status:** Accepted
 - **Decision:** Coalesce ordinary whole-state persistence into idle work, isolate scroll chrome from root React state, memoize derived domains by their real source slices, lazy-load coherent heavy features, and let one coordinated transition explain a page change.
 - **Rationale:** Added animation cannot hide main-thread serialization, broad rerenders, repeated normalization, or live blur repainting. Smoothness comes from completing less work inside each interaction frame while retaining intentional feedback.
-- **Consequence:** Backup imports and meaningful Workout Mode boundaries still flush immediately; in-progress wheel adjustments can wait for the next idle/lifecycle/durable boundary. Liquid glass keeps its accepted static identity, but live backdrop sampling is suspended while the true-width capsule or document is moving. Charts reveal once per data signature rather than replaying on ordinary revisits.
+- **Consequence:** Backup imports and meaningful Workout Mode boundaries still flush immediately; in-progress wheel adjustments can wait for the next idle/lifecycle/durable boundary. Charts reveal once per data signature rather than replaying on ordinary revisits. The original moving-dock backdrop suspension is superseded by D-019; retain its other performance safeguards.
 
 ## D-016 — Use truthful deterministic continuity before engagement mechanics
 
@@ -120,3 +120,17 @@ This is a compact record of accepted and rejected product/technical directions. 
 - **Decision:** Archive may schedule independent daily habit and water reminders only after explicit opt-in. Notification copy stays generic, taps wait for the existing launch sequence, and each tap opens its exact logging surface. Scheduling uses ordinary repeating notifications without exact-alarm privileges.
 - **Rationale:** A gentle prompt can reduce logging friction without exposing personal information, interrupting launch reconciliation, or turning Archive into an escalation system.
 - **Consequence:** Reminder preferences travel in local backups, browser preview remains non-notifying, and notification handling cannot introduce new Health Connect reads. Delivery and cold-start behavior require physical-device validation before release.
+
+## D-019 — Transparent optical navigation without scroll-state substitution
+
+- **Status:** Direction approved; candidate awaiting visual acceptance
+- **Decision:** Replace the layered white glass with a continuous near-clear optical body, 0.5px center softening, minimal surface tint, a feathered 7px optical perimeter, restrained interrupted directional highlights, modest shadows and a translucent semantic selection. Join straight-side and true semicircular masks instead of punching out a hard ring. Use a cached SVG channel map and tiny edge-only displacement on supporting Chromium engines, with CSS and solid accessibility fallbacks. During page switches only, temporarily fence the dock above page snapshots and sample their backdrop within the capsule using the same transmission filter as the live body. No caustic glow, absorption, rainbow outline, shader dependency or idle animation.
+- **Rationale:** A 90%-opaque scrolling fill caused visible whitening. Retained dock opacity animation and a permanently named View Transition layer prevented actual backdrop sampling. Removing those idle roots enables real under-content influence. The first candidate left named page snapshots above the root-captured dock; a temporary page-only snapshot fixes that overlap without restoring permanent isolation. Gentle full-body shading and soft thickness avoid an empty outlined-glass appearance. User feedback on the softer-edge revision still identified fog: reduce the original 3px body blur and white wash rather than strengthening the outline or adding effects.
+- **Consequence:** Supersedes only the glass-suspension part of D-015. Keep actual capsule widths, circular caps, navigation hierarchy and data behavior. Light tracking uses finite rAF work and CSS variables, never React state per frame. Emulator rendering is not a guarantee of physical-phone performance. No release or personal-phone installation until authorized.
+
+## D-020 — One React product with narrow native platform boundaries
+
+- **Status:** Direction approved; candidate awaiting acceptance
+- **Decision:** Keep React as Archive's canonical interface, navigation, domain logic, and persisted record model across web, Android, and iOS. Use SwiftUI only where an Apple framework or system-owned flow provides a concrete benefit, beginning with an explicitly invoked HealthKit access primer.
+- **Rationale:** A full SwiftUI rebuild would create two products to maintain and invite behavioral drift. A thin native boundary preserves Archive's proven functionality while still allowing trustworthy system permission, health, notification, and lifecycle integrations.
+- **Consequence:** Native code exchanges small capability/results objects through Capacitor and cannot silently become a second navigation or data implementation. The hosted build remains installable as an iPhone web app. Xcode/macOS remains necessary before the iOS shell can be compiled, signed, and installed.

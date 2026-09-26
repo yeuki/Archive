@@ -1,0 +1,20 @@
+{
+  "name": "Archive",
+  "short_name": "Archive",
+  "description": "A private, local-first home for habits, health, and training.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#fcfcfb",
+  "theme_color": "#fcfcfb",
+  "orientation": "portrait-primary",
+  "categories": ["health", "fitness", "productivity"],
+  "icons": [
+    {
+      "src": "archive-mark.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

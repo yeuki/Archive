@@ -30,14 +30,51 @@ export function runArchiveTransition(update, { kind = "content", direction = "fo
   root.dataset.archiveDirection = direction;
   root.dataset.archiveTransitionToken = token;
 
+  const clearTransitionChrome = () => {
+    root.style.removeProperty("--archive-nav-snapshot-inset");
+    root.style.removeProperty("--archive-nav-snapshot-end-inset");
+    root.style.removeProperty("--archive-nav-snapshot-duration");
+  };
+  const captureTransitionChrome = () => {
+    if (root.dataset.archiveTransitionToken !== token) return;
+    clearTransitionChrome();
+    if (kind !== "page") return;
+    const nav = document.querySelector(".bottom-nav");
+    const shell = nav?.querySelector(".nav-shell");
+    if (!shell) return;
+    // One geometry capture per transition, never a frame loop. The snapshot spans
+    // the viewport width; its live backdrop must be clipped to the capsule.
+    const bounds = nav.getBoundingClientRect();
+    const vessel = shell.getBoundingClientRect();
+    const insets = [vessel.top - bounds.top, bounds.right - vessel.right, bounds.bottom - vessel.bottom, vessel.left - bounds.left];
+    const formatInsets = (values) => values.map((value) => `${Math.max(0, value).toFixed(2)}px`).join(" ");
+    root.style.setProperty("--archive-nav-snapshot-inset", formatInsets(insets));
+    // Mirror an in-flight true-width expansion/collapse in CSS, rather than
+    // leaving a fixed blur footprint behind a shrinking vessel or reading it
+    // every frame. Geometry tokens are the same ones used by the live dock.
+    const style = getComputedStyle(nav);
+    const compact = Boolean(nav.closest(".chrome-compact"));
+    const expanded = nav.classList.contains("expanded");
+    const width = compact ? 68 * 0.94 : Number.parseFloat(style.getPropertyValue(expanded ? "--dock-expanded-width" : "--dock-collapsed-width"));
+    const shift = !compact && expanded ? Number.parseFloat(style.getPropertyValue("--dock-expanded-shift")) * (nav.classList.contains("health") ? 1 : -1) : 0;
+    const verticalInset = compact ? bounds.height * 0.03 : 0;
+    root.style.setProperty("--archive-nav-snapshot-end-inset", formatInsets([verticalInset, bounds.width / 2 - shift - width / 2, verticalInset, bounds.width / 2 + shift - width / 2]));
+    const remaining = Math.max(0, ...shell.getAnimations().filter((animation) => ["width", "transform"].includes(animation.transitionProperty)).map((animation) => Number(animation.effect.getTiming().duration) - Number(animation.currentTime)));
+    root.style.setProperty("--archive-nav-snapshot-duration", `${remaining.toFixed(2)}ms`);
+  };
+
   let transition;
   try {
-    transition = document.startViewTransition(() => flushSync(update));
+    transition = document.startViewTransition(() => {
+      flushSync(update);
+      captureTransitionChrome();
+    });
   } catch {
     if (root.dataset.archiveTransitionToken === token) {
       delete root.dataset.archiveTransition;
       delete root.dataset.archiveDirection;
       delete root.dataset.archiveTransitionToken;
+      clearTransitionChrome();
     }
     update();
     return null;
@@ -52,6 +89,7 @@ export function runArchiveTransition(update, { kind = "content", direction = "fo
         delete root.dataset.archiveTransition;
         delete root.dataset.archiveDirection;
         delete root.dataset.archiveTransitionToken;
+        clearTransitionChrome();
       }
     });
 

@@ -61,3 +61,9 @@ Use focused commits that each describe a coherent outcome. A small, explicitly r
 - A new semantic version has been chosen and no existing release path/tag will be overwritten.
 
 Documentation and workflow-only changes that do not alter the packaged app stop after commit/push; they do not require a version bump or APK.
+
+## 7. Hosted iPhone web app
+
+GitHub Pages is the hosted web baseline. A push to `main` runs verification and publishes `dist` at `https://yeuki.github.io/Archive/`; feature branches and pull requests never deploy. Because merging to `main` updates the installed iPhone web app, perform the acceptance gate before merging. Native APK/IPA releases, Git tags, and Drive artifacts remain separate publication actions governed by the release process.
+
+The Pages build sets `ARCHIVE_WEB_BASE=/Archive/`. Local development and Capacitor builds keep the default relative base and must not be changed globally to the repository path.
