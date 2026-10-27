@@ -16,16 +16,23 @@ extension ArchiveDocument {
             var next = old.filter { record in
                 !(record["provider"].stringValue == "healthKit" && deleted.contains(record["id"].stringValue.lowercased()))
             }
+            var positions: [String: Int] = [:]
+            for (index, record) in next.enumerated() where record["provider"].stringValue == "healthKit" {
+                let key = record["id"].stringValue.lowercased()
+                if positions[key] == nil { positions[key] = index }
+            }
             for record in incoming {
                 guard case .object(let fields) = record,
                       record["provider"].stringValue == "healthKit", !record["id"].stringValue.isEmpty,
                       !deleted.contains(record["id"].stringValue.lowercased()) else { continue }
-                if let index = next.firstIndex(where: {
-                    $0["provider"].stringValue == "healthKit" && $0["id"].stringValue.lowercased() == record["id"].stringValue.lowercased()
-                }) {
+                let key = record["id"].stringValue.lowercased()
+                if let index = positions[key] {
                     // Preserve extension fields when a producer corrects known fields.
                     next[index] = .object(next[index].objectValue.merging(fields) { _, new in new })
-                } else { next.append(record) }
+                } else {
+                    positions[key] = next.count
+                    next.append(record)
+                }
             }
             guard next != old else { continue }
             parent[layer] = .array(next)
@@ -61,10 +68,17 @@ extension ArchiveDocument {
 
     private static func retainedHeartSamples(_ records: [JSONValue], syncedAt: Date) -> [JSONValue] {
         let cutoff = syncedAt.addingTimeInterval(-30 * 24 * 60 * 60)
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let plain = ISO8601DateFormatter()
+        func parsedDate(_ value: JSONValue) -> Date? {
+            guard case .string(let string) = value else { return nil }
+            return fractional.date(from: string) ?? plain.date(from: string)
+        }
         let eligible = records.enumerated().compactMap { index, record -> (index: Int, date: Date, id: String)? in
             guard record["provider"].stringValue == "healthKit" else { return nil }
-            let date = timestamp(record["timestamp"]) ?? timestamp(record["startedAt"])
-                ?? timestamp(record["startDate"]) ?? timestamp(record["endedAt"])
+            let date = parsedDate(record["timestamp"]) ?? parsedDate(record["startedAt"])
+                ?? parsedDate(record["startDate"]) ?? parsedDate(record["endedAt"])
             if let date, date < cutoff { return nil }
             // Undated extension/old-format rows cannot be age-classified. Keep
             // them subject to the same hard count bound (after dated samples).

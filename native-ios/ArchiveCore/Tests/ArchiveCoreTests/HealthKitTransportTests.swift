@@ -5,6 +5,17 @@ import XCTest
 /// Fixtures mirror HealthKitService.record, not a made-up higher-level session.
 /// All timestamps are fractional UTC; local sample-start date is NOT sleep date.
 final class HealthKitTransportTests: XCTestCase {
+    func testRepeatedUUIDInOneBatchUpdatesFirstPositionWithoutDuplicatingOrLosingExtensions() {
+        var document = ArchiveDocument()
+        let first = JSONValue.object(["id": .string("SAME-ID"), "provider": .string("healthKit"), "value": .number(60), "extension": .bool(true)])
+        let corrected = JSONValue.object(["id": .string("same-id"), "provider": .string("healthKit"), "value": .number(70)])
+        document.applyHealthKit(HealthKitBatch(records: ["heartRate": [first, corrected]]))
+        let samples = document.data["watchData"]?["samples"]["heartRate"].arrayValue ?? []
+        XCTAssertEqual(samples.count, 1)
+        XCTAssertEqual(samples.first?["value"], .number(70))
+        XCTAssertEqual(samples.first?["extension"], .bool(true))
+    }
+
     func testEveryActualTransportSleepCategoryHonorsExplicitAsleepFlag() throws {
         let stages: [(Double, String, Bool)] = [(0, "inBed", false), (1, "asleepUnspecified", true),
             (2, "awake", false), (3, "asleepCore", true), (4, "asleepDeep", true),
