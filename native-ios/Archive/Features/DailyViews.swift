@@ -76,7 +76,7 @@ struct HomePage: View {
 struct HoldToComplete: View {
     let title: String
     let accessibilityTitle: String
-    let complete: () -> Void
+    let complete: () -> Bool
     @State private var pressing = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -91,8 +91,7 @@ struct HoldToComplete: View {
             .background(ArchiveTheme.habit.opacity(0.35), in: Capsule())
             .contentShape(Capsule())
             .onLongPressGesture(minimumDuration: 0.7, maximumDistance: 18) {
-                complete()
-                if !reduceMotion { UIImpactFeedbackGenerator(style: .soft).impactOccurred() }
+                if complete(), !reduceMotion { UIImpactFeedbackGenerator(style: .soft).impactOccurred() }
             } onPressingChanged: { value in
                 withAnimation(reduceMotion ? nil : .linear(duration: value ? 0.7 : 0.12)) { pressing = value }
             }
@@ -100,7 +99,7 @@ struct HoldToComplete: View {
             .accessibilityLabel(accessibilityTitle)
             .accessibilityHint("Double tap to complete. Touch and hold when using the screen directly.")
             .accessibilityAddTraits(.isButton)
-            .accessibilityAction { complete() }
+            .accessibilityAction { _ = complete() }
     }
 }
 
@@ -166,13 +165,7 @@ private struct HabitManager: View {
                             )).labelsHidden()
                         }
                     }.onMove { from, to in
-                        store.change { data in
-                            var names = data["habitNames"]?.arrayValue ?? []
-                            names.move(fromOffsets: from, toOffset: to)
-                            data["habitNames"] = .array(names)
-                            let tracked = Set(store.document.trackedHabits)
-                            data["trackedHabits"] = .array(names.filter { tracked.contains($0.stringValue) })
-                        }
+                        store.commit { $0.reorderHabits(fromOffsets: from, toOffset: to) }
                     }
                 }
                 Text("Turning tracking off keeps every historical record.").font(.footnote).foregroundStyle(.secondary)

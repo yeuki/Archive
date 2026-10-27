@@ -40,6 +40,6 @@ The Xcode project is generated deterministically using the Node standard library
 
 The document is an atomic JSON file in the app's Application Support/Archive directory, protected until first unlock. Mutations persist before published UI changes. A failed save leaves the previous in-memory/disk document intact. A corrupt startup file blocks writes and stays recoverable instead of being overwritten by an empty document. A validated replacement import first copies the exact previous file into the on-device Recovery directory.
 
-Complete backups preserve unknown fields, workout configuration and history, modules and coach history even before every native editor is available. HealthKit cursors and explicit source UUIDs travel with the document. A successful access-review sheet is never described as proof that every read category was allowed.
+Complete backups preserve unknown fields, workout configuration and history, modules and coach history even before every native editor is available. Source UUIDs travel with the document. Device-specific HealthKit cursors and enabled state are reset on explicit import because a portable backup may come from another iPhone; access can then be reviewed again. A successful access-review sheet is never described as proof that every read category was allowed.
 
 Keep health JSON files and signing assets out of Git. Native candidates remain under Unreleased until accepted; this folder does not assign or publish a new version or overwrite APK releases.

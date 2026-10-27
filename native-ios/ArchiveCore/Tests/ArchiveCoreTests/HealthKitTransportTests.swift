@@ -39,6 +39,7 @@ final class HealthKitTransportTests: XCTestCase {
 
     func testActualQuantityAndHRVShapesRoundtripAndUUIDDeletionIsLayerScoped() throws {
         var document = ArchiveDocument()
+        let syncedAt = ISO8601DateFormatter().date(from: "2026-10-27T14:00:00Z")!
         var quantity = try transportRecord()
         quantity["healthKitType"] = .string("HKQuantityTypeIdentifierStepCount")
         quantity["metric"] = .string("steps")
@@ -50,12 +51,12 @@ final class HealthKitTransportTests: XCTestCase {
         hrv["value"] = .number(44)
         hrv["unit"] = .string("ms")
         hrv["measurement"] = .string("SDNN")
-        document.applyHealthKit(HealthKitBatch(records: ["quantitySamples": [quantity], "heartRateVariability": [hrv]]))
+        document.applyHealthKit(HealthKitBatch(records: ["quantitySamples": [quantity], "heartRateVariability": [hrv]], syncedAt: syncedAt))
         XCTAssertEqual(document.data["watchData"]?["dailySummaries"].arrayValue.first?["steps"], .number(4321))
         let restored = try ArchiveDocument(backup: document.backup())
         XCTAssertEqual(restored.data["watchData"]?["quantitySamples"].arrayValue, [quantity])
         XCTAssertEqual(restored.data["watchData"]?["samples"]["heartRateVariability"].arrayValue, [hrv])
-        document.applyHealthKit(HealthKitBatch(deletedIDs: ["quantitySamples": [quantity["id"].stringValue.lowercased()]]))
+        document.applyHealthKit(HealthKitBatch(deletedIDs: ["quantitySamples": [quantity["id"].stringValue.lowercased()]], syncedAt: syncedAt))
         XCTAssertEqual(document.data["watchData"]?["samples"]["heartRateVariability"].arrayValue, [hrv])
         XCTAssertEqual(document.data["watchData"]?["dailySummaries"].arrayValue, [])
     }

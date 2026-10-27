@@ -34,6 +34,7 @@ for (const config of configurations) {
   object(`project:${config}`, `isa = XCBuildConfiguration; name = ${config}; buildSettings = {
     SDKROOT = iphoneos; IPHONEOS_DEPLOYMENT_TARGET = 17.0; CLANG_ENABLE_MODULES = YES;
     SWIFT_VERSION = 5.0; SWIFT_STRICT_CONCURRENCY = targeted; ENABLE_USER_SCRIPT_SANDBOXING = YES;
+    ONLY_ACTIVE_ARCH = ${config === 'Debug' ? 'YES' : 'NO'};
     SWIFT_OPTIMIZATION_LEVEL = ${quote(config === 'Debug' ? '-Onone' : '-O')};
     SWIFT_ACTIVE_COMPILATION_CONDITIONS = ${quote(config === 'Debug' ? 'DEBUG $(inherited)' : '$(inherited)')};
     DEBUG_INFORMATION_FORMAT = ${quote(config === 'Debug' ? 'dwarf' : 'dwarf-with-dsym')};

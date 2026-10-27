@@ -95,10 +95,12 @@ final class ArchiveStore: ObservableObject {
         } catch { errorMessage = "The backup could not be imported. Your current records were not changed. \(error.localizedDescription)" }
     }
 
-    func setHabit(_ habit: String, completed: Bool, on date: String) {
+    @discardableResult
+    func setHabit(_ habit: String, completed: Bool, on date: String) -> Bool {
         let old = rawEntry(on: date)
-        guard commit({ $0.setHabit(habit, completed: completed, on: date) }) else { return }
-        registerUndo("Habit updated") { [weak self] in self?.restoreField("habits", from: old, on: date) }
+        guard commit({ $0.setHabit(habit, completed: completed, on: date) }) else { return false }
+        registerUndo("Habit updated") { [weak self] in self?.restoreHabit(habit, from: old, on: date) }
+        return true
     }
 
     func addWater(_ ml: Double, on date: String) {
@@ -122,10 +124,41 @@ final class ArchiveStore: ObservableObject {
                 oldEntry["recordedFields"] == .null ? .bool(true) : oldEntry["recordedFields"][field]
             } ?? .bool(false)
             entry["recordedFields"] = .object(recorded)
-            if recorded.values.contains(where: { $0.boolValue }) { entries[index] = entry }
+            if recorded.values.contains(where: { $0.boolValue }) || Self.hasUnknownFields(entry) || !entry["habits"].objectValue.isEmpty { entries[index] = entry }
             else { entries.remove(at: index) }
             data["entries"] = .array(entries)
         }
+    }
+
+    private func restoreHabit(_ habit: String, from old: JSONValue?, on date: String) {
+        guard document.habits.contains(habit) else { message = "This habit has changed since it was recorded."; return }
+        change { data in
+            var entries = data["entries"]?.arrayValue ?? []
+            guard let index = entries.firstIndex(where: { $0["date"].stringValue == date }) else { return }
+            var entry = entries[index]
+            var habits = entry["habits"].objectValue
+            if let previous = old?["habits"].objectValue[habit] { habits[habit] = previous }
+            else { habits.removeValue(forKey: habit) }
+            entry["habits"] = .object(habits)
+            var fields = entry["recordedFields"].objectValue
+            let previouslyRecorded = old.map { $0["recordedFields"] == .null || $0["recordedFields"]["habits"].boolValue } ?? false
+            var previousOtherHabits = old?["habits"].objectValue ?? [:]
+            previousOtherHabits.removeValue(forKey: habit)
+            var currentOtherHabits = habits
+            currentOtherHabits.removeValue(forKey: habit)
+            fields["habits"] = .bool(previouslyRecorded || previousOtherHabits != currentOtherHabits)
+            entry["recordedFields"] = .object(fields)
+            if fields.values.contains(where: { $0.boolValue }) || Self.hasUnknownFields(entry) || !habits.isEmpty { entries[index] = entry }
+            else { entries.remove(at: index) }
+            data["entries"] = .array(entries)
+        }
+    }
+
+    private static func hasUnknownFields(_ entry: JSONValue) -> Bool {
+        let known: Set<String> = ["date", "habits", "water", "sleep", "recordedFields"]
+        let knownPresence: Set<String> = ["habits", "water", "sleep"]
+        return !Set(entry.objectValue.keys).isSubset(of: known)
+            || !Set(entry["recordedFields"].objectValue.keys).isSubset(of: knownPresence)
     }
 
     func registerUndo(_ label: String, action: @escaping () -> Void) {

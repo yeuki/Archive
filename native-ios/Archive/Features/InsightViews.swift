@@ -90,7 +90,7 @@ struct NativeModulesView: View {
             ForEach(Array(modules.enumerated()), id: \.offset) { _, module in
                 let name = module["moduleId"].stringValue
                 if name == "daily-histogram" || name == "area-line" {
-                    MetricTrend(metric: metric, days: max(1, min(365, Int(module["settings"]["days"].doubleValue == 0 ? 7 : module["settings"]["days"].doubleValue))), line: name == "area-line")
+                    MetricTrend(metric: metric, days: ArchiveDocument.moduleSpanDays(module["settings"]["days"]), line: name == "area-line")
                 }
             }
             Button("Your panels", systemImage: "slider.horizontal.3") { managing = true }.font(.subheadline).frame(minHeight: 44)
