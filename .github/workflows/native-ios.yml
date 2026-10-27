@@ -34,4 +34,19 @@ jobs:
       - name: Run focused workout tests in an iPhone simulator
         run: |
           SIMULATOR_ID="$(xcrun simctl list devices available --json | node -e 'let s="";process.stdin.on("data",c=>s+=c);process.stdin.on("end",()=>{const d=Object.values(JSON.parse(s).devices).flat().find(d=>d.name.startsWith("iPhone"));if(!d)process.exit(1);process.stdout.write(d.udid)})')"
+          echo "ARCHIVE_SIMULATOR_ID=$SIMULATOR_ID" >> "$GITHUB_ENV"
           xcodebuild -project native-ios/Archive.xcodeproj -scheme Archive -destination "platform=iOS Simulator,id=$SIMULATOR_ID" -derivedDataPath native-ios/DerivedData CODE_SIGNING_ALLOWED=NO test
+      - name: Capture native Home appearance
+        run: |
+          mkdir -p native-ios/screenshots
+          xcrun simctl ui "$ARCHIVE_SIMULATOR_ID" appearance light
+          xcrun simctl launch "$ARCHIVE_SIMULATOR_ID" com.kyle.archive
+          sleep 3
+          xcrun simctl io "$ARCHIVE_SIMULATOR_ID" screenshot native-ios/screenshots/home-light.png
+          xcrun simctl ui "$ARCHIVE_SIMULATOR_ID" appearance dark
+          sleep 1
+          xcrun simctl io "$ARCHIVE_SIMULATOR_ID" screenshot native-ios/screenshots/home-dark.png
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-ios-simulator-screens
+          path: native-ios/screenshots/

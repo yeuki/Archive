@@ -32,3 +32,9 @@
 - Native writes must not mark missing water/sleep as recorded zero.
 - Hold cancellation, accessible activation, large text and reduced-transparency navigation remain usable.
 - Empty/custom routines, multiple workouts per day and old active-session shapes must remain recoverable even where native feature parity is incomplete.
+
+## Execution record
+
+- 2026-10-27: Implemented tasks 1–4 as a native migration increment. A fresh code reviewer identified unsafe imported span conversion, ordering recovered habits against an incomplete raw array, partial-habit undo presence and unknown nested presence metadata. Each has a regression test and a focused correction.
+- Existing `npm run verify` passes. The first hosted Mac run passed domain tests and compiled the SwiftUI app. Its simulator test step exposed an architecture mismatch when reusing package build products; Debug now selects the active architecture consistently. The corrected tests and storage regressions are being run in draft PR #2.
+- Native visual/accessibility/device checks and the full parity list remain acceptance work. No merge, release version, deployment or phone installation has occurred.

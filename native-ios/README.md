@@ -34,6 +34,8 @@ xcodebuild -project native-ios/Archive.xcodeproj -scheme Archive -destination 'p
 
 The native GitHub Actions workflow runs domain tests, an unsigned simulator build and workout tests on a hosted Mac. That verifies compilation and deterministic behavior, not visual polish, physical watch transport, signing or device performance. See `PARITY.md` for the real migration status.
 
+The same workflow captures light and dark Home screenshots as a review artifact after simulator tests pass. These are native renders, separate from the approved conceptual mockup.
+
 The Xcode project is generated deterministically using the Node standard library. After adding or removing Swift files, run `npm run native:project`; commit the generated project and shared scheme. No third-party project generator is required.
 
 ## Storage and recovery

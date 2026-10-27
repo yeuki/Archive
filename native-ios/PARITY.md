@@ -20,3 +20,5 @@ This is an implementation inventory, not a device-validation claim. The React/An
 | Reminders / Garmin watch actions | Existing configurations retained in backups | Native notifications, action routing and watch habit/water communication |
 
 No native candidate should replace an existing installation as the user's sole record store until the remaining capabilities they rely on have been ported and accepted. Export a backup before installation or migration.
+
+Native imports preserve the existing web/Android backup and unknown fields. Native-to-native backup is lossless. Older web/Android importers normalize only their known schema and may omit native HealthKit extensions; keep the original native export rather than treating a roundtrip through an older client as a full-fidelity native backup.

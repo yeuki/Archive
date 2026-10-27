@@ -89,6 +89,7 @@ final class ArchiveStore: ObservableObject {
             healthEpoch = UUID()
             document = next
             writeBlocked = false
+            errorMessage = nil
             undoAction = nil
             undoLabel = nil
             message = "Your records are here. A copy of the previous file was kept on this iPhone."

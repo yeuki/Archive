@@ -60,6 +60,7 @@ Thumbs.db
 native-ios/**/.build/
 native-ios/**/.swiftpm/
 native-ios/DerivedData/
+native-ios/screenshots/
 **/xcuserdata/
 *.xcuserstate
 *.ipa
