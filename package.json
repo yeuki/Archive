@@ -22,6 +22,8 @@
     "preview": "vite preview --host 127.0.0.1",
     "cap:sync": "cap sync android",
     "cap:sync:ios": "cap sync ios",
+    "native:project": "node ./scripts/native-ios-project.mjs --write",
+    "test:native-project": "node ./scripts/native-ios-project.mjs",
     "android:build": "cd android && gradlew.bat assembleDebug",
     "release:build": "powershell -ExecutionPolicy Bypass -File ./scripts/build-release.ps1"
   },

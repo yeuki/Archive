@@ -1,0 +1,37 @@
+name: Native iOS candidate
+
+on:
+  pull_request:
+    paths: ['native-ios/**', 'scripts/native-ios-project.mjs', '.github/workflows/native-ios.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    runs-on: macos-26
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Show Apple toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+      - name: Check project graph
+        run: node scripts/native-ios-project.mjs
+      - name: Test domain and backup behavior
+        run: swift test --package-path native-ios/ArchiveCore
+      - name: Compile native iOS app for simulator
+        run: >-
+          xcodebuild -project native-ios/Archive.xcodeproj -scheme Archive
+          -destination 'generic/platform=iOS Simulator'
+          -derivedDataPath native-ios/DerivedData
+          CODE_SIGNING_ALLOWED=NO build
+      - name: Run focused workout tests in an iPhone simulator
+        run: |
+          SIMULATOR_ID="$(xcrun simctl list devices available --json | node -e 'let s="";process.stdin.on("data",c=>s+=c);process.stdin.on("end",()=>{const d=Object.values(JSON.parse(s).devices).flat().find(d=>d.name.startsWith("iPhone"));if(!d)process.exit(1);process.stdout.write(d.udid)})')"
+          xcodebuild -project native-ios/Archive.xcodeproj -scheme Archive -destination "platform=iOS Simulator,id=$SIMULATOR_ID" -derivedDataPath native-ios/DerivedData CODE_SIGNING_ALLOWED=NO test

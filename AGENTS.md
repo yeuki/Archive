@@ -2,6 +2,10 @@
 
 These instructions apply to the entire repository. Archive is a local-first personal productivity, health, and workout application built with React, Vite, Capacitor, and native Android integrations.
 
+## Native iOS migration (approved 2026-10-27)
+
+The user approved a fully native SwiftUI rebuild in `native-ios/`, using concept A's warm colors/serif typography and concept C's compact layout. For that folder, this supersedes earlier React-only UI/domain constraints. Preserve existing web/Android sources as the functional reference while native parity is built. Read `native-ios/README.md`, `native-ios/PARITY.md`, and `docs/specs/2026-10-27-native-swiftui-rebuild.md`. Lossless legacy backups, separate destinations, sleep authority and launch/pull-only health reads still apply. Windows structural checks do not establish successful Xcode builds or native feature parity.
+
 ## Authority and required context
 
 Use this order when sources disagree:

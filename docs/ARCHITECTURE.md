@@ -2,6 +2,12 @@
 
 This document records the current technical boundaries and data contracts. It is intentionally more stable than an implementation walkthrough: exact line numbers and component internals may change, but these responsibilities should remain recognizable.
 
+## Approved native iOS migration — 2026-10-27
+
+`native-ios/Archive.xcodeproj` is a separate SwiftUI candidate with a local Foundation-only `ArchiveCore` package for lossless JSON, daily rules and health reconciliation. SwiftUI observes an atomic file-backed store. The one-shot HealthKit service supplies UUID/source-attributed records, explicit deletions and persisted query anchors; only cold launch and completed refresh read health data after explicit setup. Empty reads imply neither deletion nor authorization. HRV SDNN retains its measurement identity.
+
+This supersedes the React-only restriction for the new native product, as explicitly requested by the user. Sections below describe the existing web/Android and Capacitor implementations, which stay available until the native migration is accepted. `native-ios/PARITY.md` records actual capabilities and verification limits. Migration uses explicit JSON backup; Safari storage is not shared with the native app.
+
 ## System overview
 
 Archive is a local-first React application that runs as an installable web app and is packaged with Capacitor for Android and iOS. React remains the canonical interface and domain implementation.

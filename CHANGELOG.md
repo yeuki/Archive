@@ -6,6 +6,10 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 
 ### Added
 
+- Started a separate fully native SwiftUI candidate in `native-ios/` using the approved warm serif/pastel design, centered Home and existing destination groups. Existing web/Android sources remain intact during migration.
+- Added native daily capture, habit management, hydration/undo, manual sleep fallback, basic trends/modules, Settings and JSON migration with atomic storage, recovery copies and write-error reporting.
+- Added a Foundation-only native document/reconciliation package, a one-shot read-only HealthKit importer, focused native workout adapters and behavioral XCTest suites, plus a reproducible Xcode project and macOS validation workflow. `native-ios/PARITY.md` lists partial and pending functionality.
+
 - Added an installable standalone web-app shell with iPhone home-screen metadata, Archive iconography, and conservative same-origin offline shell caching.
 - Added a GitHub Pages deployment workflow for the public repository. Accepted `main` builds are verified, rebuilt with the `/Archive/` web scope, and published over HTTPS for iPhone Home Screen installation.
 - Added the Capacitor iOS platform, branded Archive icon/launch assets, a narrow native bridge, and a SwiftUI Apple Health access primer. The primer requests read-only HealthKit categories only after an explicit user action; HealthKit record import remains a documented follow-up.
@@ -47,6 +51,8 @@ All notable changes to Archive are documented here. Archive follows semantic ver
 - Changed Health Connect workout reconciliation to prefer stable record IDs and source-filter aggregate metrics to the exercise session's data origin.
 
 ### Known issues and unfinished work
+
+- The SwiftUI rebuild is a first migration increment, not accepted feature parity. Apple compilation/tests, native visuals/accessibility, signing and real Garmin-to-Apple-Health imports must be validated. Existing Archive remains the full-functionality baseline.
 
 - The generated iOS project, HealthKit entitlement, and SwiftUI bridge require compilation, signing-team selection, permission review, and physical-device validation in Xcode on macOS. Windows can only verify their structure.
 - HealthKit authorization is prepared, but iOS health-record querying, normalization, reconciliation, and launch/pull-to-refresh ingestion are intentionally not represented as complete yet.
