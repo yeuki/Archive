@@ -2,6 +2,10 @@
 
 This document describes the product Archive is intended to be. It is the durable reference for scope, hierarchy, and user-facing behavior. Historical release notes explain what changed; this document explains what should be true now.
 
+## Native iOS direction — 2026-10-27
+
+Kyle approved a native SwiftUI rebuild using the selected warm serif/pastel design. `native-ios/` is the migration candidate; existing web/Android retain full functionality during the port. This supersedes the single-React-interface rule for native iOS. The functionality/data principles below remain the reference; `native-ios/PARITY.md` records implemented and remaining features.
+
 ## Purpose
 
 Archive is a private, local-first personal system for understanding productivity, health, and training without turning daily tracking into administrative work. It should help one person record a day, notice useful patterns, complete a workout, and review history through a calm and coherent mobile experience.

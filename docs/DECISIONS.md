@@ -2,6 +2,13 @@
 
 This is a compact record of accepted and rejected product/technical directions. Add a new entry when a change reverses or materially qualifies one of these decisions; do not silently rewrite the old rationale.
 
+## D-021 — Build Archive natively in SwiftUI
+
+- **Status:** Direction/initial implementation authorized by Kyle, 2026-10-27; candidate requires validation and acceptance.
+- **Decision:** Rebuild iPhone Archive under `native-ios/`, using A's colors/regular serif typography with C's layout and genuine system Liquid Glass. Supersedes D-020's React-only restriction for the native product.
+- **Rationale:** iPhone is now the primary device and native gestures, materials and HealthKit are central to the desired experience.
+- **Consequence:** Keep web/Android as the functional reference. Preserve complete backups and unknown fields, port features in reviewable increments, track parity honestly and validate with Apple's compiler and physical devices. This does not authorize a release or installation.
+
 ## D-001 — Preserve the separate-page navigation hierarchy
 
 - **Status:** Accepted

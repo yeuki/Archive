@@ -2,6 +2,12 @@
 
 Archive Canvas is a calm editorial interface with soft depth, a small semantic color vocabulary, and carefully staged detail. Apple platforms are a reference for hierarchy, material, motion, and accessibility; Archive keeps its own identity and avoids literal imitation.
 
+## Approved native iOS direction — 2026-10-27
+
+The SwiftUI rebuild uses [the selected A/C concept](reference/native-ios-home-concept.png): A's warm ivory-white canvas, gentle pastel surfaces and regular system-serif titles/values with C's compact layout and quiet system-sans controls. The intended feeling is reassurance and encouragement on incomplete days. Missing data is an invitation; repeated motivational copy must not crowd useful information.
+
+The native dock uses Apple's Liquid Glass on iOS 26+, standard material on older supported versions and an opaque accessibility fallback. Content stays matte. Dynamic Type, semantic labels, readable dark-mode surfaces and reduced motion are required. This supersedes older React-only details for `native-ios/`; existing web/Android design stays unchanged pending separate acceptance.
+
 ## Visual principles
 
 1. **Quiet first impression.** White space and typography establish hierarchy before borders or color.

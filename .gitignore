@@ -55,3 +55,12 @@ releases/**/*.sha256
 *.iml
 .DS_Store
 Thumbs.db
+
+# Native SwiftUI build products and per-user Xcode state
+native-ios/**/.build/
+native-ios/**/.swiftpm/
+native-ios/DerivedData/
+native-ios/screenshots/
+**/xcuserdata/
+*.xcuserstate
+*.ipa
