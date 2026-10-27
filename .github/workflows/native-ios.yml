@@ -31,21 +31,28 @@ jobs:
           -destination 'generic/platform=iOS Simulator'
           -derivedDataPath native-ios/DerivedData
           CODE_SIGNING_ALLOWED=NO build
-      - name: Boot one simulator and capture native Home
-        timeout-minutes: 5
+      - name: Select a simulator on the newest installed iOS runtime
         run: |
-          SIMULATOR_ID="$(xcrun simctl list devices available --json | node -e 'let s="";process.stdin.on("data",c=>s+=c);process.stdin.on("end",()=>{const d=Object.values(JSON.parse(s).devices).flat().find(d=>d.name.startsWith("iPhone"));if(!d)process.exit(1);process.stdout.write(d.udid)})')"
+          SIMULATOR_ID="$(xcrun simctl list devices available --json | node -e 'let s="";process.stdin.on("data",c=>s+=c);process.stdin.on("end",()=>{const groups=Object.entries(JSON.parse(s).devices).filter(([r])=>r.includes("iOS")).sort(([a],[b])=>b.localeCompare(a,undefined,{numeric:true}));const devices=groups.flatMap(([,d])=>d);const d=devices.find(d=>d.name==="iPhone 17")||devices.find(d=>d.name.startsWith("iPhone"));if(!d)process.exit(1);process.stdout.write(d.udid)})')"
           echo "ARCHIVE_SIMULATOR_ID=$SIMULATOR_ID" >> "$GITHUB_ENV"
-          xcrun simctl bootstatus "$SIMULATOR_ID" -b
-          xcrun simctl install "$SIMULATOR_ID" native-ios/DerivedData/Build/Products/Debug-iphonesimulator/Archive.app
+      - name: Boot the selected simulator
+        timeout-minutes: 6
+        run: xcrun simctl bootstatus "$ARCHIVE_SIMULATOR_ID" -b
+      - name: Install and launch native Archive
+        timeout-minutes: 3
+        run: |
+          xcrun simctl install "$ARCHIVE_SIMULATOR_ID" native-ios/DerivedData/Build/Products/Debug-iphonesimulator/Archive.app
+          xcrun simctl launch "$ARCHIVE_SIMULATOR_ID" com.kyle.archive
+      - name: Capture native Home appearance
+        timeout-minutes: 2
+        run: |
           mkdir -p native-ios/screenshots
-          xcrun simctl ui "$SIMULATOR_ID" appearance light
-          xcrun simctl launch "$SIMULATOR_ID" com.kyle.archive
+          xcrun simctl ui "$ARCHIVE_SIMULATOR_ID" appearance light
           sleep 3
-          xcrun simctl io "$SIMULATOR_ID" screenshot native-ios/screenshots/home-light.png
-          xcrun simctl ui "$SIMULATOR_ID" appearance dark
+          xcrun simctl io "$ARCHIVE_SIMULATOR_ID" screenshot native-ios/screenshots/home-light.png
+          xcrun simctl ui "$ARCHIVE_SIMULATOR_ID" appearance dark
           sleep 1
-          xcrun simctl io "$SIMULATOR_ID" screenshot native-ios/screenshots/home-dark.png
+          xcrun simctl io "$ARCHIVE_SIMULATOR_ID" screenshot native-ios/screenshots/home-dark.png
       - uses: actions/upload-artifact@v4
         if: always()
         with:
