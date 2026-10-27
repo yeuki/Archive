@@ -53,7 +53,7 @@ struct ArchiveShell: View {
                 page
                     .toolbar {
                         ToolbarItem(placement: .topBarLeading) {
-                            Text("Archive").font(ArchiveTheme.heading)
+                            Text("Archive").font(ArchiveTheme.heading).fixedSize(horizontal: true, vertical: false)
                         }
                         ToolbarItem(placement: .topBarTrailing) {
                             Button("Settings", systemImage: "person.crop.circle") { destination = .settings }

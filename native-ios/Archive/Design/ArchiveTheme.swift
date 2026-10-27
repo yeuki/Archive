@@ -22,7 +22,7 @@ struct ArchivePanel<Content: View>: View {
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        content
+        VStack(alignment: .leading, spacing: 12) { content }
             .padding(22)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(tint.opacity(scheme == .dark ? 0.15 : 0.24), in: RoundedRectangle(cornerRadius: 26))
