@@ -62,6 +62,7 @@ none of the device scenarios below should be interpreted as having run on an iPh
 | --- | --- |
 | Build the app using Xcode 26+, iOS 17 deployment target, Swift 5.9 language mode | No unavailable APIs, continuation errors or actor-isolation errors. Enable complete concurrency checking as an additional diagnostic. |
 | Request access; deny all, allow a subset, then revoke access in Health | No sharing request; no query from setup; no inferred category grants; empty reads never clear previously imported rows. |
+| Review access again after enabling a previously denied category | Store invalidates old in-flight results and resets device cursors; the next launch/pull replays the bounded window, retaining existing UUIDs until actual replacement/deletion. Setup itself never reads data. |
 | Return an actual authorization-denied error after some pages of one quantity type, while other types are readable | Only that type's staged samples/deletions are discarded; its old anchor/boundary is unchanged; other quantity metrics in the shared layer and other layers still import. No other error code/domain is silently swallowed. |
 | Read unavailable HealthKit or a locked/protected store | A surfaced error, unchanged durable data/anchors, no automatic retry/query. |
 | Initial query and second read several days later | Exact same per-type lower predicate boundary, no moving upper boundary; only the second query's anchor changes. |

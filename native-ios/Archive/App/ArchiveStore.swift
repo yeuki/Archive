@@ -187,9 +187,14 @@ final class ArchiveStore: ObservableObject {
         do {
             try await health.requestAccess()
             // Completion is not proof of individual read grants. No query here.
+            healthEpoch = UUID()
             change { data in
                 var native = data["nativeIOS"]?.objectValue ?? [:]
                 native["healthKitEnabled"] = .bool(true)
+                // A newly allowed category may contain records older than an
+                // opaque cursor produced while access was restricted. Re-read
+                // the bounded window on the next permitted launch/refresh.
+                native["healthKitAnchors"] = .object([:])
                 data["nativeIOS"] = .object(native)
             }
             message = "Access review completed. Pull down to import the data Apple Health makes available. You can change your choices in Health."
