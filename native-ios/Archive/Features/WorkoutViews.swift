@@ -376,7 +376,7 @@ struct WorkoutPage: View {
 
     @ViewBuilder private func routineActions(_ routine: JSONValue) -> some View {
         Button("Start workout") { start(routine) }
-            .buttonStyle(WorkoutPrimaryButton()).disabled(hasStoredSession || routine.w("exerciseIds").arrayValue.isEmpty)
+            .buttonStyle(WorkoutPrimaryButton()).disabled(hasStoredSession)
         Button("Edit routine") { routineEditor = WorkoutEditorItem(value: routine) }.frame(minHeight: 44)
     }
 

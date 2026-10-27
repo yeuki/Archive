@@ -128,11 +128,12 @@ habit history, cups, source selection, unioned sleep, DST, fallback recovery,
 provider/layer-scoped deletion, corrected UUIDs, bounded anchored HR/HRV increments,
 preserved old quantity totals, huge finite metric safety and no fabricated records.
 
-Windows implementation session: `swift test` was attempted but Swift is not
-installed. These tests have **not** been compiled or executed; source inspection
-and legacy JS regression scripts cannot establish native correctness. No commit,
-version bump or release is part of this task. Review is an author self-review,
-not an independent compiler or fresh-reviewer gate.
+Swift is not installed on the Windows authoring machine. Hosted macOS validation
+in draft PR #2 has compiled/executed the package tests; the workflow records the
+result for each commit. The complete native app also has a separate Apple build
+and simulator test gate. Neither source inspection nor legacy JS checks establish
+native correctness. A fresh reviewer inspected the integration and migration
+edge cases; physical permission, Garmin transport and visual checks remain.
 
 UI integration requirements: retain all data when editing settings; distinguish
 nil metrics from zero; label synced sleep using raw sleepOrigin/sleepProvider;

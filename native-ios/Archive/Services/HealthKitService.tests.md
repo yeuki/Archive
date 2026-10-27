@@ -1,8 +1,8 @@
 # HealthKitService contract and validation
 
-Task 2 only. Native execution is **pending**: this Windows workspace has neither
-Xcode nor the iOS HealthKit SDK. Source checks are not a Swift build or a device
-test. No test results below should be interpreted as having run on iOS.
+Apple-toolchain compilation is exercised by the native workflow in draft PR #2.
+Physical HealthKit authorization and real Garmin transport remain **pending**;
+none of the device scenarios below should be interpreted as having run on an iPhone.
 
 ## Integration contract
 
@@ -50,6 +50,7 @@ test. No test results below should be interpreted as having run on iOS.
   A deleted HealthKit object supplies no quantity/metric value to reconstruct.
 - Anchor keys are HealthKit sample-type identifiers; each has a paired
   `<identifier>.startDate`. The boundary is initialized once at now minus 30 days
+  (seven days for high-frequency HR/HRV)
   and never moves while that anchor is retained. Values are secure-coded
   `HKQueryAnchor` archives encoded as base64 (encoding is not encryption).
   Store them in the protected local document; do not log them. Corrupt anchors or

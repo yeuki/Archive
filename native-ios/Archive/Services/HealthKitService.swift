@@ -53,6 +53,7 @@ actor HealthKitService {
         static let secondsPerQuery: TimeInterval = 15
         static let secondsPerRead: TimeInterval = 90
         static let initialLookback: TimeInterval = 30 * 24 * 60 * 60
+        static let initialSampleLookback: TimeInterval = 7 * 24 * 60 * 60
     }
 
     private struct QuantityDescriptor {
@@ -155,9 +156,9 @@ actor HealthKitService {
             } else {
                 // Round-trip the initial boundary through its persisted string so
                 // even sub-millisecond Date precision cannot change the predicate.
-                boundaryString = timestampFormatter.string(
-                    from: startedAt.addingTimeInterval(-Limits.initialLookback)
-                )
+                let lookback = ["heartRate", "heartRateVariability"].contains(descriptor.layer)
+                    ? Limits.initialSampleLookback : Limits.initialLookback
+                boundaryString = timestampFormatter.string(from: startedAt.addingTimeInterval(-lookback))
                 guard let parsed = timestampFormatter.date(from: boundaryString) else {
                     throw ServiceError.invalidAnchor(key)
                 }
